@@ -6,6 +6,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import ast
 import re
+import array
 
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
@@ -50,6 +51,7 @@ def dh_transform(a, alpha, d, theta):
     #     [0,      sa,      ca,     d   ],
     #     [0,      0,       0,      1   ]
     # ])  
+
 
 def fr3_fk(joint_angles):
     """Compute the forward kinematics for the Franka Emika Panda robot."""
@@ -100,6 +102,42 @@ def parse_position(s):
 
     numbers = match.group(1)
     return np.fromstring(numbers, sep=",")
+
+
+def parse_array(x):
+    # If it's already a Python array (from `array` module)
+    if isinstance(x, array.array):
+        return list(x)
+
+    # If it's bytes, decode to string
+    if isinstance(x, (bytes, bytearray)):
+        x = x.decode("utf-8", errors="ignore")
+
+    # If it's string like "array('h', [1006, 1006, 1007, 300])"
+    if isinstance(x, str):
+        match = re.search(r"\[(.*?)\]", x)      
+               
+
+        if match:
+            # Check if values are floats or ints
+            values = match.group(1).split(",")
+            if '.' in values[0]:
+                # print('float')
+                return [float(v) for v in match.group(1).split(",")]
+                        
+            else:
+                # print('int')
+                return [int(v) for v in match.group(1).split(",")]                           
+            
+        else:
+            # last resort: try literal_eval
+            try:
+                return list(ast.literal_eval(x))
+            except Exception:
+                return []
+    
+    # fallback
+    return []
 
 
 # ------------------ PLOTTING FUNCTIONS ----------------- #
@@ -194,7 +232,36 @@ def plot_wrench(df):
     axs[1].legend()
 
     plt.tight_layout()
-    
+
+
+def plot_pressure(df):
+    # Convert raw array field into list of ints
+    df["_data"] = df["_data"].apply(parse_array)
+
+    # Expand into new columns
+    df[["p1", "p2", "p3", "other"]] = pd.DataFrame(df["_data"].tolist(), index=df.index)
+
+    # Ensure they are numeric numpy arrays
+    p1 = df["p1"].astype(float).to_numpy()
+    p2 = df["p2"].astype(float).to_numpy()
+    p3 = df["p3"].astype(float).to_numpy()
+    t  = df["elapsed_time"].astype(float).to_numpy()
+
+    # Plot pressures vs elapsed_time
+    plt.figure(figsize=(10,6))
+    plt.plot(t, p1, label="Pressure 1")
+    plt.plot(t, p2, label="Pressure 2")
+    plt.plot(t, p3, label="Pressure 3")
+
+    plt.xlabel("Elapsed Time [s]")
+    plt.ylabel("Pressure")
+    plt.title("Pressure Signals vs Elapsed Time")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+
+
+
 
 def message_to_dict(msg):
     """Recursively flatten a ROS message into a dict."""
@@ -330,7 +397,7 @@ class Trial:
 
 if __name__ == "__main__":
 
-    bag_file = "/home/alejo/franka_bags/franka_joint_bag/franka_joint_bag_0.db3"
+    bag_file = "/home/alejo/franka_bags/franka_joint_bag_replay/franka_joint_bag_0.db3"
     trial = Trial(bag_file, csv_dir="bag_csvs")
 
     trial.list_topics()   # 🔹 prints all topics    
@@ -345,6 +412,9 @@ if __name__ == "__main__":
     # --- EEF WRENCH ---
     print(trial.NS_1_franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
     plot_wrench(trial.NS_1_franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
+
+    # --- PRESSURE SIGNALS ---
+    plot_pressure(trial.microROS_sensor_data)
     
 
     plt.show()
