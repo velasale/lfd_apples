@@ -12,9 +12,11 @@ class GripperController(Node):
         # Parameters
         self.declare_parameter('distance_threshold', 50)   # mm
         self.declare_parameter('pressure_threshold', 600)  # hPa
+        self.declare_parameter('release_timer', 10)  # sec
 
         self.distance_threshold = self.get_parameter('distance_threshold').value
         self.pressure_threshold = self.get_parameter('pressure_threshold').value
+        self.timer_value = self.get_parameter('release_timer').value
 
         # Subscribers
         self.distance_sub = self.create_subscription(Int16MultiArray, 'microROS/sensor_data', self.gripper_sensors_callback, 10)
@@ -56,7 +58,7 @@ class GripperController(Node):
             self.flag_distance = True
 
         # Check Pressure
-        if not self.flag_engage and max(msg.data[:3]) < self.distance_threshold:
+        if not self.flag_engage and max(msg.data[:3]) < self.pressure_threshold:
             self.get_logger().info(f"Pressures {msg.data[0], msg.data[1], msg.data[2]} < {self.pressure_threshold}, cups engaged, deploying fingers")
             req = SetBool.Request()
             req.data = True
@@ -65,8 +67,8 @@ class GripperController(Node):
 
             # Start auto-off timer once fingers are engaged
             if self.auto_off_timer is None:
-                self.get_logger().info(f"Starting auto-off timer ({5.0} s)...")
-                self.auto_off_timer = self.create_timer(5.0, self.auto_off_callback)
+                self.get_logger().info(f"Starting auto-off timer ({self.timer_value} s)...")
+                self.auto_off_timer = self.create_timer(self.timer_value, self.auto_off_callback)
 
     def auto_off_callback(self):
         """Called by timer to switch off valve and retract fingers."""
@@ -77,9 +79,10 @@ class GripperController(Node):
         self.valve_client.call_async(req)
         self.fingers_client.call_async(req)
 
+        # TODO: FIX this
         # Reset state
-        self.flag_distance = False
-        self.flag_engage = False
+        # self.flag_distance = False
+        # self.flag_engage = False
 
         # Destroy timer so it only runs once
         if self.auto_off_timer is not None:
