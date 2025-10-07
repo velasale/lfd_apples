@@ -1,0 +1,12 @@
+# Data #
+*.json
+*.bag
+*.csv
+*.bag.active
+# *.png
+*.idea
+*.xlsx
+*.avi
+
+# Cache#
+*.pyc
