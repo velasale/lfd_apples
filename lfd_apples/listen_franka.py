@@ -27,10 +27,10 @@ def main():
         bag_proc = subprocess.Popen([
             "ros2", "bag", "record",
             "-o", BAG_NAME,
-            "/NS_1/joint_states",
-            "/NS_1/franka_robot_state_broadcaster/current_pose",
-            "/NS_1/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame",
-            "/NS_1/franka_robot_state_broadcaster/robot_state",
+            "/joint_states",
+            "/franka_robot_state_broadcaster/current_pose",
+            "/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame",
+            "/franka_robot_state_broadcaster/robot_state",
             "microROS/sensor_data",
         ])
 
