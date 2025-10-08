@@ -223,13 +223,16 @@ def plot_wrench(df):
     axs[0].plot(t, fz, label="Fz", color="b")
     axs[0].set_ylabel("Force [N]")
     axs[0].legend()
+    axs[0].set_ylim([-12, 12])
 
     axs[1].plot(t, tx, label="Tx", color="r")
     axs[1].plot(t, ty, label="Ty", color="g")
     axs[1].plot(t, tz, label="Tz", color="b")
     axs[1].set_ylabel("Torque [Nm]")
-    axs[1].set_xlabel("Time [s]")
+    axs[1].set_xlabel("Time [s]")   
     axs[1].legend()
+    axs[1].set_ylim([-3, 3])
+    
 
     plt.tight_layout()
 
@@ -405,13 +408,13 @@ if __name__ == "__main__":
 
     # --- EEF POSE --- 
     # Access topics directly
-    print(trial.NS_1_joint_states.head())
-    print(trial.NS_1_franka_robot_state_broadcaster_current_pose.head())
-    plot_3dpose(trial.NS_1_franka_robot_state_broadcaster_current_pose)
+    print(trial.joint_states.head())
+    print(trial.franka_robot_state_broadcaster_current_pose.head())
+    plot_3dpose(trial.franka_robot_state_broadcaster_current_pose)
     
     # --- EEF WRENCH ---
-    print(trial.NS_1_franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
-    plot_wrench(trial.NS_1_franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
+    print(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
+    plot_wrench(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
 
     # --- PRESSURE SIGNALS ---
     plot_pressure(trial.microROS_sensor_data)
