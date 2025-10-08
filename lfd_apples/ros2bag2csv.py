@@ -7,6 +7,8 @@ from scipy.spatial.transform import Rotation as R
 import ast
 import re
 import array
+import itertools
+from scipy.ndimage import gaussian_filter, median_filter
 
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
@@ -141,7 +143,7 @@ def parse_array(x):
 
 
 # ------------------ PLOTTING FUNCTIONS ----------------- #
-def plot_3dpose(df):
+def plot_3dpose(df, engagement_time=None):
     """Plot 3D positions from a DataFrame containing a geometry_msgs/Pose message."""
 
     fig = plt.figure()
@@ -161,7 +163,17 @@ def plot_3dpose(df):
     quats = np.column_stack((qx, qy, qz, qw))
     rot = R.from_quat(quats)
 
-    ax.plot(x, y, z, label='End-Effector Path', color = 'black')
+    # Split trajectory before and after engagement time
+    if engagement_time is not None:
+        mask_before = t < engagement_time
+        mask_after = t >= engagement_time
+
+        ax.plot(x[mask_before], y[mask_before], z[mask_before],
+                label='approach', color='orange', linewidth=2)
+        ax.plot(x[mask_after], y[mask_after], z[mask_after],
+                label='pick', color='green', linewidth=2)
+    else:
+        ax.plot(x, y, z, label='End-Effector Path', color='black', linewidth=2)
     
 
     # Plot unit frames along the path every `step` points
@@ -179,8 +191,8 @@ def plot_3dpose(df):
         ax.quiver(xi, yi, zi, z_axis[0], z_axis[1], z_axis[2], color='b', length=scale)
 
     # Add labels at start and end
-    ax.text(x[0], y[0], z[0], "Start", color='black', fontsize=10, weight='bold')
-    ax.text(x[-1], y[-1], z[-1], "End", color='black', fontsize=10, weight='bold')
+    ax.text(x[0], y[0], z[0], "start", color='black', fontsize=10)
+    ax.text(x[-1], y[-1], z[-1], "end", color='black', fontsize=10)
 
     x_limits = ax.get_xlim3d()
     y_limits = ax.get_ylim3d()
@@ -196,44 +208,67 @@ def plot_3dpose(df):
     ax.set_ylim3d([y_middle - max_range/2, y_middle + max_range/2])
     ax.set_zlim3d([z_middle - max_range/2, z_middle + max_range/2])
 
-    ax.plot(x, y, label = 'Shadow', zdir='z', zs=min(z), color='black', alpha=0.5)
+    ax.plot(x, y, label = 'shadow', zdir='z', zs=z_middle - max_range/2, color='black', alpha=0.5)
 
-    ax.set_xlabel('X (meters)')
-    ax.set_ylabel('Y (meters)')
-    ax.set_zlabel('Z (meters)')
+    ax.set_xlabel('x [m]')
+    ax.set_ylabel('y [m]')
+    ax.set_zlabel('z [m]')
     ax.set_title('3D End-Effector Position')
     ax.legend()    
     
 
 def plot_wrench(df):
     """Plot forces and torques from a DataFrame containing a geometry_msgs/Wrench message."""
-    # Position
+    # Position unfiltered signals
     fx = np.array(df['_wrench._force._x'].to_list(), dtype=float)
     fy = np.array(df['_wrench._force._y'].to_list(), dtype=float)
     fz = np.array(df['_wrench._force._z'].to_list(), dtype=float)      
     tx = np.array(df['_wrench._torque._x'].to_list(), dtype=float)
     ty = np.array(df['_wrench._torque._y'].to_list(), dtype=float)
     tz = np.array(df['_wrench._torque._z'].to_list(), dtype=float)      
+
+    wrench = [fx, fy, fz, tx, ty, tz]
     t = np.array(df["elapsed_time"].to_list(), dtype=float)
 
-    fig, axs = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    # Apply median filter to smooth the signals
+    wrench_filtered = [gaussian_filter(w, 100) for w in wrench]
+    
+    # Tangential forces
+    tangential_force = np.sqrt(wrench_filtered[0]**2 + wrench_filtered[1]**2)
 
-    axs[0].plot(t, fx, label="Fx", color="r")
-    axs[0].plot(t, fy, label="Fy", color="g")
-    axs[0].plot(t, fz, label="Fz", color="b")
+
+    fig, axs = plt.subplots(3, 1, figsize=(10, 6), sharex=True)
+
+    axs[0].plot(t, wrench[0], color="r", alpha=0.3)
+    axs[0].plot(t, wrench_filtered[0], label="Fx filtered", color="r")
+    axs[0].plot(t, wrench[1], color="g", alpha=0.3)
+    axs[0].plot(t, wrench_filtered[1], label="Fy filtered", color="g")
+    axs[0].plot(t, wrench[2], color="b", alpha=0.3)
+    axs[0].plot(t, wrench_filtered[2], label="Fz filtered", color="b")
     axs[0].set_ylabel("Force [N]")
     axs[0].legend()
     axs[0].set_ylim([-12, 12])
+    axs[0].grid(True)
 
-    axs[1].plot(t, tx, label="Tx", color="r")
-    axs[1].plot(t, ty, label="Ty", color="g")
-    axs[1].plot(t, tz, label="Tz", color="b")
-    axs[1].set_ylabel("Torque [Nm]")
-    axs[1].set_xlabel("Time [s]")   
+    axs[1].plot(t, tangential_force, color="brown", label="Tangential Force √(Fx²+Fy²)")
+    axs[1].plot(t, wrench_filtered[2], color="b", label="Normal Force Fz")    
+    axs[1].set_ylabel("Force [N]")
     axs[1].legend()
-    axs[1].set_ylim([-3, 3])
-    
+    axs[1].set_ylim([-12, 12])
+    axs[1].grid(True)
 
+    axs[2].plot(t, wrench[3], color="r", alpha=0.3)
+    axs[2].plot(t, wrench_filtered[3], label="Tx filtered", color="r")
+    axs[2].plot(t, wrench[4], color="g", alpha=0.3)
+    axs[2].plot(t, wrench_filtered[4], label="Ty filtered", color="g")
+    axs[2].plot(t, wrench[5], color="b", alpha=0.3)
+    axs[2].plot(t, wrench_filtered[5], label="Tz filtered", color="b")
+    axs[2].set_ylabel("Torque [Nm]")
+    axs[2].set_xlabel("Elapsed Time [s]")   
+    axs[2].legend()
+    axs[2].set_ylim([-3, 3])
+    axs[2].grid(True)
+        
     plt.tight_layout()
 
 
@@ -241,24 +276,27 @@ def plot_pressure(df):
     # Convert raw array field into list of ints
     df["_data"] = df["_data"].apply(parse_array)
 
+    colors = itertools.cycle(('#0072B2', '#E69F00', '#000000'))
+
     # Expand into new columns
     df[["p1", "p2", "p3", "other"]] = pd.DataFrame(df["_data"].tolist(), index=df.index)
 
     # Ensure they are numeric numpy arrays
-    p1 = df["p1"].astype(float).to_numpy()
-    p2 = df["p2"].astype(float).to_numpy()
-    p3 = df["p3"].astype(float).to_numpy()
+    p1 = df["p1"].astype(float).to_numpy() / 10  # convert to kPa
+    p2 = df["p2"].astype(float).to_numpy() / 10  # convert to kPa 
+    p3 = df["p3"].astype(float).to_numpy()  / 10  # convert to kPa
     t  = df["elapsed_time"].astype(float).to_numpy()
 
     # Plot pressures vs elapsed_time
     plt.figure(figsize=(10,6))
-    plt.plot(t, p1, label="Pressure 1")
-    plt.plot(t, p2, label="Pressure 2")
-    plt.plot(t, p3, label="Pressure 3")
+    plt.plot(t, p1, label="suction cup a", color = next(colors))
+    plt.plot(t, p2, label="suction cup b", color = next(colors), linestyle='--')
+    plt.plot(t, p3, label="suction cup c", color = next(colors), linestyle='-.')
 
     plt.xlabel("Elapsed Time [s]")
-    plt.ylabel("Pressure")
-    plt.title("Pressure Signals vs Elapsed Time")
+    plt.ylabel("Air Pressure [kPa]")
+    plt.title("Air Pressure Signals vs Elapsed Time")
+    plt.ylim([0,110])
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
@@ -299,6 +337,8 @@ class Trial:
         self.csv_dir = csv_dir
         os.makedirs(self.csv_dir, exist_ok=True)
 
+        self.engagement_time = 0.0
+
         # If CSVs already exist → load them
         if self._csvs_exist():
             print("📂 Loading topics from CSVs...")
@@ -306,9 +346,11 @@ class Trial:
         else:
             print("🗄️ Parsing bag file and saving CSVs...")
             self._load_topics()
-            self.save_to_files()
+            self.save_to_files(self.csv_dir)
 
+        # Parameters
         self.PARAMETER = 5.32
+        self.ENGAMENT_THRESHOLD = 600.0
 
     def _csvs_exist(self):
         """Check if there are any CSVs in the output dir."""
@@ -354,15 +396,14 @@ class Trial:
 
         conn.close()
 
-        def _load_from_csv(self):
-            """Load topics from saved CSVs."""
-            for fname in os.listdir(self.csv_dir):
-                if fname.endswith(".csv"):
-                    attr_name = fname.replace(".csv", "")
-                    df = pd.read_csv(os.path.join(self.csv_dir, fname))
-                    setattr(self, attr_name, df)
-                    self.topics_names.append(attr_name)
-
+    def _load_from_csv(self):
+        """Load topics from saved CSVs."""
+        for fname in os.listdir(self.csv_dir):
+            if fname.endswith(".csv"):
+                attr_name = fname.replace(".csv", "")
+                df = pd.read_csv(os.path.join(self.csv_dir, fname))
+                setattr(self, attr_name, df)
+                self.topics_names.append(attr_name)
 
     def list_topics(self):
         print("Available topics:")
@@ -373,7 +414,7 @@ class Trial:
         attrs = [a for a in dir(self) if not a.startswith("_") and isinstance(getattr(self, a), pd.DataFrame)]
         return f"<Trial file={os.path.basename(self.filepath)}, topics={attrs}>"
 
-    def save_to_files(self, output_dir="bag_exports"):
+    def save_to_files(self, output_dir):
         """Save each topic DataFrame to CSV and JSON."""
         os.makedirs(output_dir, exist_ok=True)
 
@@ -394,27 +435,58 @@ class Trial:
             #     df.to_json(json_path, orient="records", lines=True)
             #     print(f"💾 Saved JSON: {json_path}")
 
+    def get_engagement_time(self):
+        
+        """Estimate the time when the gripper engaged based on pressure data."""
+        if not hasattr(self, "microROS_sensor_data"):
+            print("⚠️ No microROS_sensor_data topic found.")
+            return None     
+        df = self.microROS_sensor_data.copy()
+        df["_data"] = df["_data"].apply(parse_array)
+        df[["p1", "p2", "p3", "other"]] = pd.DataFrame(df["_data"].tolist(), index=df.index)
+        p1 = df["p1"].astype(float).to_numpy()
+        p2 = df["p2"].astype(float).to_numpy()
+        p3 = df["p3"].astype(float).to_numpy()
+        t  = df["elapsed_time"].astype(float).to_numpy()    
+
+        engaged_indices = np.where((p1 < self.ENGAMENT_THRESHOLD) &
+                                   (p2 < self.ENGAMENT_THRESHOLD) &
+                                   (p3 < self.ENGAMENT_THRESHOLD))[0]
+        if len(engaged_indices) == 0:
+            print("⚠️ No engagement detected based on pressure threshold.")
+            return None 
+        self.engagement_time = t[engaged_indices[0]]
+        print(f"✅ Engagement detected at t = {self.engagement_time:.2f} s")    
+        
+        return self.engagement_time
+
+
 
 
 
 
 if __name__ == "__main__":
 
-    bag_file = "/home/alejo/franka_bags/franka_joint_bag_replay/franka_joint_bag_0.db3"
-    trial = Trial(bag_file, csv_dir="bag_csvs")
+    folder = "/home/alejo/franka_bags"    
+    trial = "/franka_joint_bag_4_YAW"
+    bag_file = folder + trial + "/franka_joint_bag_0.db3"
+    csv_dir = folder + trial + "/bag_csvs"
+
+    trial = Trial(bag_file, csv_dir)
 
     trial.list_topics()   # 🔹 prints all topics    
+    trial.get_engagement_time()  # 🔹 estimates engagement time from pressure data
       
 
     # --- EEF POSE --- 
     # Access topics directly
-    print(trial.joint_states.head())
-    print(trial.franka_robot_state_broadcaster_current_pose.head())
-    plot_3dpose(trial.franka_robot_state_broadcaster_current_pose)
+    print(trial.NS_1_joint_states.head())
+    print(trial.NS_1_franka_robot_state_broadcaster_current_pose.head())
+    plot_3dpose(trial.NS_1_franka_robot_state_broadcaster_current_pose, trial.engagement_time)
     
     # --- EEF WRENCH ---
-    print(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
-    plot_wrench(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
+    print(trial.NS_1_franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
+    plot_wrench(trial.NS_1_franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
 
     # --- PRESSURE SIGNALS ---
     plot_pressure(trial.microROS_sensor_data)
