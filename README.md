@@ -46,7 +46,8 @@ ros2 run lfd_apples listen_franka
 ```
 
 #### Free drive node
-I use this example to simply free drive the arm while doing the demo. 
+I use this example to simply free drive the arm while doing the demo.
+
 ```bash
 ros2 launch franka_bringup example.launch.py controller_name:=move_to_start_example_controller
 ```
