@@ -9,4 +9,5 @@
 *.avi
 
 # Cache#
+__pycache__/
 *.pyc
