@@ -7,24 +7,22 @@
 
 ---
 
-## GRIPPER Setup
+## GRIPPER
 
-### 1. Create a Wi-Fi Hotspot
-Turn your laptop into a Wi-Fi hotspot so it can communicate with the gripper. Replace `wlp108s0f0` with your wireless interface name (check with `nmcli device status` or `ip link`).
+### lfd_gripper.launch.py 
+This launch file (i) turns your laptop into a Wi-Fi hotspot, and (ii) runs the micro-ROS agent to handle the communcation with the ESP32 on the gripper's side.
 
-```bash
-sudo nmcli device wifi hotspot ifname wlp108s0f0 ssid alejos password harvesting
-```
-
-### 2. Run microROS agent
-
-Start the micro-ROS agent on the same machine that runs the hotspot:
+Notes: 
+* Replace `wlp108s0f0` in the launch file with your wireless interface name. You can check this with `nmcli device status` or `ip link`.
+* Use the **ssid / password** that are uploaded to the ESP32 board. By default these values are `alejos` / `harvesting`.
 
 ```bash
-ros2 run micro_ros_agent micro_ros_agent udp4 --port 8888
+ros2 launch lfd_apples gripper_setup.launch.py ssid:=my_hotspot password:=mypassword
+
 ```
 
-## ARM setup
+
+## ARM
 
 ### 1. Recording Demonstrations
 This step is meant for recording the trajectory of the arm as the human drives it. It requires the following nodes to be running:
