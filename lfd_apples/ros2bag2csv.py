@@ -468,25 +468,25 @@ class Trial:
 if __name__ == "__main__":
 
     folder = "/home/alejo/franka_bags"    
-    trial = "/franka_joint_bag_4_YAW"
+    trial = "/franka_joint_bag_hdemo_2"
     bag_file = folder + trial + "/franka_joint_bag_0.db3"
     csv_dir = folder + trial + "/bag_csvs"
 
     trial = Trial(bag_file, csv_dir)
 
     trial.list_topics()   # 🔹 prints all topics    
-    trial.get_engagement_time()  # 🔹 estimates engagement time from pressure data
+    trial.get_engagement_time()  # 🔹 estimates time of engagement from pressure data
       
 
     # --- EEF POSE --- 
     # Access topics directly
-    print(trial.NS_1_joint_states.head())
-    print(trial.NS_1_franka_robot_state_broadcaster_current_pose.head())
-    plot_3dpose(trial.NS_1_franka_robot_state_broadcaster_current_pose, trial.engagement_time)
+    print(trial.joint_states.head())
+    print(trial.franka_robot_state_broadcaster_current_pose.head())
+    plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time)
     
     # --- EEF WRENCH ---
-    print(trial.NS_1_franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
-    plot_wrench(trial.NS_1_franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
+    print(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
+    plot_wrench(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
 
     # --- PRESSURE SIGNALS ---
     plot_pressure(trial.microROS_sensor_data)
