@@ -13,7 +13,7 @@
 This launch file performs the following actions:
 * Turns your laptop into a Wi-Fi hotspot
 * Runs the micro-ROS agent to handle the communication with the ESP32 on the gripper's side.
-* Runs a ROS2 node to handle switching on/ff the air and fingers
+* Runs a ROS2 node to control the air valve, and fingers. It is meant to ease the demonstrator's overhead by automatically switching the air ON/OFF, and CLOSE/OPEN the fingers.
 
 Notes: 
 * Replace `wlp108s0f0` in the launch file with your wireless interface name. You can check this with `nmcli device status` or `ip link`.
@@ -30,14 +30,6 @@ ros2 launch lfd_apples lfd_gripper.launch.py ssid:=my_hotspot password:=mypasswo
 ### 1. Recording Demonstrations
 This step is meant for recording the trajectory of the arm as the human drives it. It requires the following nodes to be running:
 
-#### lfd_trial.py node
-This node controls the air valve, and fingers. It is meant to ease the demonstrator's overhead by automatically switching the air ON/OFF, and CLOSE/OPEN the fingers. 
-- The air is switched ON when the distance signal from the Time-Of-Flight sensor is less than 50mm (from the target). 
-- Fingers are deployed when the air-pressure readings from each suction cup go below the engagement threshold (~600hPa).
-
-```bash
-ros2 run lfd_apples lfd_trial
-```
 
 #### listen_franka.py node
 This node subscribes to the arm's and gripper's ros2 topics and saves them in a bagfile
