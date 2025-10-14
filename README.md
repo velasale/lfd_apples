@@ -10,14 +10,17 @@
 ## GRIPPER
 
 ### lfd_gripper.launch.py 
-This launch file (i) turns your laptop into a Wi-Fi hotspot, and (ii) runs the micro-ROS agent to handle the communcation with the ESP32 on the gripper's side.
+This launch file performs the following actions:
+* Turns your laptop into a Wi-Fi hotspot
+* Runs the micro-ROS agent to handle the communication with the ESP32 on the gripper's side.
+* Runs a ROS2 node to handle switching on/ff the air and fingers
 
 Notes: 
 * Replace `wlp108s0f0` in the launch file with your wireless interface name. You can check this with `nmcli device status` or `ip link`.
 * Use the **ssid / password** that are uploaded to the ESP32 board. By default these values are `alejos` / `harvesting`.
 
 ```bash
-ros2 launch lfd_apples gripper_setup.launch.py ssid:=my_hotspot password:=mypassword
+ros2 launch lfd_apples lfd_gripper.launch.py ssid:=my_hotspot password:=mypassword
 
 ```
 

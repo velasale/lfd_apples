@@ -81,8 +81,9 @@ class GripperController(Node):
 
         # TODO: FIX this
         # Reset state
-        # self.flag_distance = False
-        # self.flag_engage = False
+        self.flag_distance = False
+        self.flag_engage = False
+        self.flag_init = True
 
         # Destroy timer so it only runs once
         if self.auto_off_timer is not None:
