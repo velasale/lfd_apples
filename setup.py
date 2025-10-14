@@ -23,7 +23,7 @@ setup(
         'console_scripts': [
             'listen_franka = lfd_apples.listen_franka:main',
             'free_drive_franka = lfd_apples.free_drive_franka:main',          
-            'lfd_trial = lfd_apples.lfd_trial:main',    
+            'lfd_automatic_gripper = lfd_apples.lfd_automatic_gripper:main',    
             'lfd_replay = lfd_apples.lfd_replay:main',     
         ],
     },

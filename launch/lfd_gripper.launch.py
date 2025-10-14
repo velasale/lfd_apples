@@ -1,3 +1,4 @@
+from launch_ros.actions import Node
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
 from launch.substitutions import LaunchConfiguration
@@ -41,5 +42,18 @@ def generate_launch_description():
                     output='screen',
                 )
             ]
+        ),
+
+        TimerAction(
+            period=8.0,
+            actions=[
+                Node(
+                    package='lfd_apples',
+                    executable='lfd_automatic_gripper',
+                    name='automatic_gripper',
+                    output='screen',
+                )
+            ]
         )
+        
     ])
