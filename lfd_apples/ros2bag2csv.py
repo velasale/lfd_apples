@@ -16,6 +16,9 @@ from rosidl_runtime_py.utilities import get_message
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D 
 
+import cv2
+import numpy as np
+
 plt.rcParams.update({
     "text.usetex": False,          # don't need full LaTeX, use mathtext
     "font.family": "serif",        # use a serif font
@@ -330,6 +333,74 @@ def message_to_dict(msg):
 
 
 
+def extract_images_from_bag(db3_file_path, topic_name="/gripper/rgb_palm_camera/image_raw", output_dir="camera_frames"):
+    """
+    Extracts image frames from a ROS 2 .db3 bag topic and saves them as JPGs.
+
+    Args:
+        db3_file_path (str): Path to the .db3 bag file
+        topic_name (str): Full topic name for the image (default: palm camera)
+        output_dir (str): Output folder for saved JPGs
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    conn = sqlite3.connect(db3_file_path)
+    cursor = conn.cursor()
+
+    # Get topic ID for the given name
+    cursor.execute("SELECT id, type FROM topics WHERE name=?", (topic_name,))
+    row = cursor.fetchone()
+    if not row:
+        print(f"❌ Topic '{topic_name}' not found in bag.")
+        conn.close()
+        return
+    topic_id, topic_type = row
+    print(f"\n✅ Found topic: {topic_name} ({topic_type})")
+
+    # Load message class
+    msg_class = get_message(topic_type)
+
+    # Get all messages
+    cursor.execute("SELECT timestamp, data FROM messages WHERE topic_id=?", (topic_id,))
+    rows = cursor.fetchall()
+    print(f"🖼️ Found {len(rows)} frames. Saving to {output_dir}/ ...")
+
+    # Reference start time
+    start_time = rows[0][0]
+
+    # Save each frame
+    for i, (timestamp, data) in enumerate(rows):
+        msg = deserialize_message(data, msg_class)
+
+        # Decode the raw image data
+        height = msg.height
+        width = msg.width
+        encoding = msg.encoding.lower()
+
+        np_arr = np.frombuffer(msg.data, dtype=np.uint8)
+
+        # Convert based on encoding
+        if encoding in ["rgb8", "bgr8"]:
+            img = np_arr.reshape((height, width, 3))
+        elif encoding == "mono8":
+            img = np_arr.reshape((height, width))
+        else:
+            print(f"⚠️ Skipping frame {i}: unsupported encoding '{encoding}'")
+            continue
+
+        # If RGB, convert to BGR for OpenCV
+        if encoding == "rgb8":
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+        t_sec = (timestamp - start_time)/ 1e9
+        print(i, timestamp, t_sec)
+        filename = os.path.join(output_dir, f"frame_{i:05d}_{t_sec:.6f}.jpg")
+        cv2.imwrite(filename, img)
+
+    conn.close()
+    print(f"✅ Done! Extracted {len(rows)} frames to '{output_dir}/'")
+
+
 class Trial:
     def __init__(self, db3_file_path, csv_dir="csv_topics"):
         self.filepath = db3_file_path
@@ -468,15 +539,22 @@ class Trial:
 if __name__ == "__main__":
 
     folder = "/home/alejo/franka_bags"    
-    trial = "/franka_joint_bag_hdemo_2"
-    bag_file = folder + trial + "/franka_joint_bag_0.db3"
+    trial = "/lfd_bag_main"
+    bag_file = folder + trial + "/lfd_bag_main_0.db3"
     csv_dir = folder + trial + "/bag_csvs"
 
     trial = Trial(bag_file, csv_dir)
-
     trial.list_topics()   # 🔹 prints all topics    
     trial.get_engagement_time()  # 🔹 estimates time of engagement from pressure data
-      
+
+    camera_topic = "/gripper/rgb_palm_camera/image_raw"
+    output_frames = os.path.join(folder, "lfd_bag_ihcamera", "camera_frames")     
+    extract_images_from_bag(
+        db3_file_path=os.path.join(folder,"lfd_bag_ihcamera","lfd_bag_ihcamera_0.db3"),
+        topic_name=camera_topic,
+        output_dir=output_frames
+    )
+
 
     # --- EEF POSE --- 
     # Access topics directly
