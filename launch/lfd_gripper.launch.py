@@ -16,13 +16,23 @@ def generate_launch_description():
         description='Wi-Fi password for the hotspot'
     )
 
+    # --- Declare camera device number arg ---
+    camera_device_arg = DeclareLaunchArgument(
+        'palm_camera_device_num',
+        default_value='2',
+        description='Camera device number for the palm camera'
+    )
+
     # Use LaunchConfiguration to get the values
     ssid = LaunchConfiguration('ssid')
     password = LaunchConfiguration('password')
+    camera_device_num = LaunchConfiguration('palm_camera_device_num')
+
 
     return LaunchDescription([
         ssid_arg,
         password_arg,
+        camera_device_arg,
 
         # Start Wi-Fi hotspot using parameters
         ExecuteProcess(
@@ -52,6 +62,20 @@ def generate_launch_description():
                     executable='lfd_automatic_gripper',
                     name='automatic_gripper',
                     output='screen',
+                )
+            ]
+        ),
+
+        # --- Palm camera node after 10s ---
+        TimerAction(
+            period=10.0,
+            actions=[
+                Node(
+                    package='lfd_apples',              # or your actual package name
+                    executable='lfd_inhand_camera',     # make sure this matches your entry point
+                    name='gripper_palm_camera_publisher',
+                    output='screen',
+                    parameters=[{'palm_camera_device_num': camera_device_num}],
                 )
             ]
         )
