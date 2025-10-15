@@ -25,6 +25,7 @@ setup(
             'free_drive_franka = lfd_apples.free_drive_franka:main',          
             'lfd_automatic_gripper = lfd_apples.lfd_automatic_gripper:main',    
             'lfd_replay = lfd_apples.lfd_replay:main',     
+            'lfd_inhand_camera = lfd_apples.lfd_inhand_camera:main',
         ],
     },
 )
