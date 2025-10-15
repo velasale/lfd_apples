@@ -98,6 +98,7 @@ def main():
             "/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame",
             "/franka_robot_state_broadcaster/robot_state",
             "microROS/sensor_data",
+            "gripper/rgb_palm_camera/image_raw",
         ])
 
         # Wait for the bag recording to finish (user presses Ctrl+C)

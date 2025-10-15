@@ -1,5 +1,5 @@
 # ACKNOWLEDGEMENT:
-# This script was adapted from:
+# Script adapted from:
 # https://github.com/OSUrobotics/apple-harvest/blob/develop/harvest_hardware/robot_custom_hardware/robot_custom_hardware/gripper_palm_camera.py
 
 #!/usr/bin/env python3
