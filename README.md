@@ -10,21 +10,24 @@
 ## GRIPPER
 
 ### lfd_gripper.launch.py 
-This launch file performs the following actions:
-* Turns your laptop into a Wi-Fi hotspot
-* Runs the micro-ROS agent to handle the communication with the ESP32 on the gripper's side.
-* Runs a ROS2 node to control the air valve, and fingers. It is meant to ease the demonstrator's overhead by automatically switching the air ON/OFF, and CLOSE/OPEN the fingers.
-* Runs a node to publish the In-Hand camera device
+This launch file performs the following actions: 
 
-Notes: 
-* Replace `wlp108s0f0` in the launch file with your wireless interface name. You can check this with `nmcli device status` or `ip link`.
-* Use the **ssid / password** that are uploaded to the ESP32 board. By default these values are `alejos` / `harvesting`.
+1) Turns your laptop into a **Wi-Fi hotspot**.
+2) Runs **microROS agent** to handle the communication with the ESP32 on the gripper's side.
+3) Runs a ROS2 node to control the air valve, and fingers. It reduces the demonstrator's overhead by automatically switching the air ON/OFF, and CLOSE/OPEN the fingers.
+4) Runs a node to publish the **In-Hand camera** image.
+
 
 ```bash
 ros2 launch lfd_apples lfd_gripper.launch.py ssid:=my_hotspot password:=mypassword palm_camera_device_num:=4
 
 ```
 
+
+Notes: 
+* Replace `wlp108s0f0` in the launch file with your wireless interface name. You can check this with `nmcli device status` or `ip link`.
+* Use the **ssid / password** that were previously uploaded to the ESP32 board. By default these values are `alejos` / `harvesting`.
+* Check the camera device number with `v4l2-ctl --list-devices`.
 
 ## ARM
 

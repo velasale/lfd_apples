@@ -45,7 +45,7 @@ def generate_launch_description():
 
         # Start micro-ROS agent after a 5-second delay
         TimerAction(
-            period=5.0,
+            period=8.0,
             actions=[
                 ExecuteProcess(
                     cmd=['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'udp4', '--port', '8888'],
@@ -55,7 +55,7 @@ def generate_launch_description():
         ),
 
         TimerAction(
-            period=8.0,
+            period=10.0,
             actions=[
                 Node(
                     package='lfd_apples',
