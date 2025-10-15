@@ -53,18 +53,26 @@ class GripperPalmCamera(Node):
     
     def start(self):
         try:
+            dt = 1.0 / self.target_fr  # time between frames
+            last_time = self.get_clock().now().nanoseconds / 1e9
             while rclpy.ok():
                 ret, frame = self.camera.read()
-                image = frame
+                now = self.get_clock().now().nanoseconds / 1e9
+                if now - last_time < dt:
+                    continue  # skip until next frame time
+                last_time = now
+
                 if ret:
-                    img_msg = self.bridge.cv2_to_imgmsg(image, "bgr8")
+                    img_msg = self.bridge.cv2_to_imgmsg(frame, "bgr8")
                     img_msg.header.stamp = self.get_clock().now().to_msg()
                     img_msg.header.frame_id = "gripper_palm_camera_optical_link"
                     self.camera_pub.publish(img_msg)
         except KeyboardInterrupt:
-            return
-        cv2.destroyAllWindows()
-        self.camera.release()
+            pass
+        finally:
+            cv2.destroyAllWindows()
+            self.camera.release()
+
         
 
 def main(args=None):
