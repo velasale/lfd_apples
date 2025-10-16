@@ -16,10 +16,11 @@ This launch file performs the following actions:
 2) Runs **microROS agent** to handle the communication with the ESP32 on the gripper's side.
 3) Runs a ROS2 node to control the air valve, and fingers. It reduces the demonstrator's overhead by automatically switching the air ON/OFF, and CLOSE/OPEN the fingers.
 4) Runs a node to publish the **In-Hand camera** image.
+5) Runs a node to publish the **Fixed camera** image
 
 
 ```bash
-ros2 launch lfd_apples lfd_gripper.launch.py ssid:=my_hotspot password:=mypassword palm_camera_device_num:=4
+ros2 launch lfd_apples lfd_gripper.launch.py ssid:=my_hotspot password:=mypassword palm_camera_device_num:=4 fixed_camera_device_num:=5
 
 ```
 
