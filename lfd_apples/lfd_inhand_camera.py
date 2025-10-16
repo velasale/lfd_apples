@@ -20,14 +20,20 @@ class GripperPalmCamera(Node):
         super().__init__("gripper_palm_camera_publisher")
 
         # image publisher
-        self.camera_pub = self.create_publisher(Image, "gripper/rgb_palm_camera/image_raw", 10)
+        # declare parameter with default
+        self.declare_parameter("topic_name", "gripper/rgb_palm_camera/image_raw")
+        topic_name = self.get_parameter("topic_name").get_parameter_value().string_value        
+        self.camera_pub = self.create_publisher(Image, topic_name, 10)
         
+        self.declare_parameter("frame_id", "gripper_palm_camera_optical_link")
+        self.frame_id = self.get_parameter("frame_id").get_parameter_value().string_value
+
         # cv bridge to convert to ros image msg
         self.bridge = CvBridge()
 
         # camera vars 
-        self.declare_parameter("palm_camera_device_num", 2)
-        self.device = self.get_parameter("palm_camera_device_num").get_parameter_value().integer_value
+        self.declare_parameter("camera_device_num", 2)
+        self.device = self.get_parameter("camera_device_num").get_parameter_value().integer_value
         self.resolution = resolution
         self.target_fr = target_fr
         self.camera = None

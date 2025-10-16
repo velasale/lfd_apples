@@ -17,22 +17,34 @@ def generate_launch_description():
     )
 
     # --- Declare camera device number arg ---
-    camera_device_arg = DeclareLaunchArgument(
+    palm_camera_device_arg = DeclareLaunchArgument(
         'palm_camera_device_num',
         default_value='2',
         description='Camera device number for the palm camera'
     )
 
+    # --- Declare camera device number arg ---
+    fixed_camera_device_arg = DeclareLaunchArgument(
+        'fixed_camera_device_num',
+        default_value='4',
+        description='Camera device number for the fixed camera'
+    )
+
+
+
+
     # Use LaunchConfiguration to get the values
     ssid = LaunchConfiguration('ssid')
     password = LaunchConfiguration('password')
-    camera_device_num = LaunchConfiguration('palm_camera_device_num')
+    palm_camera_device_num = LaunchConfiguration('palm_camera_device_num')
+    fixed_camera_device_num = LaunchConfiguration('fixed_camera_device_num')
 
 
     return LaunchDescription([
         ssid_arg,
         password_arg,
-        camera_device_arg,
+        palm_camera_device_arg,
+        fixed_camera_device_arg,
 
         # Start Wi-Fi hotspot using parameters
         ExecuteProcess(
@@ -75,9 +87,31 @@ def generate_launch_description():
                     executable='lfd_inhand_camera',     # make sure this matches your entry point
                     name='gripper_palm_camera_publisher',
                     output='screen',
-                    parameters=[{'palm_camera_device_num': camera_device_num}],
+                    parameters=[
+                        {'camera_device_num': palm_camera_device_num},
+                        {'topic_name': 'gripper/rgb_palm_camera/image_raw'},
+                        {'frame_id': 'gripper_palm_camera_optical_link'}                        
+                        ],
                 )
             ]
-        )
+        ),
+
+        # --- Fixed camera node after 10s ---
+        TimerAction(
+            period=10.0,
+            actions=[
+                Node(
+                    package='lfd_apples',              # or your actual package name
+                    executable='lfd_inhand_camera',      # make sure this matches your entry point
+                    name='fixed_camera_publisher',
+                    output='screen',
+                    parameters=[
+                        {'camera_device_num': fixed_camera_device_num},
+                        {'topic_name': 'fixed/rgb_camera/image_raw'},
+                        {'frame_id': 'fixed_camera_optical_link'}                        
+                        ],
+                )   
+            ]
+        ),
         
     ])
