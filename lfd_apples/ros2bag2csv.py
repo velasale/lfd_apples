@@ -282,30 +282,48 @@ def plot_pressure(df):
     colors = itertools.cycle(('#0072B2', '#E69F00', '#000000'))
 
     # Expand into new columns
-    df[["p1", "p2", "p3", "other"]] = pd.DataFrame(df["_data"].tolist(), index=df.index)
+    df[["p1", "p2", "p3", "tof"]] = pd.DataFrame(df["_data"].tolist(), index=df.index)
 
     # Ensure they are numeric numpy arrays
     p1 = df["p1"].astype(float).to_numpy() / 10  # convert to kPa
     p2 = df["p2"].astype(float).to_numpy() / 10  # convert to kPa 
     p3 = df["p3"].astype(float).to_numpy()  / 10  # convert to kPa
+    tof = df["tof"].astype(float).to_numpy() / 10  # convert to cm
     t  = df["elapsed_time"].astype(float).to_numpy()
 
-    # Plot pressures vs elapsed_time
-    plt.figure(figsize=(10,6))
-    plt.plot(t, p1, label="suction cup a", color = next(colors))
-    plt.plot(t, p2, label="suction cup b", color = next(colors), linestyle='--')
-    plt.plot(t, p3, label="suction cup c", color = next(colors), linestyle='-.')
+    # Apply median filter to smooth the signals
+    tof_filtered = gaussian_filter(tof, 3)
 
-    plt.xlabel("Elapsed Time [s]")
-    plt.ylabel("Air Pressure [kPa]")
-    plt.title("Air Pressure Signals vs Elapsed Time")
-    plt.ylim([0,110])
-    plt.legend()
-    plt.grid(True)
+    # Plot pressures vs elapsed_time
+    fig, ax1 = plt.subplots(figsize=(10,6))
+    # Left axis: Pressure
+    ax1.plot(t, p1, label="suction cup a", color = next(colors))
+    ax1.plot(t, p2, label="suction cup b", color = next(colors), linestyle='--')
+    ax1.plot(t, p3, label="suction cup c", color = next(colors), linestyle='-.')
+    ax1.set_xlabel("Elapsed Time [s]")
+    ax1.set_ylabel("Air Pressure [kPa]")
+    ax1.set_ylim([0,110])
+    ax1.grid()
+
+    # Right axis: Time-of-flight
+    ax2 = ax1.twinx()
+    ax2.plot(t, tof_filtered, label="tof filtered", color='blue')    
+    ax2.plot(t, tof, color='blue', alpha=0.3)    
+    ax2.set_ylabel("Time-of-Flight [cm]")
+    ax2.set_ylim([0,31])
+    # ax2.grid()
+
+    # Combine legends from both axes
+    lines, labels = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines + lines2, labels + labels2, loc='upper right')
+    
+    plt.title("Air Pressure Signals vs Elapsed Time")       
+    
     plt.tight_layout()
 
 
-
+# ------------------ MAIN CLASSES & FUNCTIONS ----------------- #
 
 def message_to_dict(msg):
     """Recursively flatten a ROS message into a dict."""
@@ -330,7 +348,6 @@ def message_to_dict(msg):
         return result
     else:
         return {"data": msg}
-
 
 
 def extract_images_from_bag(db3_file_path, topic_name="/gripper/rgb_palm_camera/image_raw",
@@ -553,7 +570,7 @@ class Trial:
 
 if __name__ == "__main__":
 
-    folder = "/home/alejo/franka_bags"    
+    folder = "/home/alejo/franka_bags/cindys_1"    
     trial = "/lfd_bag_main"
     bag_file = folder + trial + "/lfd_bag_main_0.db3"
     csv_dir = folder + trial + "/bag_csvs"
