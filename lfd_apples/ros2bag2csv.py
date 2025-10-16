@@ -333,21 +333,23 @@ def message_to_dict(msg):
 
 
 
-def extract_images_from_bag(db3_file_path, topic_name="/gripper/rgb_palm_camera/image_raw", output_dir="camera_frames"):
+def extract_images_from_bag(db3_file_path, topic_name="/gripper/rgb_palm_camera/image_raw",
+                            output_dir="camera_frames", save_avi=True, fps=30):
     """
-    Extracts image frames from a ROS 2 .db3 bag topic and saves them as JPGs.
+    Extracts image frames from a ROS 2 .db3 bag topic, saves them as JPGs, and optionally as an AVI.
 
     Args:
         db3_file_path (str): Path to the .db3 bag file
         topic_name (str): Full topic name for the image (default: palm camera)
         output_dir (str): Output folder for saved JPGs
+        save_avi (bool): Whether to save an AVI video
+        fps (int or float): Frame rate for AVI
     """
     os.makedirs(output_dir, exist_ok=True)
 
     conn = sqlite3.connect(db3_file_path)
     cursor = conn.cursor()
 
-    # Get topic ID for the given name
     cursor.execute("SELECT id, type FROM topics WHERE name=?", (topic_name,))
     row = cursor.fetchone()
     if not row:
@@ -357,29 +359,27 @@ def extract_images_from_bag(db3_file_path, topic_name="/gripper/rgb_palm_camera/
     topic_id, topic_type = row
     print(f"\n✅ Found topic: {topic_name} ({topic_type})")
 
-    # Load message class
     msg_class = get_message(topic_type)
 
-    # Get all messages
     cursor.execute("SELECT timestamp, data FROM messages WHERE topic_id=?", (topic_id,))
     rows = cursor.fetchall()
     print(f"🖼️ Found {len(rows)} frames. Saving to {output_dir}/ ...")
 
-    # Reference start time
+    if len(rows) == 0:
+        conn.close()
+        return
+
     start_time = rows[0][0]
 
-    # Save each frame
+    video_writer = None
     for i, (timestamp, data) in enumerate(rows):
         msg = deserialize_message(data, msg_class)
 
-        # Decode the raw image data
         height = msg.height
         width = msg.width
         encoding = msg.encoding.lower()
 
         np_arr = np.frombuffer(msg.data, dtype=np.uint8)
-
-        # Convert based on encoding
         if encoding in ["rgb8", "bgr8"]:
             img = np_arr.reshape((height, width, 3))
         elif encoding == "mono8":
@@ -388,17 +388,32 @@ def extract_images_from_bag(db3_file_path, topic_name="/gripper/rgb_palm_camera/
             print(f"⚠️ Skipping frame {i}: unsupported encoding '{encoding}'")
             continue
 
-        # If RGB, convert to BGR for OpenCV
         if encoding == "rgb8":
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
-        t_sec = (timestamp - start_time)/ 1e9
-        print(i, timestamp, t_sec)
+        t_sec = (timestamp - start_time) / 1e9
         filename = os.path.join(output_dir, f"frame_{i:05d}_{t_sec:.6f}.jpg")
         cv2.imwrite(filename, img)
 
+        # Initialize VideoWriter at first frame
+        if save_avi and video_writer is None:
+            avi_path = os.path.join(output_dir, f"{topic_name.strip('/').replace('/', '_')}.avi")
+            fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+            video_writer = cv2.VideoWriter(avi_path, fourcc, fps, (width, height))
+            print(f"🎥 Saving AVI video to {avi_path} at {fps} FPS")
+
+        if save_avi:
+            if len(img.shape) == 2:
+                img_color = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            else:
+                img_color = img
+            video_writer.write(img_color)
+
+    if save_avi and video_writer is not None:
+        video_writer.release()
+
     conn.close()
-    print(f"✅ Done! Extracted {len(rows)} frames to '{output_dir}/'")
+    print(f"✅ Done! Extracted {len(rows)} frames to '{output_dir}/' and saved AVI video.")
 
 
 class Trial:
