@@ -35,6 +35,7 @@ class GripperController(Node):
 
         # Flags
         self.flag_distance = False
+        self.flag_release = False
         self.flag_engage = False
         self.flag_init = True
         self.auto_off_timer = None
@@ -50,12 +51,22 @@ class GripperController(Node):
             self.get_logger().info("Initialization: Valve OFF, Fingers IN")
             return
         
-        if not self.flag_distance and msg.data[3] < self.distance_threshold:
+        if not self.flag_release and msg.data[3] > self.distance_threshold:
+            self.get_logger().info(f"Distance {msg.data[3]} > {self.distance_threshold}, calling valve OFF")
+            req = SetBool.Request()
+            req.data = False
+            self.valve_client.call_async(req)
+            self.flag_release = True
+            self.flag_distance = False
+
+        if self.flag_release and not self.flag_distance and msg.data[3] < self.distance_threshold:
             self.get_logger().info(f"Distance {msg.data[3]} < {self.distance_threshold}, calling valve ON")
             req = SetBool.Request()
             req.data = True
             self.valve_client.call_async(req)
             self.flag_distance = True
+            self.flag_release = False
+
 
         # Check Pressure
         if not self.flag_engage and max(msg.data[:3]) < self.pressure_threshold:
@@ -83,6 +94,7 @@ class GripperController(Node):
         # Reset state
         self.flag_distance = False
         self.flag_engage = False
+        self.flag_release = False
         self.flag_init = True
 
         # Destroy timer so it only runs once
