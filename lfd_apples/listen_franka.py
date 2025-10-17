@@ -10,12 +10,6 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from std_msgs.msg import Int16MultiArray
 
 
-# Global variables
-BAG_DIR = os.path.expanduser("~/franka_bags")
-os.makedirs(BAG_DIR, exist_ok=True)
-BAG_NAME_MAIN = os.path.join(BAG_DIR, "lfd_bag_main")
-BAG_NAME_CAMERA = os.path.join(BAG_DIR, "lfd_bag_ihcamera")
-
 
 # === Desired joint configuration ===
 JOINT_NAMES = [
@@ -37,6 +31,18 @@ JOINT_POSITIONS = [
     1.6778097848819793,
     0.7138629799943128,
 ]
+
+
+def find_next_trial_number(base_dir, prefix="trial_"):
+    existing_trials = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d)) and d.startswith(prefix)]
+
+    if not existing_trials:
+        return "trial_1"
+    existing_numbers = [int(d.replace(prefix, '')) for d in existing_trials if d.replace(prefix, '').isdigit()]
+
+    print(existing_numbers)
+    
+    return f"trial_{max(existing_numbers) + 1}" if existing_numbers else "trial_1"
 
 class MoveToStart(Node):
     def __init__(self):
@@ -112,6 +118,18 @@ def main():
 
     print("Recording started! Press Ctrl+C to stop.")
 
+    # Search directory for existing trials and create next trial number
+
+    # Global variables
+    BAG_DIR = os.path.expanduser("~/lfd_bags/experiment_1")
+    os.makedirs(BAG_DIR, exist_ok=True)
+    
+    TRIAL = find_next_trial_number(BAG_DIR, prefix="trial_")
+
+    BAG_NAME_MAIN = os.path.join(BAG_DIR, TRIAL, "lfd_bag_main")
+    BAG_NAME_PALM_CAMERA = os.path.join(BAG_DIR, TRIAL, "lfd_bag_palm_camera")
+    BAG_NAME_FIXED_CAMERA = os.path.join(BAG_DIR, TRIAL, "lfd_bag_fixed_camera")
+
 
     # Start ROS 2 bag recording
     bag_proc_main = subprocess.Popen([
@@ -124,13 +142,20 @@ def main():
         "microROS/sensor_data",            
     ])
 
-    bag_proc_camera = subprocess.Popen([
+    bag_proc_palm_camera = subprocess.Popen([
         "ros2", "bag", "record",
-        "-o", BAG_NAME_CAMERA,
-        "gripper/rgb_palm_camera/image_raw",                  
+        "-o", BAG_NAME_PALM_CAMERA,
+        "gripper/rgb_palm_camera/image_raw",     
     ])
 
-    node = SuctionMonitor(bag_proc_camera)
+
+    bag_proc_fixed_camera = subprocess.Popen([
+        "ros2", "bag", "record",
+        "-o", BAG_NAME_FIXED_CAMERA,
+        "fixed/rgb_camera/image_raw",     
+    ])
+
+    node = SuctionMonitor(bag_proc_palm_camera)
 
         
     try:
@@ -149,12 +174,15 @@ def main():
         try:
             bag_proc_main.terminate()
             bag_proc_main.wait()
+
+            bag_proc_fixed_camera.terminate()
+            bag_proc_fixed_camera.wait()
         except:
             pass
 
         # Stop Free Drive
         print("Stopping Free Drive mode...")        
-        print(f"Free Drive stopped. Bags saved in:\n  - {BAG_NAME_MAIN}\n  - {BAG_NAME_CAMERA}")
+        print(f"Free Drive stopped. Bags saved in:\n  - {BAG_NAME_MAIN}\n  - {BAG_NAME_PALM_CAMERA}\n - {BAG_NAME_FIXED_CAMERA}")
 
 if __name__ == "__main__":
     main()

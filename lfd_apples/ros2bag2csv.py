@@ -350,87 +350,79 @@ def message_to_dict(msg):
         return {"data": msg}
 
 
-def extract_images_from_bag(db3_file_path, topic_name="/gripper/rgb_palm_camera/image_raw",
-                            output_dir="camera_frames", save_avi=True, fps=30):
+def extract_images_from_bag(db3_file_path, output_dir="camera_frames", save_avi=True, fps=30):
     """
-    Extracts image frames from a ROS 2 .db3 bag topic, saves them as JPGs, and optionally as an AVI.
-
-    Args:
-        db3_file_path (str): Path to the .db3 bag file
-        topic_name (str): Full topic name for the image (default: palm camera)
-        output_dir (str): Output folder for saved JPGs
-        save_avi (bool): Whether to save an AVI video
-        fps (int or float): Frame rate for AVI
+    Automatically detect camera topics (containing 'camera' or 'image_raw') in a ROS2 .db3 bag
+    and extract frames for each one.
     """
     os.makedirs(output_dir, exist_ok=True)
-
     conn = sqlite3.connect(db3_file_path)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id, type FROM topics WHERE name=?", (topic_name,))
-    row = cursor.fetchone()
-    if not row:
-        print(f"❌ Topic '{topic_name}' not found in bag.")
-        conn.close()
-        return
-    topic_id, topic_type = row
-    print(f"\n✅ Found topic: {topic_name} ({topic_type})")
+    # Find all topics in the bag
+    cursor.execute("SELECT id, name, type FROM topics")
+    topics = cursor.fetchall()
 
-    msg_class = get_message(topic_type)
-
-    cursor.execute("SELECT timestamp, data FROM messages WHERE topic_id=?", (topic_id,))
-    rows = cursor.fetchall()
-    print(f"🖼️ Found {len(rows)} frames. Saving to {output_dir}/ ...")
-
-    if len(rows) == 0:
+    # Filter topics that look like camera topics
+    camera_topics = [t for t in topics if "camera" in t[1].lower() or "image_raw" in t[1].lower()]
+    if not camera_topics:
+        print("⚠️ No camera topics found in bag.")
         conn.close()
         return
 
-    start_time = rows[0][0]
-
-    video_writer = None
-    for i, (timestamp, data) in enumerate(rows):
-        msg = deserialize_message(data, msg_class)
-
-        height = msg.height
-        width = msg.width
-        encoding = msg.encoding.lower()
-
-        np_arr = np.frombuffer(msg.data, dtype=np.uint8)
-        if encoding in ["rgb8", "bgr8"]:
-            img = np_arr.reshape((height, width, 3))
-        elif encoding == "mono8":
-            img = np_arr.reshape((height, width))
-        else:
-            print(f"⚠️ Skipping frame {i}: unsupported encoding '{encoding}'")
+    for topic_id, topic_name, topic_type in camera_topics:
+        print(f"\n🔹 Found camera topic: {topic_name} ({topic_type})")
+        msg_class = get_message(topic_type)
+        cursor.execute("SELECT timestamp, data FROM messages WHERE topic_id=?", (topic_id,))
+        rows = cursor.fetchall()
+        if len(rows) == 0:
+            print(f"⚠️ No messages in topic '{topic_name}'")
             continue
 
-        if encoding == "rgb8":
-            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        # Create folder per topic
+        topic_folder = os.path.join(output_dir, topic_name.strip("/").replace("/", "_"))
+        os.makedirs(topic_folder, exist_ok=True)
 
-        t_sec = (timestamp - start_time) / 1e9
-        filename = os.path.join(output_dir, f"frame_{i:05d}_{t_sec:.6f}.jpg")
-        cv2.imwrite(filename, img)
+        start_time = rows[0][0]
+        video_writer = None
 
-        # Initialize VideoWriter at first frame
-        if save_avi and video_writer is None:
-            avi_path = os.path.join(output_dir, f"{topic_name.strip('/').replace('/', '_')}.avi")
-            fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-            video_writer = cv2.VideoWriter(avi_path, fourcc, fps, (width, height))
-            print(f"🎥 Saving AVI video to {avi_path} at {fps} FPS")
+        for i, (timestamp, data) in enumerate(rows):
+            msg = deserialize_message(data, msg_class)
+            height, width = msg.height, msg.width
+            encoding = msg.encoding.lower()
+            np_arr = np.frombuffer(msg.data, dtype=np.uint8)
 
-        if save_avi:
-            if len(img.shape) == 2:
-                img_color = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            if encoding in ["rgb8", "bgr8"]:
+                img = np_arr.reshape((height, width, 3))
+            elif encoding == "mono8":
+                img = np_arr.reshape((height, width))
             else:
-                img_color = img
-            video_writer.write(img_color)
+                print(f"⚠️ Skipping frame {i}: unsupported encoding '{encoding}'")
+                continue
 
-    if save_avi and video_writer is not None:
-        video_writer.release()
+            if encoding == "rgb8":
+                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+            t_sec = (timestamp - start_time) / 1e9
+            filename = os.path.join(topic_folder, f"frame_{i:05d}_{t_sec:.6f}.jpg")
+            cv2.imwrite(filename, img)
+
+            # Initialize AVI writer
+            if save_avi and video_writer is None:
+                avi_path = os.path.join(topic_folder, f"{topic_name.strip('/').replace('/', '_')}.avi")
+                fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+                video_writer = cv2.VideoWriter(avi_path, fourcc, fps, (width, height))
+                print(f"🎥 Saving AVI video to {avi_path} at {fps} FPS")
+
+            if save_avi:
+                img_color = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                video_writer.write(img_color)
+
+        if save_avi and video_writer is not None:
+            video_writer.release()
+        print(f"✅ Done extracting topic '{topic_name}' to '{topic_folder}'")
 
     conn.close()
-    print(f"✅ Done! Extracted {len(rows)} frames to '{output_dir}/' and saved AVI video.")
 
 
 class Trial:
@@ -570,23 +562,26 @@ class Trial:
 
 if __name__ == "__main__":
 
-    folder = "/home/alejo/franka_bags/cindys_1"    
-    trial = "/lfd_bag_main"
-    bag_file = folder + trial + "/lfd_bag_main_0.db3"
-    csv_dir = folder + trial + "/bag_csvs"
+    folder = "/home/alejo/lfd_bags/experiment_1"    
+    trial_folder = "trial_2"
+    bag_file = folder + "/" + trial_folder + "/lfd_bag_main/lfd_bag_main_0.db3"
+    csv_dir = folder + "/" + trial_folder + "/lfd_bag_main/bag_csvs"
 
     trial = Trial(bag_file, csv_dir)
     trial.list_topics()   # 🔹 prints all topics    
     trial.get_engagement_time()  # 🔹 estimates time of engagement from pressure data
-
-    camera_topic = "/gripper/rgb_palm_camera/image_raw"
-    output_frames = os.path.join(folder, "lfd_bag_ihcamera", "camera_frames")     
+   
+    output_frames = os.path.join(folder, trial_folder, "lfd_bag_palm_camera", "camera_frames")     
     extract_images_from_bag(
-        db3_file_path=os.path.join(folder,"lfd_bag_ihcamera","lfd_bag_ihcamera_0.db3"),
-        topic_name=camera_topic,
+        db3_file_path=os.path.join(folder,trial_folder, "lfd_bag_palm_camera","lfd_bag_palm_camera_0.db3"),
         output_dir=output_frames
     )
 
+    output_frames = os.path.join(folder, trial_folder, "lfd_bag_fixed_camera", "camera_frames")     
+    extract_images_from_bag(
+        db3_file_path=os.path.join(folder, trial_folder, "lfd_bag_fixed_camera","lfd_bag_fixed_camera_0.db3"),
+        output_dir=output_frames
+    )
 
     # --- EEF POSE --- 
     # Access topics directly
