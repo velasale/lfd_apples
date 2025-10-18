@@ -122,7 +122,8 @@ def main(args=None):
     # Give publisher time to connect
     time.sleep(1.0)
     
-    lfd_demo_csv =  '/home/alejo/franka_bags/franka_joint_bag_hdemo_2/bag_csvs/joint_states.csv'
+    # lfd_demo_csv =  '/home/alejo/franka_bags/franka_joint_bag_hdemo_2/bag_csvs/joint_states.csv'
+    lfd_demo_csv = '/home/alejo/lfd_bags/experiment_1/trial_8/lfd_bag_main/bag_csvs/joint_states.csv'
 
     node = FrankaReplay(lfd_demo_csv)  # <-- set your CSV path
     rclpy.spin_once(node, timeout_sec=2.0)

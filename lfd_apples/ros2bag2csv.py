@@ -146,7 +146,7 @@ def parse_array(x):
 
 
 # ------------------ PLOTTING FUNCTIONS ----------------- #
-def plot_3dpose(df, engagement_time=None):
+def plot_3dpose(df, engagement_time=None, disposal_time=None):
     """Plot 3D positions from a DataFrame containing a geometry_msgs/Pose message."""
 
     fig = plt.figure()
@@ -169,12 +169,15 @@ def plot_3dpose(df, engagement_time=None):
     # Split trajectory before and after engagement time
     if engagement_time is not None:
         mask_before = t < engagement_time
-        mask_after = t >= engagement_time
+        mask_between = (t >= engagement_time) & (t < disposal_time)
+        mask_after = t >= disposal_time
 
         ax.plot(x[mask_before], y[mask_before], z[mask_before],
                 label='approach', color='orange', linewidth=2)
-        ax.plot(x[mask_after], y[mask_after], z[mask_after],
+        ax.plot(x[mask_between], y[mask_between], z[mask_between],
                 label='pick', color='green', linewidth=2)
+        ax.plot(x[mask_after], y[mask_after], z[mask_after],
+                label='disposal', color='purple', linewidth=2)
     else:
         ax.plot(x, y, z, label='End-Effector Path', color='black', linewidth=2)
     
@@ -433,6 +436,7 @@ class Trial:
         os.makedirs(self.csv_dir, exist_ok=True)
 
         self.engagement_time = 0.0
+        self.disposal_time = 0.0
 
         # If CSVs already exist → load them
         if self._csvs_exist():
@@ -556,20 +560,46 @@ class Trial:
         return self.engagement_time
 
 
+    def get_disposal_time(self):
+        
+        """Estimate the time when the gripper engaged based on pressure data."""
+        if not hasattr(self, "microROS_sensor_data"):
+            print("⚠️ No microROS_sensor_data topic found.")
+            return None     
+        df = self.microROS_sensor_data.copy()
+        df["_data"] = df["_data"].apply(parse_array)
+        df[["p1", "p2", "p3", "other"]] = pd.DataFrame(df["_data"].tolist(), index=df.index)
+        p1 = df["p1"].astype(float).to_numpy()
+        p2 = df["p2"].astype(float).to_numpy()
+        p3 = df["p3"].astype(float).to_numpy()
+        t  = df["elapsed_time"].astype(float).to_numpy()    
 
-
+        disposal_indices = np.where((p1 > self.ENGAMENT_THRESHOLD) &
+                                   (p2 > self.ENGAMENT_THRESHOLD) &
+                                   (p3 > self.ENGAMENT_THRESHOLD) &
+                                   (t > self.engagement_time))[0]
+        if len(disposal_indices) == 0:
+            print("⚠️ No engagement detected based on pressure threshold.")
+            return None 
+        self.disposal_time = t[disposal_indices[0]]
+        print(f"✅ Disposal detected at t = {self.disposal_time:.2f} s")    
+        
+        return self.engagement_time
 
 
 if __name__ == "__main__":
 
     folder = "/home/alejo/lfd_bags/experiment_1"    
-    trial_folder = "trial_2"
+
+    trial_folder = "trial_19"
+    
     bag_file = folder + "/" + trial_folder + "/lfd_bag_main/lfd_bag_main_0.db3"
     csv_dir = folder + "/" + trial_folder + "/lfd_bag_main/bag_csvs"
 
     trial = Trial(bag_file, csv_dir)
     trial.list_topics()   # 🔹 prints all topics    
     trial.get_engagement_time()  # 🔹 estimates time of engagement from pressure data
+    trial.get_disposal_time()  # 🔹 estimates time of engagement from pressure data
    
     output_frames = os.path.join(folder, trial_folder, "lfd_bag_palm_camera", "camera_frames")     
     extract_images_from_bag(
@@ -587,14 +617,14 @@ if __name__ == "__main__":
     # Access topics directly
     print(trial.joint_states.head())
     print(trial.franka_robot_state_broadcaster_current_pose.head())
-    plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time)
+    plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time, trial.disposal_time)
     
     # --- EEF WRENCH ---
     print(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
     plot_wrench(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
 
     # --- PRESSURE SIGNALS ---
-    plot_pressure(trial.microROS_sensor_data)
+    # plot_pressure(trial.microROS_sensor_data)
     
 
     plt.show()

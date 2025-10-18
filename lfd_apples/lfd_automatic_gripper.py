@@ -3,6 +3,7 @@ from rclpy.node import Node
 
 from std_msgs.msg import Int16MultiArray
 from std_srvs.srv import SetBool   # Change to your actual service type if different
+from geometry_msgs.msg import PoseStamped
 
 
 class GripperController(Node):
@@ -20,7 +21,9 @@ class GripperController(Node):
 
         # Subscribers
         self.distance_sub = self.create_subscription(Int16MultiArray, 'microROS/sensor_data', self.gripper_sensors_callback, 10)
+        self.eef_pose_sub = self.create_subscription(PoseStamped, '/franka_robot_state_broadcaster/current_pose', self.eef_pose_callback, 10)
                 
+
         # Service Clients
         self.valve_client = self.create_client(SetBool, 'microROS/toggle_valve')
         self.fingers_client = self.create_client(SetBool, 'microROS/move_stepper')
@@ -39,6 +42,10 @@ class GripperController(Node):
         self.flag_engage = False
         self.flag_init = True
         self.auto_off_timer = None
+
+        # Parameters
+        self.apple_disposal_coord = [0.7, 0.4, 0.25]
+        self.disposal_range = 0.05
 
     def gripper_sensors_callback(self, msg: Int16MultiArray):
 
@@ -102,7 +109,33 @@ class GripperController(Node):
             self.auto_off_timer.cancel()
             self.auto_off_timer = None
 
+
+    def eef_pose_callback(self, msg: PoseStamped):
         
+        eef_x = msg.pose.position.x
+        eef_y = msg.pose.position.y
+        eef_z = msg.pose.position.z        
+
+        if (abs(eef_x - self.apple_disposal_coord[0]) < self.disposal_range and
+            abs(eef_y - self.apple_disposal_coord[1]) < self.disposal_range and
+            abs(eef_z - self.apple_disposal_coord[2]) < self.disposal_range):   
+            
+            self.get_logger().info("End-effector in disposal zone.")    
+
+            req = SetBool.Request()
+            req.data = False
+            self.valve_client.call_async(req)
+            self.fingers_client.call_async(req)
+
+            # TODO: FIX this
+            # Reset state
+            self.flag_distance = False
+            self.flag_engage = False
+            self.flag_release = False
+            self.flag_init = True
+
+
+           
    
 
 
