@@ -8,7 +8,7 @@ import rclpy
 from rclpy.node import Node
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from std_msgs.msg import Int16MultiArray
-
+from lfd_apples.ros2bag2csv import extract_data_and_plot
 
 
 # === Desired joint configuration ===
@@ -40,7 +40,7 @@ def find_next_trial_number(base_dir, prefix="trial_"):
         return "trial_1"
     existing_numbers = [int(d.replace(prefix, '')) for d in existing_trials if d.replace(prefix, '').isdigit()]
 
-    print(existing_numbers)
+    # print(existing_numbers)
     
     return f"trial_{max(existing_numbers) + 1}" if existing_numbers else "trial_1"
 
@@ -138,7 +138,7 @@ def main():
         "/joint_states",
         "/franka_robot_state_broadcaster/current_pose",
         "/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame",
-        "/franka_robot_state_broadcaster/robot_state",
+        # "/franka_robot_state_broadcaster/robot_state",
         "microROS/sensor_data",            
     ])
 
@@ -166,9 +166,7 @@ def main():
         print("\nStopping recording..." )
 
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
-
+        
 
         # Terminate bag recording if still running
         try:
@@ -184,5 +182,16 @@ def main():
         print("Stopping Free Drive mode...")        
         print(f"Free Drive stopped. Bags saved in:\n  - {BAG_NAME_MAIN}\n  - {BAG_NAME_PALM_CAMERA}\n - {BAG_NAME_FIXED_CAMERA}")
 
+        # === Step 3: Extract CSVs and plot ===
+        print("Extracting data and generating plots...")
+        extract_data_and_plot(os.path.join(BAG_DIR, TRIAL), "")
+
+        node.destroy_node()
+        rclpy.shutdown()
+
+        
+
 if __name__ == "__main__":
     main()
+
+    

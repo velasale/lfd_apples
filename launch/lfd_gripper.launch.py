@@ -46,21 +46,35 @@ def generate_launch_description():
         palm_camera_device_arg,
         fixed_camera_device_arg,
 
-        # Start Wi-Fi hotspot using parameters
-        ExecuteProcess(
-            cmd=['sudo', 'nmcli', 'device', 'wifi', 'hotspot',
-                 'ifname', 'wlp108s0f0',
-                 'ssid', ssid,
-                 'password', password],
-            output='screen',
-        ),
+        # # Start Wi-Fi hotspot using parameters
+        # ExecuteProcess(
+        #     cmd=['sudo', 'nmcli', 'device', 'wifi', 'hotspot',
+        #          'ifname', 'wlp108s0f0',
+        #          'ssid', ssid,
+        #          'password', password],
+        #     output='screen',
+        # ),
+
+        # # Start micro-ROS agent after a 5-second delay
+        # TimerAction(
+        #     period=8.0,
+        #     actions=[
+        #         ExecuteProcess(
+        #             cmd=['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'udp4', '--port', '8888'],
+        #             output='screen',
+        #         )
+        #     ]
+        # ),
+
+
+        #os2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0 --baudrate 921600
 
         # Start micro-ROS agent after a 5-second delay
         TimerAction(
-            period=8.0,
+            period=1.0,
             actions=[
                 ExecuteProcess(
-                    cmd=['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'udp4', '--port', '8888'],
+                    cmd=['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'serial', '--dev', '/dev/ttyUSB0', '--baudrate', '921600'],
                     output='screen',
                 )
             ]
