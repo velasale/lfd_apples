@@ -1,5 +1,7 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.task import Future
 
 from std_msgs.msg import Int16MultiArray
 from std_srvs.srv import SetBool   # Change to your actual service type if different
@@ -66,7 +68,7 @@ class GripperController(Node):
             self.flag_release = True
             self.flag_distance = False
 
-        if self.flag_release and not self.flag_distance and msg.data[3] < self.distance_threshold:
+        if self.flag_release and not self.flag_distance and msg.data[3] < self.distance_threshold and msg.data[3] > 0:      
             self.get_logger().info(f"Distance {msg.data[3]} < {self.distance_threshold}, calling valve ON")
             req = SetBool.Request()
             req.data = True
@@ -124,18 +126,44 @@ class GripperController(Node):
 
             req = SetBool.Request()
             req.data = False
-            self.valve_client.call_async(req)
-            self.fingers_client.call_async(req)
-
-            # TODO: FIX this
-            # Reset state
-            self.flag_distance = False
-            self.flag_engage = False
-            self.flag_release = False
-            self.flag_init = True
 
 
-           
+            # Call valve service first
+            future_valve = self.valve_client.call_async(req)
+            future_valve.add_done_callback(self._after_valve_call)
+
+    def _after_valve_call(self, future_valve: Future):
+        try:
+            response = future_valve.result()
+            if response.success:
+                self.get_logger().info("Valve closed successfully.")
+            else:
+                self.get_logger().warn("Valve close failed.")
+        except Exception as e:
+            self.get_logger().error(f"Valve service call failed: {e}")
+
+        # Now call the fingers service after valve completes
+        req = SetBool.Request()
+        req.data = False
+        future_fingers = self.fingers_client.call_async(req)
+        future_fingers.add_done_callback(self._after_fingers_call)
+
+    def _after_fingers_call(self, future_fingers: Future):
+        try:
+            response = future_fingers.result()
+            if response.success:
+                self.get_logger().info("Fingers released successfully.")
+            else:
+                self.get_logger().warn("Fingers release failed.")
+        except Exception as e:
+            self.get_logger().error(f"Fingers service call failed: {e}")
+
+        # Reset internal state once both are done
+        self.flag_distance = False
+        self.flag_engage = False
+        self.flag_release = False
+        self.flag_init = True
+         
    
 
 
