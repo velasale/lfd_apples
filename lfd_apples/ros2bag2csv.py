@@ -242,7 +242,13 @@ def plot_wrench(df):
     # Tangential forces
     tangential_force = np.sqrt(wrench_filtered[0]**2 + wrench_filtered[1]**2)
 
+    # --- Data sanity check ---
+    zero_x, zero_y, zero_z = data_sanity_check(df)
+    zero_t = t[zero_x]
+    print(f'Zero force timestamps (s): {zero_t}')   
 
+
+    # --- Plotting ---
     fig, axs = plt.subplots(3, 1, figsize=(10, 6), sharex=True)
 
     axs[0].plot(t, wrench[0], color="r", alpha=0.3)
@@ -253,14 +259,19 @@ def plot_wrench(df):
     axs[0].plot(t, wrench_filtered[2], label="Fz filtered", color="b")
     axs[0].set_ylabel("Force [N]")
     axs[0].legend()
-    axs[0].set_ylim([-12, 12])
+    axs[0].set_ylim([-20, 20])
     axs[0].grid(True)
+
+    # --- Vertical dashed lines at zero_t ---
+    for zt in zero_t:    
+        for ax in axs:
+            ax.axvline(x=zt, color="k", linestyle="--", alpha=0.5)  # black dashed line
 
     axs[1].plot(t, tangential_force, color="brown", label="Tangential Force √(Fx²+Fy²)")
     axs[1].plot(t, wrench_filtered[2], color="b", label="Normal Force Fz")    
     axs[1].set_ylabel("Force [N]")
     axs[1].legend()
-    axs[1].set_ylim([-12, 12])
+    axs[1].set_ylim([-20, 20])
     axs[1].grid(True)
 
     axs[2].plot(t, wrench[3], color="r", alpha=0.3)
@@ -272,10 +283,11 @@ def plot_wrench(df):
     axs[2].set_ylabel("Torque [Nm]")
     axs[2].set_xlabel("Elapsed Time [s]")   
     axs[2].legend()
-    axs[2].set_ylim([-3, 3])
+    axs[2].set_ylim([-5, 5])
     axs[2].grid(True)
-        
-    plt.tight_layout()
+    
+    plt.xlim([0,50])
+    plt.tight_layout()    
 
 
 def plot_pressure(df):
@@ -320,10 +332,54 @@ def plot_pressure(df):
     lines, labels = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines + lines2, labels + labels2, loc='upper right')
+
+    plt.xlim([0,50])
     
     plt.title("Air Pressure Signals vs Elapsed Time")       
     
     plt.tight_layout()
+
+# Check consecutive indexes
+def find_consecutive_indexes(zero_indices):
+    consecutive = []
+    for i in range(len(zero_indices[0]) - 1):
+        if zero_indices[0][i+1] == zero_indices[0][i] + 1:
+            consecutive.append(zero_indices[0][i])
+
+    just_first_indexes = []
+    for j in consecutive:
+        if j - 1 not in consecutive:
+            just_first_indexes.append(j)
+
+    return just_first_indexes
+
+
+def data_sanity_check(df):
+    """Check for zero wrench data points and print their indexes."""
+
+    fx = np.array(df['_wrench._force._x'].to_list(), dtype=float)
+    fy = np.array(df['_wrench._force._y'].to_list(), dtype=float)
+    fz = np.array(df['_wrench._force._z'].to_list(), dtype=float)      
+    tx = np.array(df['_wrench._torque._x'].to_list(), dtype=float)
+    ty = np.array(df['_wrench._torque._y'].to_list(), dtype=float)
+    tz = np.array(df['_wrench._torque._z'].to_list(), dtype=float)      
+
+    zero_fx = find_consecutive_indexes(np.where(fx == 0))
+    zero_fy = find_consecutive_indexes(np.where(fy == 0))
+    zero_fz = find_consecutive_indexes(np.where(fz == 0))
+    zero_tx = find_consecutive_indexes(np.where(tx == 0))
+    zero_ty = find_consecutive_indexes(np.where(ty == 0))
+    zero_tz = find_consecutive_indexes(np.where(tz == 0))
+
+
+    if len(zero_fx) > 0 or len(zero_fy) > 0 or len(zero_fz) > 0:
+        print(f'\n \033[93m !!! HEADS UP !!!\033[0m Wrench data has zero values at these indexes: \n \
+              fx: {zero_fx} \n  fy: {zero_fy} \n  fz: {zero_fz} \n tx: {zero_tx} \n  ty: {zero_ty} \n  tz: {zero_tz}')
+    else:
+        print('\nWrench data sanity check passed: no zero values found.')    
+      
+
+    return zero_fx, zero_fy, zero_fz   
 
 
 # ------------------ MAIN CLASSES & FUNCTIONS ----------------- #
@@ -437,6 +493,7 @@ class Trial:
 
         self.engagement_time = 0.0
         self.disposal_time = 0.0
+        self.first_timestamp = 0.0
 
         # If CSVs already exist → load them
         if self._csvs_exist():
@@ -458,6 +515,39 @@ class Trial:
     def _make_attr_name(self, topic_name):
         return topic_name.strip("/").replace("/", "_")
 
+    
+    def get_first_timestamp(self, cursor):
+
+        # Get topic ids and names
+        cursor.execute("SELECT id, name FROM topics")
+        topics = cursor.fetchall()
+
+        first_timestamps = {}
+
+        for topic_id, topic_name in topics:
+            cursor.execute(
+                "SELECT timestamp FROM messages WHERE topic_id=? ORDER BY timestamp ASC LIMIT 1",
+                (topic_id,),
+            )
+            result = cursor.fetchone()
+            if result:
+                first_timestamps[topic_name] = result[0]
+
+        # Find the smallest timestamp and corresponding topic
+        earliest_topic = min(first_timestamps, key=first_timestamps.get)
+        earliest_time = first_timestamps[earliest_topic]
+
+        self.first_timestamp = earliest_time
+
+        print("\n⏱️ First message timestamps per topic:")
+        for topic, ts in first_timestamps.items():
+            print(f"\n  {topic}: {ts}")
+
+        print("\n🕒 Earliest message across all topics:")
+        print(f"  Topic: {earliest_topic}")
+        print(f"  Timestamp (ns): {earliest_time}")
+        print(f"  Timestamp (s):  {self.first_timestamp / 1e9:.6f}")
+    
     def _load_topics(self):
         """Load topics from the .db3 file and keep them in memory as DataFrames."""
         conn = sqlite3.connect(self.filepath)
@@ -465,6 +555,9 @@ class Trial:
 
         cursor.execute("SELECT id, name, type FROM topics")
         topics = cursor.fetchall()
+
+        self.get_first_timestamp(cursor)
+
         topic_map = {t[0]: (t[1], t[2]) for t in topics}
 
         for topic_id, (topic_name, topic_type) in topic_map.items():
@@ -487,7 +580,7 @@ class Trial:
             if records:
                 df = pd.DataFrame(records)
                 t0 = df["timestamp"].iloc[0]
-                df["elapsed_time"] = (df["timestamp"] - t0) / 1e9
+                df["elapsed_time"] = (df["timestamp"] - self.first_timestamp) / 1e9
 
                 attr_name = self._make_attr_name(topic_name)
                 setattr(self, attr_name, df)
@@ -587,29 +680,26 @@ class Trial:
         return self.engagement_time
 
 
-if __name__ == "__main__":
 
-    folder = "/home/alejo/lfd_bags/experiment_1"    
-
-    trial_folder = "trial_19"
+def extract_data_and_plot(bag_folder, trial_folder):
     
-    bag_file = folder + "/" + trial_folder + "/lfd_bag_main/lfd_bag_main_0.db3"
-    csv_dir = folder + "/" + trial_folder + "/lfd_bag_main/bag_csvs"
+    bag_file = bag_folder + "/" + trial_folder + "/lfd_bag_main/lfd_bag_main_0.db3"
+    csv_dir = bag_folder + "/" + trial_folder + "/lfd_bag_main/bag_csvs"
 
     trial = Trial(bag_file, csv_dir)
     trial.list_topics()   # 🔹 prints all topics    
     trial.get_engagement_time()  # 🔹 estimates time of engagement from pressure data
     trial.get_disposal_time()  # 🔹 estimates time of engagement from pressure data
    
-    output_frames = os.path.join(folder, trial_folder, "lfd_bag_palm_camera", "camera_frames")     
+    output_frames = os.path.join(bag_folder, trial_folder, "lfd_bag_palm_camera", "camera_frames")     
     extract_images_from_bag(
-        db3_file_path=os.path.join(folder,trial_folder, "lfd_bag_palm_camera","lfd_bag_palm_camera_0.db3"),
+        db3_file_path=os.path.join(bag_folder,trial_folder, "lfd_bag_palm_camera","lfd_bag_palm_camera_0.db3"),
         output_dir=output_frames
     )
 
-    output_frames = os.path.join(folder, trial_folder, "lfd_bag_fixed_camera", "camera_frames")     
+    output_frames = os.path.join(bag_folder, trial_folder, "lfd_bag_fixed_camera", "camera_frames")     
     extract_images_from_bag(
-        db3_file_path=os.path.join(folder, trial_folder, "lfd_bag_fixed_camera","lfd_bag_fixed_camera_0.db3"),
+        db3_file_path=os.path.join(bag_folder, trial_folder, "lfd_bag_fixed_camera","lfd_bag_fixed_camera_0.db3"),
         output_dir=output_frames
     )
 
@@ -624,7 +714,19 @@ if __name__ == "__main__":
     plot_wrench(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
 
     # --- PRESSURE SIGNALS ---
-    # plot_pressure(trial.microROS_sensor_data)
+    plot_pressure(trial.microROS_sensor_data)    
     
 
     plt.show()
+    
+
+
+
+
+if __name__ == "__main__":
+
+    bag_folder = "/home/alejo/lfd_bags/experiment_1"    
+    trial_folder = "trial_78"
+    extract_data_and_plot(bag_folder, trial_folder)
+    
+    
