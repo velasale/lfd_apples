@@ -140,6 +140,7 @@ def main():
         "/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame",
         # "/franka_robot_state_broadcaster/robot_state",
         "microROS/sensor_data",            
+        "/franka/joint_states"
     ])
 
     bag_proc_palm_camera = subprocess.Popen([

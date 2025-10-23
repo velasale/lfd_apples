@@ -339,6 +339,101 @@ def plot_pressure(df):
     
     plt.tight_layout()
 
+
+def plot_wrench_and_pressure(wrench_df, pressure_df):
+    """Plot wrench (forces & torques) and pressure data in a single 4x1 figure."""
+    # --- Extract Wrench Data ---
+    fx = np.array(wrench_df['_wrench._force._x'].to_list(), dtype=float)
+    fy = np.array(wrench_df['_wrench._force._y'].to_list(), dtype=float)
+    fz = np.array(wrench_df['_wrench._force._z'].to_list(), dtype=float)
+    tx = np.array(wrench_df['_wrench._torque._x'].to_list(), dtype=float)
+    ty = np.array(wrench_df['_wrench._torque._y'].to_list(), dtype=float)
+    tz = np.array(wrench_df['_wrench._torque._z'].to_list(), dtype=float)
+    t_wrench = np.array(wrench_df["elapsed_time"].to_list(), dtype=float)
+
+    # Filter wrench signals
+    wrench_filtered = [gaussian_filter(w, 100) for w in [fx, fy, fz, tx, ty, tz]]
+    tangential_force = np.sqrt(wrench_filtered[0]**2 + wrench_filtered[1]**2)
+
+    # --- Data sanity check ---
+    zero_x, zero_y, zero_z = data_sanity_check(wrench_df)
+    zero_t = t_wrench[zero_x]
+    print(f'Zero force timestamps (s): {zero_t}')   
+
+    # --- Extract Pressure Data ---
+    pressure_df["_data"] = pressure_df["_data"].apply(parse_array)
+    pressure_df[["p1", "p2", "p3", "tof"]] = pd.DataFrame(pressure_df["_data"].tolist(), index=pressure_df.index)
+    p1 = pressure_df["p1"].astype(float).to_numpy() / 10
+    p2 = pressure_df["p2"].astype(float).to_numpy() / 10
+    p3 = pressure_df["p3"].astype(float).to_numpy() / 10
+    tof = pressure_df["tof"].astype(float).to_numpy() / 10
+    t_pressure = pressure_df["elapsed_time"].astype(float).to_numpy()
+    tof_filtered = gaussian_filter(tof, 3)
+
+    # --- Plotting 4x1 ---
+    fig, axs = plt.subplots(4, 1, figsize=(10, 10), sharex=True)
+
+    # Forces
+    axs[0].plot(t_wrench, fx, alpha=0.3, color='r')
+    axs[0].plot(t_wrench, wrench_filtered[0], color='r', label='Fx')
+    axs[0].plot(t_wrench, fy, alpha=0.3, color='g')
+    axs[0].plot(t_wrench, wrench_filtered[1], color='g', label='Fy')
+    axs[0].plot(t_wrench, fz, alpha=0.3, color='b')
+    axs[0].plot(t_wrench, wrench_filtered[2], color='b', label='Fz')
+    axs[0].set_ylabel("Force [N]")
+    axs[0].legend()
+    axs[0].grid(True)
+    axs[0].set_ylim([-20, 20])
+
+    # --- Vertical dashed lines at zero_t ---
+    for zt in zero_t:    
+        for ax in axs:
+            ax.axvline(x=zt, color="k", linestyle="--", alpha=0.5)  # black dashed line
+
+    # Tangential + Normal
+    axs[1].plot(t_wrench, tangential_force, color='brown', label='Tangential √(Fx²+Fy²)')
+    axs[1].plot(t_wrench, wrench_filtered[2], color='b', label='Normal Fz')
+    axs[1].set_ylabel("Force [N]")
+    axs[1].legend()
+    axs[1].grid(True)
+    axs[1].set_ylim([-20, 20])
+
+    # Torques
+    axs[2].plot(t_wrench, tx, alpha=0.3, color='r')
+    axs[2].plot(t_wrench, wrench_filtered[3], color='r', label='Tx')
+    axs[2].plot(t_wrench, ty, alpha=0.3, color='g')
+    axs[2].plot(t_wrench, wrench_filtered[4], color='g', label='Ty')
+    axs[2].plot(t_wrench, tz, alpha=0.3, color='b')
+    axs[2].plot(t_wrench, wrench_filtered[5], color='b', label='Tz')
+    axs[2].set_ylabel("Torque [Nm]")
+    axs[2].legend()
+    axs[2].grid(True)
+    axs[3].set_ylim([-5, 5])
+
+    # Pressure + TOF
+    axs[3].plot(t_pressure, p1, label="suction cup a")
+    axs[3].plot(t_pressure, p2, label="suction cup b", linestyle='--')
+    axs[3].plot(t_pressure, p3, label="suction cup c", linestyle='-.')
+    axs[3].set_ylabel("Pressure [kPa]")
+    axs[3].set_xlabel("Elapsed Time [s]")
+    axs[3].grid(True)
+    axs[3].set_ylim([0, 110])
+    ax_tof = axs[3].twinx()
+    ax_tof.plot(t_pressure, tof_filtered, color='blue', label='tof filtered')
+    ax_tof.set_ylabel("tof [cm]")
+    ax_tof.set_ylim([0, 40])
+
+    # Combine legends
+    lines1, labels1 = axs[3].get_legend_handles_labels()
+    lines2, labels2 = ax_tof.get_legend_handles_labels()
+    axs[3].legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+
+    plt.suptitle("Wrench and Pressure Data")
+    plt.xlim([0, 50])
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.show()
+
+
 # Check consecutive indexes
 def find_consecutive_indexes(zero_indices):
     consecutive = []
@@ -705,16 +800,32 @@ def extract_data_and_plot(bag_folder, trial_folder):
 
     # --- EEF POSE --- 
     # Access topics directly
-    print(trial.joint_states.head())
-    print(trial.franka_robot_state_broadcaster_current_pose.head())
-    plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time, trial.disposal_time)
+    # print(trial.joint_states.head())
+    # print(trial.franka_robot_state_broadcaster_current_pose.head())
     
     # --- EEF WRENCH ---
-    print(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
-    plot_wrench(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
+    # print(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
+    # plot_wrench(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
 
     # --- PRESSURE SIGNALS ---
-    plot_pressure(trial.microROS_sensor_data)    
+    # plot_pressure(trial.microROS_sensor_data)    
+    
+    # --- 3D PLOT ---
+    plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time, trial.disposal_time)
+
+    # --- EEF WRENCH & PRESSURE ---
+    has_wrench = hasattr(trial, "franka_robot_state_broadcaster_external_wrench_in_stiffness_frame")
+    has_pressure = hasattr(trial, "microROS_sensor_data")
+
+    if has_wrench and has_pressure:
+        plot_wrench_and_pressure(
+            trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame,
+            trial.microROS_sensor_data
+        )
+    elif has_wrench:
+        plot_wrench(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
+    elif has_pressure:
+        plot_pressure(trial.microROS_sensor_data)
     
 
     plt.show()
@@ -726,7 +837,7 @@ def extract_data_and_plot(bag_folder, trial_folder):
 if __name__ == "__main__":
 
     bag_folder = "/home/alejo/lfd_bags/experiment_1"    
-    trial_folder = "trial_78"
+    trial_folder = "trial_9"
     extract_data_and_plot(bag_folder, trial_folder)
     
     

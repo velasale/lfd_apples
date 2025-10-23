@@ -96,20 +96,16 @@ class GripperController(Node):
 
         req = SetBool.Request()
         req.data = False
-        self.valve_client.call_async(req)
-        self.fingers_client.call_async(req)
-
-        # TODO: FIX this
-        # Reset state
-        self.flag_distance = False
-        self.flag_engage = False
-        self.flag_release = False
-        self.flag_init = True
+               
 
         # Destroy timer so it only runs once
         if self.auto_off_timer is not None:
             self.auto_off_timer.cancel()
             self.auto_off_timer = None
+
+        # Call valve service first
+        future_valve = self.valve_client.call_async(req)
+        future_valve.add_done_callback(self._after_valve_call)
 
 
     def eef_pose_callback(self, msg: PoseStamped):
