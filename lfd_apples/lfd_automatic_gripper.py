@@ -4,7 +4,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.task import Future
 
 from std_msgs.msg import Int16MultiArray
-from std_srvs.srv import SetBool   # Change to your actual service type if different
+from std_srvs.srv import SetBool
 from geometry_msgs.msg import PoseStamped
 
 
@@ -15,152 +15,166 @@ class GripperController(Node):
         # Parameters
         self.declare_parameter('distance_threshold', 50)   # mm
         self.declare_parameter('pressure_threshold', 600)  # hPa
-        self.declare_parameter('release_timer', 20)  # sec
+        self.declare_parameter('release_timer', 10)        # sec
 
         self.distance_threshold = self.get_parameter('distance_threshold').value
         self.pressure_threshold = self.get_parameter('pressure_threshold').value
         self.timer_value = self.get_parameter('release_timer').value
 
         # Subscribers
-        self.distance_sub = self.create_subscription(Int16MultiArray, 'microROS/sensor_data', self.gripper_sensors_callback, 10)
-        self.eef_pose_sub = self.create_subscription(PoseStamped, '/franka_robot_state_broadcaster/current_pose', self.eef_pose_callback, 10)
-                
+        self.distance_sub = self.create_subscription(
+            Int16MultiArray, 'microROS/sensor_data', self.gripper_sensors_callback, 10)
+        self.eef_pose_sub = self.create_subscription(
+            PoseStamped, '/franka_robot_state_broadcaster/current_pose', self.eef_pose_callback, 10)
 
         # Service Clients
         self.valve_client = self.create_client(SetBool, 'microROS/toggle_valve')
         self.fingers_client = self.create_client(SetBool, 'microROS/move_stepper')
 
-        # Wait for services
         while not self.valve_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().warn('Waiting for turn_valve_on service...')
+            self.get_logger().warn('Waiting for valve service...')
         while not self.fingers_client.wait_for_service(timeout_sec=1.0):
-            self.get_logger().warn('Waiting for fingers_out service...')
+            self.get_logger().warn('Waiting for fingers service...')
 
         self.get_logger().info("GripperController node started.")
 
         # Flags
         self.flag_distance = False
-        self.flag_release = False
-        self.flag_engage = False
-        self.flag_init = True
+        self.flag_engagement = False
+        self.flag_disposal = False
+        self.flag_init = False
+        self.cooldown = False  # NEW: prevents immediate rearming
         self.auto_off_timer = None
 
         # Parameters
         self.apple_disposal_coord = [0.7, 0.4, 0.25]
         self.disposal_range = 0.05
 
+    # ----------------------- Helper to safely destroy timers -----------------------
+    def destroy_timer_safe(self, attr_name: str):
+        t = getattr(self, attr_name, None)
+        if t is not None:
+            try:
+                t.cancel()
+                self.destroy_timer(t)
+            except Exception as e:
+                self.get_logger().warn(f"Error destroying timer {attr_name}: {e}")
+            setattr(self, attr_name, None)
+
+    # ----------------------- Main Sensor Callback -----------------------
     def gripper_sensors_callback(self, msg: Int16MultiArray):
+        if not self.flag_init:
+            self.get_logger().info("--- State 0 ---: Initialization: Valve OFF, Fingers IN")
+            self.fingers_and_valve_reset()
+            self.flag_init = True
 
-        if self.flag_init:
-            req = SetBool.Request()
-            req.data = False
-            self.valve_client.call_async(req)
-            self.fingers_client.call_async(req)
-            self.flag_init = False
-            self.get_logger().info("Initialization: Valve OFF, Fingers IN")
-            return
-        
-        if not self.flag_release and msg.data[3] > self.distance_threshold:
-            self.get_logger().info(f"Distance {msg.data[3]} > {self.distance_threshold}, calling valve OFF")
-            req = SetBool.Request()
-            req.data = False
-            self.valve_client.call_async(req)
-            self.flag_release = True
-            self.flag_distance = False
-
-        if self.flag_release and not self.flag_distance and msg.data[3] < self.distance_threshold and msg.data[3] > 0:      
-            self.get_logger().info(f"Distance {msg.data[3]} < {self.distance_threshold}, calling valve ON")
+        # Target close
+        if not self.flag_distance and 0 < msg.data[3] < self.distance_threshold:
+            self.get_logger().info(f"--- State 1 ---: Target close ({msg.data[3]} < {self.distance_threshold}), valve ON")
             req = SetBool.Request()
             req.data = True
             self.valve_client.call_async(req)
             self.flag_distance = True
-            self.flag_release = False
 
+        # Target moved away
+        elif self.flag_distance and msg.data[3] > self.distance_threshold:
+            self.get_logger().info(f"--- State 0 ---: Target moved away ({msg.data[3]} > {self.distance_threshold}), resetting gripper")
+            req = SetBool.Request()
+            req.data = False
+            self.valve_client.call_async(req)
+            self.flag_distance = False
+            self.destroy_timer_safe("auto_off_timer")
 
-        # Check Pressure
-        if not self.flag_engage and max(msg.data[:3]) < self.pressure_threshold:
-            self.get_logger().info(f"Pressures {msg.data[0], msg.data[1], msg.data[2]} < {self.pressure_threshold}, cups engaged, deploying fingers")
+        # Check pressure → engage fingers & start timer
+        if (not self.cooldown) and (not self.flag_engagement) and max(msg.data[:3]) < self.pressure_threshold:
+            self.get_logger().info(f"--- State 2 ---: Pressures {msg.data[:3]} < {self.pressure_threshold}, cups engaged, deploying fingers")
             req = SetBool.Request()
             req.data = True
             self.fingers_client.call_async(req)
-            self.flag_engage = True
+            self.flag_engagement = True
 
-            # Start auto-off timer once fingers are engaged
+            # Start one-shot auto-off timer
             if self.auto_off_timer is None:
                 self.get_logger().info(f"Starting auto-off timer ({self.timer_value} s)...")
                 self.auto_off_timer = self.create_timer(self.timer_value, self.auto_off_callback)
 
+    # ----------------------- Auto-off Timer -----------------------
     def auto_off_callback(self):
-        """Called by timer to switch off valve and retract fingers."""
-        self.get_logger().warn("Auto-off triggered: Turning OFF valve and retracting fingers")
+        self.get_logger().warn("--- State 3 ---: Auto-off triggered: Turning OFF valve and retracting fingers")
 
-        req = SetBool.Request()
-        req.data = False
-               
+        # Destroy the timer so it only runs once
+        self.destroy_timer_safe("auto_off_timer")
 
-        # Destroy timer so it only runs once
-        if self.auto_off_timer is not None:
-            self.auto_off_timer.cancel()
-            self.auto_off_timer = None
+        # Reset system
+        self.fingers_and_valve_reset()
 
-        # Call valve service first
-        future_valve = self.valve_client.call_async(req)
-        future_valve.add_done_callback(self._after_valve_call)
-
-
+    # ----------------------- EEF Pose Callback -----------------------
     def eef_pose_callback(self, msg: PoseStamped):
-        
-        eef_x = msg.pose.position.x
-        eef_y = msg.pose.position.y
-        eef_z = msg.pose.position.z        
+        eef_x, eef_y, eef_z = msg.pose.position.x, msg.pose.position.y, msg.pose.position.z
 
-        if (abs(eef_x - self.apple_disposal_coord[0]) < self.disposal_range and
+        if (not self.flag_disposal) and (
+            abs(eef_x - self.apple_disposal_coord[0]) < self.disposal_range and
             abs(eef_y - self.apple_disposal_coord[1]) < self.disposal_range and
-            abs(eef_z - self.apple_disposal_coord[2]) < self.disposal_range):   
-            
-            self.get_logger().info("End-effector in disposal zone.")    
+            abs(eef_z - self.apple_disposal_coord[2]) < self.disposal_range
+        ):
+            self.get_logger().info("--- State 3 ---: End-effector in disposal zone.")
+            self.flag_disposal = True
+            self.destroy_timer_safe("auto_off_timer")
+            self.fingers_and_valve_reset()
 
-            req = SetBool.Request()
-            req.data = False
-
-
-            # Call valve service first
-            future_valve = self.valve_client.call_async(req)
-            future_valve.add_done_callback(self._after_valve_call)
-
-    def _after_valve_call(self, future_valve: Future):
-        try:
-            response = future_valve.result()
-            if response.success:
-                self.get_logger().info("Valve closed successfully.")
-            else:
-                self.get_logger().warn("Valve close failed.")
-        except Exception as e:
-            self.get_logger().error(f"Valve service call failed: {e}")
-
-        # Now call the fingers service after valve completes
+    # ----------------------- Reset Sequence -----------------------
+    def fingers_and_valve_reset(self):
+        self.get_logger().info("Resetting fingers and valve to initial state.")
         req = SetBool.Request()
         req.data = False
         future_fingers = self.fingers_client.call_async(req)
-        future_fingers.add_done_callback(self._after_fingers_call)
+        future_fingers.add_done_callback(self._after_fingers_call_reset)
 
-    def _after_fingers_call(self, future_fingers: Future):
+    def _after_fingers_call_reset(self, future_fingers: Future):
         try:
             response = future_fingers.result()
             if response.success:
-                self.get_logger().info("Fingers released successfully.")
+                self.get_logger().info("Successful Fingers In.")
             else:
-                self.get_logger().warn("Fingers release failed.")
+                self.get_logger().warn("Failed Fingers In.")
         except Exception as e:
-            self.get_logger().error(f"Fingers service call failed: {e}")
+            self.get_logger().error(f"Fingers In service call failed: {e}")
+        self.delay_timer = self.create_timer(0.5, self._call_valve_after_reset)
 
-        # Reset internal state once both are done
+    def _call_valve_after_reset(self):
+        self.destroy_timer_safe("delay_timer")
+        req_valve = SetBool.Request()
+        req_valve.data = False
+        future_valve = self.valve_client.call_async(req_valve)
+        future_valve.add_done_callback(self._after_valve_call_reset)
+
+    def _after_valve_call_reset(self, future_valve: Future):
+        try:
+            response = future_valve.result()
+            if response.success:
+                self.get_logger().info("Successful Valve Closed.")
+            else:
+                self.get_logger().warn("Failed Valve Closed.")
+        except Exception as e:
+            self.get_logger().error(f"Valve service call failed: {e}")
+        self.delay_reset_timer = self.create_timer(0.5, self._after_reset_complete)
+
+    def _after_reset_complete(self):
+        self.destroy_timer_safe("delay_reset_timer")
         self.flag_distance = False
-        self.flag_engage = False
-        self.flag_release = False
-        self.flag_init = True
-         
-   
+        self.flag_engagement = False
+        self.flag_disposal = False
+        self.destroy_timer_safe("auto_off_timer")
+
+        # NEW: short cooldown to prevent immediate re-triggering
+        self.cooldown = True
+        self.get_logger().info("Cooldown active (2 s)...")
+        self.cooldown_timer = self.create_timer(2.0, self._clear_cooldown)
+
+    def _clear_cooldown(self):
+        self.destroy_timer_safe("cooldown_timer")
+        self.cooldown = False
+        self.get_logger().info("Cooldown cleared, ready for next cycle.")
 
 
 def main(args=None):
