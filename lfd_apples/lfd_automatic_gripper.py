@@ -63,13 +63,13 @@ class GripperController(Node):
 
     # ----------------------- Main Sensor Callback -----------------------
     def gripper_sensors_callback(self, msg: Int16MultiArray):
-        if not self.flag_init:
+        if (not self.cooldown) and (not self.flag_init):
             self.get_logger().info("--- State 0 ---: Initialization: Valve OFF, Fingers IN")
             self.fingers_and_valve_reset()
             self.flag_init = True
 
         # Target close
-        if not self.flag_distance and 0 < msg.data[3] < self.distance_threshold:
+        if (not self.cooldown) and (not self.flag_distance) and (0 < msg.data[3] < self.distance_threshold):
             self.get_logger().info(f"--- State 1 ---: Target close ({msg.data[3]} < {self.distance_threshold}), valve ON")
             req = SetBool.Request()
             req.data = True
@@ -77,7 +77,7 @@ class GripperController(Node):
             self.flag_distance = True
 
         # Target moved away
-        elif self.flag_distance and msg.data[3] > self.distance_threshold:
+        elif self.flag_distance and (msg.data[3] > self.distance_threshold):
             self.get_logger().info(f"--- State 0 ---: Target moved away ({msg.data[3]} > {self.distance_threshold}), resetting gripper")
             req = SetBool.Request()
             req.data = False
@@ -112,7 +112,7 @@ class GripperController(Node):
     def eef_pose_callback(self, msg: PoseStamped):
         eef_x, eef_y, eef_z = msg.pose.position.x, msg.pose.position.y, msg.pose.position.z
 
-        if (not self.flag_disposal) and (
+        if (not self.cooldown) and (not self.flag_disposal) and (
             abs(eef_x - self.apple_disposal_coord[0]) < self.disposal_range and
             abs(eef_y - self.apple_disposal_coord[1]) < self.disposal_range and
             abs(eef_z - self.apple_disposal_coord[2]) < self.disposal_range
