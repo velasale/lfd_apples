@@ -429,7 +429,7 @@ def plot_wrench_and_pressure(wrench_df, pressure_df):
     axs[3].legend(lines1 + lines2, labels1 + labels2, loc='upper right')
 
     plt.suptitle("Wrench and Pressure Data")
-    plt.xlim([0, 50])
+    # plt.xlim([0, 50])
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     plt.show()
 
@@ -837,7 +837,7 @@ def extract_data_and_plot(bag_folder, trial_folder):
 if __name__ == "__main__":
 
     bag_folder = "/home/alejo/lfd_bags/experiment_1"    
-    trial_folder = "trial_9"
+    trial_folder = "trial_19"
     extract_data_and_plot(bag_folder, trial_folder)
     
     
