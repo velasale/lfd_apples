@@ -68,7 +68,7 @@ class MoveToHomeAndFreedrive(Node):
 
     def ensure_controller_loaded(self, controller_name):
         """Load a controller if not already loaded."""
-        from controller_manager_msgs.srv import LoadController
+        
         req = LoadController.Request()
         req.name = controller_name
         future = self.load_client.call_async(req)
