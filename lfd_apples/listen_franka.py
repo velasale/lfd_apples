@@ -11,27 +11,6 @@ from std_msgs.msg import Int16MultiArray
 from lfd_apples.ros2bag2csv import extract_data_and_plot
 
 
-# === Desired joint configuration ===
-JOINT_NAMES = [
-    "fr3_joint1",
-    "fr3_joint2",
-    "fr3_joint3",
-    "fr3_joint4",
-    "fr3_joint5",
-    "fr3_joint6",
-    "fr3_joint7"
-]
-
-JOINT_POSITIONS = [
-    1.4646141805298691,
-    -0.9702388178201579,
-    0.19573473944695943,
-    -2.6398837719728743,
-    0.19467791672497642,
-    1.6778097848819793,
-    0.7138629799943128,
-]
-
 
 def find_next_trial_number(base_dir, prefix="trial_"):
     existing_trials = [d for d in os.listdir(base_dir) if os.path.isdir(os.path.join(base_dir, d)) and d.startswith(prefix)]
@@ -43,39 +22,6 @@ def find_next_trial_number(base_dir, prefix="trial_"):
     # print(existing_numbers)
     
     return f"trial_{max(existing_numbers) + 1}" if existing_numbers else "trial_1"
-
-class MoveToStart(Node):
-    def __init__(self):
-        super().__init__('move_to_start')
-        self.publisher = self.create_publisher(JointTrajectory, '/fr3_arm_controller/joint_trajectory', 10)
-
-    def go_to_position(self):
-        traj = JointTrajectory()
-        traj.joint_names = JOINT_NAMES
-
-        point = JointTrajectoryPoint()
-        point.positions = JOINT_POSITIONS
-        point.time_from_start = rclpy.duration.Duration(seconds=5.0).to_msg()  # 5s motion
-
-        traj.points.append(point)
-        self.publisher.publish(traj)
-        self.get_logger().info("Sent robot to start position!")
-
-
-def move_robot_to_start():
-    rclpy.init()
-    node = MoveToStart()
-
-    # Give publisher time to connect
-    time.sleep(1.0)
-
-    node.go_to_position()
-
-    # Allow time for execution
-    time.sleep(6.0)
-
-    node.destroy_node()
-    rclpy.shutdown()
 
 
 class SuctionMonitor(Node):
@@ -104,26 +50,14 @@ class SuctionMonitor(Node):
 
 
 def main():
-    rclpy.init()
-
-    # === Step 1: Move robot to start ===
-    # print("Moving robot to start configuration...")
-    # move_robot_to_start()
-
-    # === Step 2: Start Free Drive mode ===
-    # Start Free Drive in background
-    input("Hit Enter to start Free Drive...")    
-
-    input("Hit Enter to start recording ROS 2 bag while in Free Drive...")    
-
-    print("Recording started! Press Ctrl+C to stop.")
-
-    # Search directory for existing trials and create next trial number
-
+    rclpy.init()    
+        
+    
+    # --- STEP 1: Define trial filename ---
     # Global variables
     BAG_DIR = os.path.expanduser("~/lfd_bags/experiment_1")
     os.makedirs(BAG_DIR, exist_ok=True)
-    
+    # Search directory for existing trials and create next trial number
     TRIAL = find_next_trial_number(BAG_DIR, prefix="trial_")
 
     BAG_NAME_MAIN = os.path.join(BAG_DIR, TRIAL, "lfd_bag_main")
@@ -131,7 +65,8 @@ def main():
     BAG_NAME_FIXED_CAMERA = os.path.join(BAG_DIR, TRIAL, "lfd_bag_fixed_camera")
 
 
-    # Start ROS 2 bag recording
+    # --- STEP 2: Record ros2 bagfiles ---
+    input("Hit Enter to start recording ROS 2 bag while in Free Drive...")    
     bag_proc_main = subprocess.Popen([
         "ros2", "bag", "record",
         "-o", BAG_NAME_MAIN,
@@ -141,53 +76,63 @@ def main():
         # "/franka_robot_state_broadcaster/robot_state",
         "microROS/sensor_data",            
         "/franka/joint_states"
-    ])
+    ], preexec_fn=os.setsid)
 
     bag_proc_palm_camera = subprocess.Popen([
         "ros2", "bag", "record",
         "-o", BAG_NAME_PALM_CAMERA,
         "gripper/rgb_palm_camera/image_raw",     
-    ])
-
+    ], preexec_fn=os.setsid)
 
     bag_proc_fixed_camera = subprocess.Popen([
         "ros2", "bag", "record",
         "-o", BAG_NAME_FIXED_CAMERA,
         "fixed/rgb_camera/image_raw",     
-    ])
+    ], preexec_fn=os.setsid)
 
-    node = SuctionMonitor(bag_proc_palm_camera)
+    print("Recording started! Press Ctrl+C to stop.")
+
+
+    # --- STEP 3: Monitor engagement to finish In-Hand Camera file
+    # node = SuctionMonitor(bag_proc_palm_camera)   
 
         
     try:
 
-        while rclpy.ok():
-            rclpy.spin_once(node, timeout_sec=0.5)
+        # Uncommment to use ROS2 node for monitoring suction engagement
+        # while rclpy.ok():
+            # rclpy.spin_once(node, timeout_sec=0.5)
+
+        while True:
+            time.sleep(1.0)  
+
+
     except KeyboardInterrupt:
         print("\nStopping recording..." )
 
     finally:
-        
+        print("Stopping bag recordings...")
 
-        # Terminate bag recording if still running
-        try:
-            bag_proc_main.terminate()
-            bag_proc_main.wait()
+        for proc in [bag_proc_main, bag_proc_palm_camera, bag_proc_fixed_camera]:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                proc.wait(timeout=5)  # ✅ wait up to 5s, then continue
+            except subprocess.TimeoutExpired:
+                print(f"Process {proc.pid} taking too long, killing forcefully.")
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except Exception as e:
+                print(f"Error stopping process {proc.pid}: {e}")
 
-            bag_proc_fixed_camera.terminate()
-            bag_proc_fixed_camera.wait()
-        except:
-            pass
+        print("✅ Recordings stopped.")
+        print(f"Bags saved in:\n  - {BAG_NAME_MAIN}\n  - {BAG_NAME_PALM_CAMERA}\n  - {BAG_NAME_FIXED_CAMERA}")
 
-        # Stop Free Drive
-        print("Stopping Free Drive mode...")        
-        print(f"Free Drive stopped. Bags saved in:\n  - {BAG_NAME_MAIN}\n  - {BAG_NAME_PALM_CAMERA}\n - {BAG_NAME_FIXED_CAMERA}")
-
-        # === Step 3: Extract CSVs and plot ===
         print("Extracting data and generating plots...")
-        extract_data_and_plot(os.path.join(BAG_DIR, TRIAL), "")
+        try:
+            extract_data_and_plot(os.path.join(BAG_DIR, TRIAL), "")
+            print("✅ Data extraction complete.")
+        except Exception as e:
+            print(f"❌ Error during data extraction: {e}")
 
-        node.destroy_node()
         rclpy.shutdown()
 
         
