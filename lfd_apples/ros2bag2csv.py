@@ -786,17 +786,28 @@ def extract_data_and_plot(bag_folder, trial_folder):
     trial.get_engagement_time()  # 🔹 estimates time of engagement from pressure data
     trial.get_disposal_time()  # 🔹 estimates time of engagement from pressure data
    
-    output_frames = os.path.join(bag_folder, trial_folder, "lfd_bag_palm_camera", "camera_frames")     
-    extract_images_from_bag(
-        db3_file_path=os.path.join(bag_folder,trial_folder, "lfd_bag_palm_camera","lfd_bag_palm_camera_0.db3"),
-        output_dir=output_frames
-    )
+    import os
 
-    output_frames = os.path.join(bag_folder, trial_folder, "lfd_bag_fixed_camera", "camera_frames")     
-    extract_images_from_bag(
-        db3_file_path=os.path.join(bag_folder, trial_folder, "lfd_bag_fixed_camera","lfd_bag_fixed_camera_0.db3"),
-        output_dir=output_frames
-    )
+    # --- Palm camera ---
+    output_frames_palm = os.path.join(bag_folder, trial_folder, "lfd_bag_palm_camera", "camera_frames")
+    db3_palm = os.path.join(bag_folder, trial_folder, "lfd_bag_palm_camera", "lfd_bag_palm_camera_0.db3")
+
+    if not os.path.exists(output_frames_palm):
+        print(f"[INFO] Extracting palm camera frames to {output_frames_palm} ...")
+        extract_images_from_bag(db3_file_path=db3_palm, output_dir=output_frames_palm)
+    else:
+        print(f"[SKIP] Palm camera frames already exist at {output_frames_palm}. Skipping extraction.")
+
+    # --- Fixed camera ---
+    output_frames_fixed = os.path.join(bag_folder, trial_folder, "lfd_bag_fixed_camera", "camera_frames")
+    db3_fixed = os.path.join(bag_folder, trial_folder, "lfd_bag_fixed_camera", "lfd_bag_fixed_camera_0.db3")
+
+    if not os.path.exists(output_frames_fixed):
+        print(f"[INFO] Extracting fixed camera frames to {output_frames_fixed} ...")
+        extract_images_from_bag(db3_file_path=db3_fixed, output_dir=output_frames_fixed)
+    else:
+        print(f"[SKIP] Fixed camera frames already exist at {output_frames_fixed}. Skipping extraction.")
+
 
     # --- EEF POSE --- 
     # Access topics directly
@@ -837,7 +848,7 @@ def extract_data_and_plot(bag_folder, trial_folder):
 if __name__ == "__main__":
 
     bag_folder = "/home/alejo/lfd_bags/experiment_1"    
-    trial_folder = "trial_19"
+    trial_folder = "trial_4"
     extract_data_and_plot(bag_folder, trial_folder)
     
     
