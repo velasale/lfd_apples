@@ -9,6 +9,8 @@ from rclpy.node import Node
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from std_msgs.msg import Int16MultiArray
 from lfd_apples.ros2bag2csv import extract_data_and_plot
+import json
+import datetime
 
 
 
@@ -22,6 +24,93 @@ def find_next_trial_number(base_dir, prefix="trial_"):
     # print(existing_numbers)
     
     return f"trial_{max(existing_numbers) + 1}" if existing_numbers else "trial_1"
+
+
+def save_metadata(filename):
+    """
+    Create json file and save it with the same name as the bag file
+    @param filename:
+    @return:
+    """
+    
+
+    # --- Organize metatada
+    experiment_info = {
+        "general": {
+            "date": str(datetime.datetime.now()),
+            "demonstrator": 'alejo',
+            "experiment type": 'first_trials',                                    
+            "pick pattern": 'pull_bend',            # twist, pull_straight, pull_bend
+        },
+
+        "robot": {
+            "robot": 'Franka Arm',
+            "gripper":{
+                "type": 'Alejo tandem actuation gripper',
+                "pressure @ valve": '65 PSI',
+                "weight": '1300 g',
+            },              
+        },
+
+        "proxy": {
+            "branch":{
+                "material": 'wood',
+                "diameter": '25 mm',
+                "length": '100 mm',
+                "pose":{
+                    "position": [0,0,0],
+                    "orientation": [0,0,0],
+                },
+                "spring stiffness": 'high',        # soft, medium, high
+            },
+              
+            "spur":{
+                "material": 'TPU',
+                "diameter": '10 mm',
+                "length": '25 mm',
+                "orientation": [0,0,0],
+            },               
+
+            "stem":{
+                "material": 'steel cable',
+                "diameter": '3 mm',
+                "length": '10 mm',
+                "magnet": "medium",             # low, medium, hard
+            },
+            
+            "apple":{
+                "mass": '173 g',
+                "diameter": '80 mm',
+                "height": '70 mm',
+                "shape": 'round',                # round, oblong
+                "pose": {
+                    "position": [1,2,3],
+                    "orientation": [0,0,0],
+                },
+            },            
+        },
+
+        "fixed camera": {
+            "reference": 'Logitech, Inc. HD Webcam C615',
+            "frame_id": 'robot base link',
+            "position": [0.5, 0.0, 1.0],
+            "orientation": [0, 0, 0],            
+        },
+
+        "results": {
+            "success_approach": True,
+            "success_grasp": True,
+            "success_pick": True,
+            "success_disposal": True,
+            "comments": 'N/A',
+        },      
+        
+    }
+
+    # --- Save metadata in file
+    filename += ".json"
+    with open(filename, "w") as outfile:
+        json.dump(experiment_info, outfile, indent=4)
 
 
 class SuctionMonitor(Node):
@@ -125,6 +214,14 @@ def main():
 
         print("✅ Recordings stopped.")
         print(f"Bags saved in:\n  - {BAG_NAME_MAIN}\n  - {BAG_NAME_PALM_CAMERA}\n  - {BAG_NAME_FIXED_CAMERA}")
+
+        # --- STEP 4: Save metadata ---
+        print("Saving metadata...")
+        try:
+            save_metadata(os.path.join(BAG_DIR, TRIAL, "metadata_" + TRIAL))
+            print("✅ Metadata saved.")
+        except Exception as e:
+            print(f"❌ Error saving metadata: {e}")
 
         print("Extracting data and generating plots...")
         try:
