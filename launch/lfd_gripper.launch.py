@@ -48,23 +48,17 @@ def generate_launch_description():
 
         # Start Wi-Fi hotspot using parameters
         ExecuteProcess(
-            cmd=['sudo', 'nmcli', 'device', 'wifi', 'hotspot',
+            cmd=['nmcli', 'device', 'wifi', 'hotspot',
                  'ifname', 'wlp108s0f0',
                  'ssid', ssid,
                  'password', password],
             output='screen',
         ),
-
-        # Start micro-ROS agent after a 5-second delay
-        TimerAction(
-            period=8.0,
-            actions=[
-                ExecuteProcess(
+      
+        ExecuteProcess(
                     cmd=['ros2', 'run', 'micro_ros_agent', 'micro_ros_agent', 'udp4', '--port', '8888'],
                     output='screen',
-                )
-            ]
-        ),
+                ),
 
 
 
@@ -79,52 +73,38 @@ def generate_launch_description():
         #     ]
         # ),
 
-        TimerAction(
-            period=10.0,
-            actions=[
-                Node(
-                    package='lfd_apples',
-                    executable='lfd_automatic_gripper',
-                    name='automatic_gripper',
-                    output='screen',
-                )
-            ]
-        ),
+    
+        Node(
+                package='lfd_apples',
+                executable='lfd_automatic_gripper',
+                name='automatic_gripper',
+                output='screen',
+            ),
 
-        # --- Palm camera node after 10s ---
-        TimerAction(
-            period=10.0,
-            actions=[
-                Node(
-                    package='lfd_apples',              # or your actual package name
-                    executable='lfd_inhand_camera',     # make sure this matches your entry point
-                    name='gripper_palm_camera_publisher',
-                    output='screen',
-                    parameters=[
-                        {'camera_device_num': palm_camera_device_num},
-                        {'topic_name': 'gripper/rgb_palm_camera/image_raw'},
-                        {'frame_id': 'gripper_palm_camera_optical_link'}                        
-                        ],
-                )
-            ]
-        ),
 
-        # --- Fixed camera node after 10s ---
-        TimerAction(
-            period=10.0,
-            actions=[
-                Node(
-                    package='lfd_apples',              # or your actual package name
-                    executable='lfd_inhand_camera',      # make sure this matches your entry point
-                    name='fixed_camera_publisher',
-                    output='screen',
-                    parameters=[
-                        {'camera_device_num': fixed_camera_device_num},
-                        {'topic_name': 'fixed/rgb_camera/image_raw'},
-                        {'frame_id': 'fixed_camera_optical_link'}                        
-                        ],
-                )   
-            ]
-        ),
-        
+        # In-Hand Camera
+        Node(
+                package='lfd_apples',              # or your actual package name
+                executable='lfd_inhand_camera',     # make sure this matches your entry point
+                name='gripper_palm_camera_publisher',
+                output='screen',
+                parameters=[
+                    {'camera_device_num': palm_camera_device_num},
+                    {'topic_name': 'gripper/rgb_palm_camera/image_raw'},
+                    {'frame_id': 'gripper_palm_camera_optical_link'}                        
+                    ],
+            ),
+     
+        # Fixed Camera
+        Node(
+                package='lfd_apples',              # or your actual package name
+                executable='lfd_inhand_camera',      # make sure this matches your entry point
+                name='fixed_camera_publisher',
+                output='screen',
+                parameters=[
+                    {'camera_device_num': fixed_camera_device_num},
+                    {'topic_name': 'fixed/rgb_camera/image_raw'},
+                    {'frame_id': 'fixed_camera_optical_link'}                        
+                    ],
+            ),   
     ])
