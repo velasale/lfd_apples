@@ -138,9 +138,7 @@ class SuctionMonitor(Node):
 
 
 
-def main():
-    rclpy.init()    
-        
+def main():            
     
     # --- STEP 1: Define trial filename ---
     # Global variables
@@ -165,72 +163,48 @@ def main():
         # "/franka_robot_state_broadcaster/robot_state",
         "microROS/sensor_data",            
         "/franka/joint_states"
-    ], preexec_fn=os.setsid)
+    ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
+    # , preexec_fn=os.setsid)
 
     bag_proc_palm_camera = subprocess.Popen([
         "ros2", "bag", "record",
         "-o", BAG_NAME_PALM_CAMERA,
         "gripper/rgb_palm_camera/image_raw",     
-    ], preexec_fn=os.setsid)
+    ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
+    # , preexec_fn=os.setsid)
 
     bag_proc_fixed_camera = subprocess.Popen([
         "ros2", "bag", "record",
         "-o", BAG_NAME_FIXED_CAMERA,
         "fixed/rgb_camera/image_raw",     
-    ], preexec_fn=os.setsid)
+    ],start_new_session=True, stdin=subprocess.DEVNULL)  # 🚫 Detach from parent's stdin
+    # , preexec_fn=os.setsid)
 
-    print("Recording started! Press Ctrl+C to stop.")
+    input("Recording started! Press ENTER to stop.")          
+    print("Stopping bag recordings...")
 
+    for proc in [bag_proc_main, bag_proc_palm_camera, bag_proc_fixed_camera]:
+        os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+      
 
-    # --- STEP 3: Monitor engagement to finish In-Hand Camera file
-    # node = SuctionMonitor(bag_proc_palm_camera)   
+    print("✅ Recordings stopped.")
+    print(f"Bags saved in:\n  - {BAG_NAME_MAIN}\n  - {BAG_NAME_PALM_CAMERA}\n  - {BAG_NAME_FIXED_CAMERA}")
 
-        
+    # --- STEP 4: Save metadata ---
+    print("Saving metadata...")
     try:
+        save_metadata(os.path.join(BAG_DIR, TRIAL, "metadata_" + TRIAL))
+        print("✅ Metadata saved.")
+    except Exception as e:
+        print(f"❌ Error saving metadata: {e}")
 
-        # Uncommment to use ROS2 node for monitoring suction engagement
-        # while rclpy.ok():
-            # rclpy.spin_once(node, timeout_sec=0.5)
-
-        while True:
-            time.sleep(1.0)  
-
-
-    except KeyboardInterrupt:
-        print("\nStopping recording..." )
-
-    finally:
-        print("Stopping bag recordings...")
-
-        for proc in [bag_proc_main, bag_proc_palm_camera, bag_proc_fixed_camera]:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-                proc.wait(timeout=5)  # ✅ wait up to 5s, then continue
-            except subprocess.TimeoutExpired:
-                print(f"Process {proc.pid} taking too long, killing forcefully.")
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except Exception as e:
-                print(f"Error stopping process {proc.pid}: {e}")
-
-        print("✅ Recordings stopped.")
-        print(f"Bags saved in:\n  - {BAG_NAME_MAIN}\n  - {BAG_NAME_PALM_CAMERA}\n  - {BAG_NAME_FIXED_CAMERA}")
-
-        # --- STEP 4: Save metadata ---
-        print("Saving metadata...")
-        try:
-            save_metadata(os.path.join(BAG_DIR, TRIAL, "metadata_" + TRIAL))
-            print("✅ Metadata saved.")
-        except Exception as e:
-            print(f"❌ Error saving metadata: {e}")
-
-        print("Extracting data and generating plots...")
-        try:
-            extract_data_and_plot(os.path.join(BAG_DIR, TRIAL), "")
-            print("✅ Data extraction complete.")
-        except Exception as e:
-            print(f"❌ Error during data extraction: {e}")
-
-        rclpy.shutdown()
+    print("Extracting data and generating plots...")
+    try:
+        extract_data_and_plot(os.path.join(BAG_DIR, TRIAL), "")
+        print("✅ Data extraction complete.")
+    except Exception as e:
+        print(f"❌ Error during data extraction: {e}")
+    
 
         
 
