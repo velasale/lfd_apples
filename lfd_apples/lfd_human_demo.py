@@ -7,6 +7,7 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 from controller_manager_msgs.srv import SwitchController, LoadController
 import subprocess
 
+from lfd_apples.listen_franka import main as listen_main
 
 class MoveToHomeAndFreedrive(Node):
     def __init__(self):
@@ -41,7 +42,15 @@ class MoveToHomeAndFreedrive(Node):
             'fr3_joint1', 'fr3_joint2', 'fr3_joint3',
             'fr3_joint4', 'fr3_joint5', 'fr3_joint6', 'fr3_joint7'
         ]
-        home_positions = [0.0, -1.57/2, 0.0, -2.36, 0.0, 1.57, 0.79]
+              
+        home_positions = [ 1.0,
+                          -1.4,
+                           0.66,
+                          -2.2,
+                           0.3,
+                           2.23,
+                           1.17]
+    
 
         goal_msg = FollowJointTrajectory.Goal()
         goal_msg.trajectory.joint_names = joint_names
@@ -128,9 +137,27 @@ class MoveToHomeAndFreedrive(Node):
 
 def main():
     rclpy.init()
+
     node = MoveToHomeAndFreedrive()
-    if node.move_to_home():
+
+    for demo in range(10):
+
+        input(f"Press Enter to start demonstration {demo+1}/10: ")
+
+        # Step 1: Move to home position and enable freedrive    
+        node.get_logger().info("Retrying move to home...")
+        while not node.move_to_home():
+            pass
+            
+        # Step 2: Enable freedrive mode        
         node.enable_freedrive()
+        listen_main()
+        node.get_logger().info("Free-drive mode enabled, you can start the demo.")    
+
+        # Step 3: Wait for user to finish demonstration
+        print(f"Waiting to start demonstration {demo+1}/10. Press Enter to continue...")
+        input()    
+    
     node.destroy_node()
     rclpy.shutdown()
 
