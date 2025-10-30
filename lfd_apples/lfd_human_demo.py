@@ -4,8 +4,9 @@ from rclpy.action import ActionClient
 from rclpy.node import Node
 from control_msgs.action import FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint
-from controller_manager_msgs.srv import SwitchController, LoadController
+from controller_manager_msgs.srv import SwitchController, LoadController, ListControllers
 import subprocess
+import time
 
 from lfd_apples.listen_franka import main as listen_main
 
@@ -77,62 +78,105 @@ class MoveToHomeAndFreedrive(Node):
 
     def ensure_controller_loaded(self, controller_name):
         """Load a controller if not already loaded."""
-        
-        req = LoadController.Request()
-        req.name = controller_name
-        future = self.load_client.call_async(req)
+        # --- Step 1: check if controller is already loaded
+        list_client = self.create_client(ListControllers, '/controller_manager/list_controllers')
+        list_client.wait_for_service()
+        list_req = ListControllers.Request()
+        future = list_client.call_async(list_req)
         rclpy.spin_until_future_complete(self, future)
         resp = future.result()
-        if resp.ok:
-            self.get_logger().info(f'Controller {controller_name} loaded successfully.')
+
+        if any(c.name == controller_name for c in resp.controller):
+            self.get_logger().info(f"Controller '{controller_name}' is already loaded, skipping load.")
+            return
+
+        # --- Step 2: load controller if not loaded
+        load_req = LoadController.Request()
+        load_req.name = controller_name
+        future = self.load_client.call_async(load_req)
+        rclpy.spin_until_future_complete(self, future)
+        load_resp = future.result()
+        if load_resp.ok:
+            self.get_logger().info(f"Controller '{controller_name}' loaded successfully.")
         else:
-            self.get_logger().warn(f'Controller {controller_name} may already be loaded or failed to load.')
+            self.get_logger().error(f"Failed to load controller '{controller_name}'.")
 
     def configure_controller(self, controller_name):
-        """Configure controller to inactive using CLI (required for Humble)."""
+        """Configure controller to inactive if it's not already inactive."""
+        list_client = self.create_client(ListControllers, '/controller_manager/list_controllers')
+        list_client.wait_for_service()
+        future = list_client.call_async(ListControllers.Request())
+        rclpy.spin_until_future_complete(self, future)
+        resp = future.result()
+
+        ctrl_state = None
+        for c in resp.controller:
+            if c.name == controller_name:
+                ctrl_state = c.state
+                break
+
+        if ctrl_state == 'inactive':
+            self.get_logger().info(f"Controller {controller_name} already inactive, skipping.")
+            return
+
+        # Otherwise, set to inactive
         try:
-            subprocess.run([
-                'ros2', 'control', 'set_controller_state', controller_name, 'inactive'
-            ], check=True)
+            subprocess.run(['ros2', 'control', 'set_controller_state', controller_name, 'inactive'], check=True)
             self.get_logger().info(f'Controller {controller_name} configured to inactive.')
         except subprocess.CalledProcessError:
             self.get_logger().error(f'Failed to configure {controller_name} to inactive.')
 
-    def enable_freedrive(self):
-        self.get_logger().info('Preparing freedrive mode...')
+        
+    def swap_controller(self, stop_controller: str, start_controller: str, settle_time: float = 1.5):
+        """
+        Safely switch from one ROS2 controller to another (Franka-safe).
+        stop_controller: controller name to deactivate
+        start_controller: controller name to activate
+        settle_time: seconds to wait between switches (default 1.5s)
+        """
+        # --- Step 1: Deactivate current controller ---
+        if stop_controller:
+            self.get_logger().info(f"Deactivating controller: {stop_controller}")
+            switch_req = SwitchController.Request()
+            switch_req.deactivate_controllers = [stop_controller]
+            switch_req.activate_controllers = []
+            switch_req.strictness = 2  # BEST_EFFORT
 
-        # 1️⃣ Deactivate the arm controller
-        switch_req = SwitchController.Request()
-        switch_req.deactivate_controllers = [self.arm_controller]
-        switch_req.activate_controllers = []
-        switch_req.strictness = 2  # BEST_EFFORT
-        future = self.switch_client.call_async(switch_req)
-        rclpy.spin_until_future_complete(self, future)
-        resp = future.result()
-        if resp.ok:
-            self.get_logger().info(f'{self.arm_controller} deactivated successfully.')
-        else:
-            self.get_logger().error(f'Failed to deactivate {self.arm_controller}.')
-            return
+            future = self.switch_client.call_async(switch_req)
+            rclpy.spin_until_future_complete(self, future)
+            resp = future.result()
 
-        # 2️⃣ Load gravity compensation controller
-        self.ensure_controller_loaded(self.gravity_controller)
+            if not resp or not resp.ok:
+                self.get_logger().warn(f"⚠️ Failed to deactivate {stop_controller}. Continuing anyway.")
+            else:
+                self.get_logger().info(f"✅ {stop_controller} deactivated successfully.")
 
-        # 3️⃣ Configure gravity controller to inactive
-        self.configure_controller(self.gravity_controller)
+        # --- Step 2: Wait for safety ---
+        self.get_logger().info(f"Waiting {settle_time:.1f}s before activating {start_controller}...")
+        time.sleep(settle_time)
 
-        # 4️⃣ Activate gravity compensation controller
+        # --- Step 3: Load and configure next controller ---
+        self.ensure_controller_loaded(start_controller)
+        self.configure_controller(start_controller)
+
+        # --- Step 4: Activate next controller ---
+        self.get_logger().info(f"Activating controller: {start_controller}")
         activate_req = SwitchController.Request()
         activate_req.deactivate_controllers = []
-        activate_req.activate_controllers = [self.gravity_controller]
+        activate_req.activate_controllers = [start_controller]
         activate_req.strictness = 2  # BEST_EFFORT
+
         future = self.switch_client.call_async(activate_req)
         rclpy.spin_until_future_complete(self, future)
         resp = future.result()
-        if resp.ok:
-            self.get_logger().info('Freedrive mode enabled! You can move the arm by hand.')
-        else:
-            self.get_logger().error('Failed to activate gravity compensation controller.')
+
+        if not resp or not resp.ok:
+            self.get_logger().error(f"❌ Failed to activate {start_controller}.")
+            return False
+
+        self.get_logger().info(f"✅ {start_controller} activated successfully.")
+        return True
+
 
 
 def main():
@@ -150,13 +194,18 @@ def main():
             pass
             
         # Step 2: Enable freedrive mode        
-        node.enable_freedrive()
+        # node.enable_freedrive()
+        node.swap_controller(node.arm_controller, node.gravity_controller)
         listen_main()
         node.get_logger().info("Free-drive mode enabled, you can start the demo.")    
 
         # Step 3: Wait for user to finish demonstration
         print(f"Waiting to start demonstration {demo+1}/10. Press Enter to continue...")
         input()    
+
+        # Step 4: Disable freedrive and re-enable arm controller
+        # node.enable_arm_controller()
+        node.swap_controller(node.gravity_controller, node.arm_controller)
     
     node.destroy_node()
     rclpy.shutdown()
