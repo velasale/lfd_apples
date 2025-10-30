@@ -26,6 +26,7 @@ setup(
             'lfd_automatic_gripper = lfd_apples.lfd_automatic_gripper:main',    
             'lfd_replay = lfd_apples.lfd_replay:main',     
             'lfd_inhand_camera = lfd_apples.lfd_inhand_camera:main',
+            'lfd_human_demo = lfd_apples.lfd_human_demo:main',
         ],
     },
 )
