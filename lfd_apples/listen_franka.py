@@ -11,6 +11,7 @@ from std_msgs.msg import Int16MultiArray
 from lfd_apples.ros2bag2csv import extract_data_and_plot
 import json
 import datetime
+import matplotlib.pyplot as plt
 
 
 
@@ -142,7 +143,7 @@ def main():
     
     # --- STEP 1: Define trial filename ---
     # Global variables
-    BAG_DIR = os.path.expanduser("~/lfd_bags/experiment_1")
+    BAG_DIR = os.path.expanduser("/media/alejo/Pruning25/03_IL_bagfiles/experiment_1")
     os.makedirs(BAG_DIR, exist_ok=True)
     # Search directory for existing trials and create next trial number
     TRIAL = find_next_trial_number(BAG_DIR, prefix="trial_")
@@ -153,7 +154,7 @@ def main():
 
 
     # --- STEP 2: Record ros2 bagfiles ---
-    input("Hit Enter to start recording ROS 2 bag while in Free Drive...")    
+    # input("Hit Enter to start recording ROS 2 bag while in Free Drive...")    
     bag_proc_main = subprocess.Popen([
         "ros2", "bag", "record",
         "-o", BAG_NAME_MAIN,
@@ -180,7 +181,9 @@ def main():
     ],start_new_session=True, stdin=subprocess.DEVNULL)  # 🚫 Detach from parent's stdin
     # , preexec_fn=os.setsid)
 
-    input("Recording started! Press ENTER to stop.")          
+    time.sleep(3.0)
+
+    input("\n\033[1;32m1 - Perform demonstration by driving the arm. Press ENTER when done.\033[0m\n")
     print("Stopping bag recordings...")
 
     for proc in [bag_proc_main, bag_proc_palm_camera, bag_proc_fixed_camera]:
@@ -188,20 +191,28 @@ def main():
       
 
     print("✅ Recordings stopped.")
-    print(f"Bags saved in:\n  - {BAG_NAME_MAIN}\n  - {BAG_NAME_PALM_CAMERA}\n  - {BAG_NAME_FIXED_CAMERA}")
+    # print(f"Bags saved in:\n  - {BAG_NAME_MAIN}\n  - {BAG_NAME_PALM_CAMERA}\n  - {BAG_NAME_FIXED_CAMERA}")
 
     # --- STEP 4: Save metadata ---
-    print("Saving metadata...")
+    # print("Saving metadata...")
     try:
         save_metadata(os.path.join(BAG_DIR, TRIAL, "metadata_" + TRIAL))
-        print("✅ Metadata saved.")
+        # print("✅ Metadata saved.")
     except Exception as e:
         print(f"❌ Error saving metadata: {e}")
 
     print("Extracting data and generating plots...")
     try:
+        plt.ion()  # <-- interactive mode ON
         extract_data_and_plot(os.path.join(BAG_DIR, TRIAL), "")
         print("✅ Data extraction complete.")
+
+        # Prompt user to hit Enter to close figures
+        input("\n\033[1;32m2 - Plots generated. Check that things look fine and press ENTER to close all figures.\033[0m\n")
+
+        # Close all matplotlib figures
+        plt.close('all')
+
     except Exception as e:
         print(f"❌ Error during data extraction: {e}")
     
