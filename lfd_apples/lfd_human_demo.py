@@ -184,27 +184,28 @@ def main():
 
     node = MoveToHomeAndFreedrive()
 
-    for demo in range(10):
+    batch_size = 10
+    node.get_logger().info(f"Starting human demonstration session of {batch_size} demos.")
 
-        input(f"Press Enter to start demonstration {demo+1}/10: ")
+    for demo in range(batch_size):
+
+        node.get_logger().info("\033[1;32m ---------- Press Enter to start demonstration {}/10 ----------\033[0m".format(demo+1))
+        input()  # Wait for user to press Enter
+
 
         # Step 1: Move to home position and enable freedrive    
-        node.get_logger().info("Retrying move to home...")
+        node.get_logger().info("Moving to home position...")
         while not node.move_to_home():
             pass
             
-        # Step 2: Enable freedrive mode        
-        # node.enable_freedrive()
+        # Step 2: Enable freedrive mode and record demonstration                
         node.swap_controller(node.arm_controller, node.gravity_controller)
+        time.sleep(2.0)
         listen_main()
         node.get_logger().info("Free-drive mode enabled, you can start the demo.")    
 
         # Step 3: Wait for user to finish demonstration
-        print(f"Waiting to start demonstration {demo+1}/10. Press Enter to continue...")
-        input()    
-
-        # Step 4: Disable freedrive and re-enable arm controller
-        # node.enable_arm_controller()
+        node.get_logger().info(f"Demonstration {demo+1}/10 done. Now swapping controllers.")
         node.swap_controller(node.gravity_controller, node.arm_controller)
     
     node.destroy_node()
