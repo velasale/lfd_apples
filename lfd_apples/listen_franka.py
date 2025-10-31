@@ -140,7 +140,9 @@ class SuctionMonitor(Node):
 
 
 def main():            
-    
+
+    input("\n\033[1;32m1 - Place apple on the proxy. Press ENTER when done.\033[0m\n")
+
     # --- STEP 1: Define trial filename ---
     # Global variables
     BAG_DIR = os.path.expanduser("/media/alejo/Pruning25/03_IL_bagfiles/experiment_1")
@@ -181,9 +183,9 @@ def main():
     ],start_new_session=True, stdin=subprocess.DEVNULL)  # 🚫 Detach from parent's stdin
     # , preexec_fn=os.setsid)
 
-    time.sleep(3.0)
+    time.sleep(3.0)   
 
-    input("\n\033[1;32m1 - Perform demonstration by driving the arm. Press ENTER when done.\033[0m\n")
+    input("\n\033[1;32m2 - Now drive the arm to perform an apple-pick demonstration. Press ENTER when done.\033[0m\n")
     print("Stopping bag recordings...")
 
     for proc in [bag_proc_main, bag_proc_palm_camera, bag_proc_fixed_camera]:
@@ -208,7 +210,10 @@ def main():
         print("✅ Data extraction complete.")
 
         # Prompt user to hit Enter to close figures
-        input("\n\033[1;32m2 - Plots generated. Check that things look fine and press ENTER to close all figures.\033[0m\n")
+        input("\n\033[1;32m3 - Plots generated. Check how things look and press ENTER to close all figures.\033[0m\n")
+
+        # Prompt user to take notes in YAML file if needed
+        input("\n\033[1;32m3 - Annotate the yaml file if needed, and press ENTER to continue with next demo.\033[0m\n")
 
         # Close all matplotlib figures
         plt.close('all')
