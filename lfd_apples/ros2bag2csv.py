@@ -204,13 +204,22 @@ def plot_3dpose(df, engagement_time=None, disposal_time=None):
     y_limits = ax.get_ylim3d()
     z_limits = ax.get_zlim3d()
 
-    max_range = 0.8
+    max_range = 1.0
 
-    x_middle = np.mean(x_limits)
-    y_middle = np.mean(y_limits)
-    z_middle = np.mean(z_limits)
+    # Compute ranges based on actual data
+    x_middle = (np.min(x) + np.max(x)) / 2
+    y_middle = (np.min(y) + np.max(y)) / 2
+    z_middle = (np.min(z) + np.max(z)) / 2
 
-    ax.set_xlim3d([x_middle - max_range/2, x_middle + max_range/2])
+    # Compute maximum range across all axes for equal aspect
+    # max_range = max(np.ptp(x), np.ptp(y), np.ptp(z)) * 1.1  # add 10% padding
+    
+    # x_middle = np.mean(x_limits)
+    # y_middle = np.mean(y_limits)
+    # z_middle = np.mean(z_limits)
+
+    # ax.set_xlim3d([x_middle - max_range/2, x_middle + max_range/2])
+    ax.set_xlim3d([-0.5, 0.5])
     ax.set_ylim3d([y_middle - max_range/2, y_middle + max_range/2])
     ax.set_zlim3d([z_middle - max_range/2, z_middle + max_range/2])
 
@@ -634,14 +643,14 @@ class Trial:
 
         self.first_timestamp = earliest_time
 
-        print("\n⏱️ First message timestamps per topic:")
-        for topic, ts in first_timestamps.items():
-            print(f"\n  {topic}: {ts}")
+        # print("\n⏱️ First message timestamps per topic:")
+        # for topic, ts in first_timestamps.items():
+            # print(f"\n  {topic}: {ts}")
 
-        print("\n🕒 Earliest message across all topics:")
-        print(f"  Topic: {earliest_topic}")
-        print(f"  Timestamp (ns): {earliest_time}")
-        print(f"  Timestamp (s):  {self.first_timestamp / 1e9:.6f}")
+        # print("\n🕒 Earliest message across all topics:")
+        # print(f"  Topic: {earliest_topic}")
+        # print(f"  Timestamp (ns): {earliest_time}")
+        # print(f"  Timestamp (s):  {self.first_timestamp / 1e9:.6f}")
     
     def _load_topics(self):
         """Load topics from the .db3 file and keep them in memory as DataFrames."""
@@ -793,7 +802,7 @@ def extract_data_and_plot(bag_folder, trial_folder):
     db3_palm = os.path.join(bag_folder, trial_folder, "lfd_bag_palm_camera", "lfd_bag_palm_camera_0.db3")
 
     if not os.path.exists(output_frames_palm):
-        print(f"[INFO] Extracting palm camera frames to {output_frames_palm} ...")
+        # print(f"[INFO] Extracting palm camera frames to {output_frames_palm} ...")
         extract_images_from_bag(db3_file_path=db3_palm, output_dir=output_frames_palm)
     else:
         print(f"[SKIP] Palm camera frames already exist at {output_frames_palm}. Skipping extraction.")
@@ -803,7 +812,7 @@ def extract_data_and_plot(bag_folder, trial_folder):
     db3_fixed = os.path.join(bag_folder, trial_folder, "lfd_bag_fixed_camera", "lfd_bag_fixed_camera_0.db3")
 
     if not os.path.exists(output_frames_fixed):
-        print(f"[INFO] Extracting fixed camera frames to {output_frames_fixed} ...")
+        # print(f"[INFO] Extracting fixed camera frames to {output_frames_fixed} ...")
         extract_images_from_bag(db3_file_path=db3_fixed, output_dir=output_frames_fixed)
     else:
         print(f"[SKIP] Fixed camera frames already exist at {output_frames_fixed}. Skipping extraction.")
@@ -839,16 +848,15 @@ def extract_data_and_plot(bag_folder, trial_folder):
         plot_pressure(trial.microROS_sensor_data)
     
 
+    # Show the figure non-blocking
     plt.show()
     
-
-
-
+    
 
 if __name__ == "__main__":
 
     bag_folder = "/home/alejo/lfd_bags/experiment_1"    
-    trial_folder = "trial_4"
+    trial_folder = "trial_5"
     extract_data_and_plot(bag_folder, trial_folder)
     
     
