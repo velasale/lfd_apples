@@ -162,8 +162,7 @@ class GripperController(Node):
     def _after_reset_complete(self):
         self.destroy_timer_safe("delay_reset_timer")
         self.flag_distance = False
-        self.flag_engagement = False
-        self.flag_disposal = False
+        self.flag_engagement = False        
         self.destroy_timer_safe("auto_off_timer")
 
         # NEW: short cooldown to prevent immediate re-triggering
@@ -174,6 +173,7 @@ class GripperController(Node):
     def _clear_cooldown(self):
         self.destroy_timer_safe("cooldown_timer")
         self.cooldown = False
+        self.flag_disposal = False
         self.get_logger().info("Cooldown cleared, ready for next cycle.")
 
 
