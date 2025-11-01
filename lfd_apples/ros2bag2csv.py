@@ -9,6 +9,7 @@ import re
 import array
 import itertools
 from scipy.ndimage import gaussian_filter, median_filter
+import json
 
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
@@ -369,6 +370,12 @@ def plot_wrench_and_pressure(wrench_df, pressure_df):
     zero_t = t_wrench[zero_x]
     print(f'Zero force timestamps (s): {zero_t}')   
 
+    if len(zero_t) == 0:
+        singularities = False
+    else:
+        singularities = True
+
+
     # --- Extract Pressure Data ---
     pressure_df["_data"] = pressure_df["_data"].apply(parse_array)
     pressure_df[["p1", "p2", "p3", "tof"]] = pd.DataFrame(pressure_df["_data"].tolist(), index=pressure_df.index)
@@ -442,6 +449,7 @@ def plot_wrench_and_pressure(wrench_df, pressure_df):
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     plt.show()
 
+    return singularities
 
 # Check consecutive indexes
 def find_consecutive_indexes(zero_indices):
@@ -598,6 +606,7 @@ class Trial:
         self.engagement_time = 0.0
         self.disposal_time = 0.0
         self.first_timestamp = 0.0
+        self.singularities = False
 
         # If CSVs already exist → load them
         if self._csvs_exist():
@@ -838,10 +847,33 @@ def extract_data_and_plot(bag_folder, trial_folder):
     has_pressure = hasattr(trial, "microROS_sensor_data")
 
     if has_wrench and has_pressure:
-        plot_wrench_and_pressure(
+        trial.singularities = plot_wrench_and_pressure(
             trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame,
             trial.microROS_sensor_data
-        )
+        )        
+        
+        # Update file name and json file         
+
+        if trial.singularities:            
+            print("⚠️ Singularities detected during the trial! Updating metadata JSON and filename...")
+            filename = f"metadata_{trial_folder}.json"
+            json_path = os.path.join(bag_folder, trial_folder, filename)       
+            print(json_path)
+            with open(json_path, 'r') as f:            
+                metadata = json.load(f)
+            
+            metadata['results']['comments'] = trial.singularities
+            with open(json_path, 'w') as f:
+                json.dump(metadata, f, indent=4)    
+           
+            old_name = bag_folder + "/" + trial_folder
+
+            base_name = os.path.basename(old_name)
+            new_name = f"{base_name}_singular"
+            new_path = os.path.join(os.path.dirname(old_name), new_name)
+            os.rename(old_name, new_path)            
+          
+
     elif has_wrench:
         plot_wrench(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
     elif has_pressure:
@@ -856,7 +888,7 @@ def extract_data_and_plot(bag_folder, trial_folder):
 if __name__ == "__main__":
 
     bag_folder = "/home/alejo/lfd_bags/experiment_1"    
-    trial_folder = "trial_5"
+    trial_folder = "trial_16"
     extract_data_and_plot(bag_folder, trial_folder)
     
     

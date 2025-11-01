@@ -20,7 +20,11 @@ def find_next_trial_number(base_dir, prefix="trial_"):
 
     if not existing_trials:
         return "trial_1"
-    existing_numbers = [int(d.replace(prefix, '')) for d in existing_trials if d.replace(prefix, '').isdigit()]
+    existing_numbers = []
+    for d in existing_trials:
+        num_part = d.replace(prefix, '').split('_')[0]  # remove prefix and anything after _
+        if num_part.isdigit():
+            existing_numbers.append(int(num_part))
 
     # print(existing_numbers)
     
@@ -145,7 +149,9 @@ def main():
 
     # --- STEP 1: Define trial filename ---
     # Global variables
-    BAG_DIR = os.path.expanduser("/media/alejo/Pruning25/03_IL_bagfiles/experiment_1")
+    # BAG_DIR = os.path.expanduser("/media/alejo/Pruning25/03_IL_bagfiles/experiment_1")
+    BAG_DIR = os.path.expanduser("/home/alejo/lfd_bags/experiment_1")
+
     os.makedirs(BAG_DIR, exist_ok=True)
     # Search directory for existing trials and create next trial number
     TRIAL = find_next_trial_number(BAG_DIR, prefix="trial_")
@@ -206,7 +212,8 @@ def main():
     print("Extracting data and generating plots...")
     try:
         plt.ion()  # <-- interactive mode ON
-        extract_data_and_plot(os.path.join(BAG_DIR, TRIAL), "")
+        # extract_data_and_plot(os.path.join(BAG_DIR, TRIAL), "")
+        extract_data_and_plot(BAG_DIR, TRIAL)
         print("✅ Data extraction complete.")
 
         # Prompt user to hit Enter to close figures
