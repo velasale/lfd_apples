@@ -149,8 +149,8 @@ def main():
 
     # --- STEP 1: Define trial filename ---
     # Global variables
-    # BAG_DIR = os.path.expanduser("/media/alejo/Pruning25/03_IL_bagfiles/experiment_1")
-    BAG_DIR = os.path.expanduser("/home/alejo/lfd_bags/experiment_1")
+    BAG_DIR = os.path.expanduser("/media/alejo/Pruning25/03_IL_bagfiles/experiment_1")
+    # BAG_DIR = os.path.expanduser("/home/alejo/lfd_bags/experiment_1")
 
     os.makedirs(BAG_DIR, exist_ok=True)
     # Search directory for existing trials and create next trial number
@@ -218,12 +218,13 @@ def main():
 
         # Prompt user to hit Enter to close figures
         input("\n\033[1;32m3 - Plots generated. Check how things look and press ENTER to close all figures.\033[0m\n")
+        
+        # Close all matplotlib figures
+        plt.close('all')
 
         # Prompt user to take notes in YAML file if needed
         input("\n\033[1;32m3 - Annotate the yaml file if needed, and press ENTER to continue with next demo.\033[0m\n")
 
-        # Close all matplotlib figures
-        plt.close('all')
 
     except Exception as e:
         print(f"❌ Error during data extraction: {e}")

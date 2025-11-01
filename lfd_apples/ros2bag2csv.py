@@ -853,7 +853,6 @@ def extract_data_and_plot(bag_folder, trial_folder):
         )        
         
         # Update file name and json file         
-
         if trial.singularities:            
             print("⚠️ Singularities detected during the trial! Updating metadata JSON and filename...")
             filename = f"metadata_{trial_folder}.json"
@@ -866,8 +865,8 @@ def extract_data_and_plot(bag_folder, trial_folder):
             with open(json_path, 'w') as f:
                 json.dump(metadata, f, indent=4)    
            
+           
             old_name = bag_folder + "/" + trial_folder
-
             base_name = os.path.basename(old_name)
             new_name = f"{base_name}_singular"
             new_path = os.path.join(os.path.dirname(old_name), new_name)
