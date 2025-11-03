@@ -76,3 +76,13 @@ This node subscribes to the arm's and gripper's ros2 topics and saves them in a 
 ```bash
 ros2 run lfd_apples listen_franka
 ```
+
+
+## TROUBLESHOOTING
+
+### Franka Arm
+Failed to lock the realtime publisher issue  
+[solution 1](https://github.com/frankarobotics/franka_ros2/issues/105): edit *franka_robot_broadcaster.hpp* by adding the following right before including the *realtime_publisher* (near line 24):
+```c
+#define NON_POLLING TRUE
+```   
