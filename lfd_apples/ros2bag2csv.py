@@ -887,7 +887,8 @@ def extract_data_and_plot(bag_folder, trial_folder):
 if __name__ == "__main__":
 
     bag_folder = "/home/alejo/lfd_bags/experiment_1"    
-    trial_folder = "trial_16"
+    bag_folder = '/media/alejo/Pruning25/03_IL_bagfiles/experiment_2'
+    trial_folder = "trial_41"
     extract_data_and_plot(bag_folder, trial_folder)
     
     
