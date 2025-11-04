@@ -38,84 +38,99 @@ def save_metadata(filename):
     @return:
     """
     
+    # --- Open default metadata template for the experiment
+    template_path = os.path.join(
+        os.path.dirname(filename), 
+        '..', 
+        'metadata_experiment2_template.json')
+    with open(template_path, 'r') as template_file:
+        experiment_info = json.load(template_file)
+    
+    # Update some data
+    experiment_info['general']['date'] = str(datetime.datetime.now())
 
-    # --- Organize metatada
-    experiment_info = {
-        "general": {
-            "date": str(datetime.datetime.now()),
-            "demonstrator": 'alejo',
-            "experiment type": 'first_trials',                                    
-            "pick pattern": 'pull_bend',            # twist, pull_straight, pull_bend
-        },
-
-        "robot": {
-            "robot": 'Franka Arm',
-            "gripper":{
-                "type": 'Alejo tandem actuation gripper',
-                "pressure @ valve": '65 PSI',
-                "weight": '1300 g',
-            },              
-        },
-
-        "proxy": {
-            "branch":{
-                "material": 'wood',
-                "diameter": '25 mm',
-                "length": '100 mm',
-                "pose":{
-                    "position": [0,0,0],
-                    "orientation": [0,0,0],
-                },
-                "spring stiffness": 'high',        # soft, medium, high
-            },
-              
-            "spur":{
-                "material": 'TPU',
-                "diameter": '10 mm',
-                "length": '25 mm',
-                "orientation": [0,0,0],
-            },               
-
-            "stem":{
-                "material": 'steel cable',
-                "diameter": '3 mm',
-                "length": '10 mm',
-                "magnet": "medium",             # low, medium, hard
-            },
-            
-            "apple":{
-                "mass": '173 g',
-                "diameter": '80 mm',
-                "height": '70 mm',
-                "shape": 'round',                # round, oblong
-                "pose": {
-                    "position": [1,2,3],
-                    "orientation": [0,0,0],
-                },
-            },            
-        },
-
-        "fixed camera": {
-            "reference": 'Logitech, Inc. HD Webcam C615',
-            "frame_id": 'robot base link',
-            "position": [0.5, 0.0, 1.0],
-            "orientation": [0, 0, 0],            
-        },
-
-        "results": {
-            "success_approach": True,
-            "success_grasp": True,
-            "success_pick": True,
-            "success_disposal": True,
-            "comments": 'N/A',
-        },      
-        
-    }
-
-    # --- Save metadata in file
-    filename += ".json"
-    with open(filename, "w") as outfile:
+    # --- Save metadata in file    
+    with open(filename + '.json', "w") as outfile:
         json.dump(experiment_info, outfile, indent=4)
+
+
+    # # --- Organize metatada
+    # experiment_info = {
+    #     "general": {
+    #         "date": str(datetime.datetime.now()),
+    #         "demonstrator": 'alejo',
+    #         "experiment type": 'first_trials',                                    
+    #         "pick pattern": 'pull_bend',            # twist, pull_straight, pull_bend
+    #     },
+
+    #     "robot": {
+    #         "robot": 'Franka Arm',
+    #         "gripper":{
+    #             "type": 'Alejo tandem actuation gripper',
+    #             "pressure @ valve": '65 PSI',
+    #             "weight": '1300 g',
+    #         },              
+    #     },
+
+    #     "proxy": {
+    #         "branch":{
+    #             "material": 'wood',
+    #             "diameter": '25 mm',
+    #             "length": '100 mm',
+    #             "pose":{
+    #                 "position": [0,0,0],
+    #                 "orientation": [0,0,0],
+    #             },
+    #             "spring stiffness": 'high',        # soft, medium, high
+    #         },
+              
+    #         "spur":{
+    #             "material": 'TPU',
+    #             "diameter": '10 mm',
+    #             "length": '25 mm',
+    #             "orientation": [0,0,0],
+    #         },               
+
+    #         "stem":{
+    #             "material": 'steel cable',
+    #             "diameter": '3 mm',
+    #             "length": '10 mm',
+    #             "magnet": "medium",             # low, medium, hard
+    #         },
+            
+    #         "apple":{
+    #             "mass": '173 g',
+    #             "diameter": '80 mm',
+    #             "height": '70 mm',
+    #             "shape": 'round',                # round, oblong
+    #             "pose": {
+    #                 "position": [1,2,3],
+    #                 "orientation": [0,0,0],
+    #             },
+    #         },            
+    #     },
+
+    #     "fixed camera": {
+    #         "reference": 'Logitech, Inc. HD Webcam C615',
+    #         "frame_id": 'robot base link',
+    #         "position": [0.5, 0.0, 1.0],
+    #         "orientation": [0, 0, 0],            
+    #     },
+
+    #     "results": {
+    #         "success_approach": True,
+    #         "success_grasp": True,
+    #         "success_pick": True,
+    #         "success_disposal": True,
+    #         "comments": 'N/A',
+    #     },      
+        
+    # }
+
+    # # --- Save metadata in file
+    # filename += ".json"
+    # with open(filename, "w") as outfile:
+    #     json.dump(experiment_info, outfile, indent=4)
 
 
 class SuctionMonitor(Node):
@@ -142,19 +157,7 @@ class SuctionMonitor(Node):
                 self.get_logger().error(f"Error stopping camera bag: {e}")
 
 
-
-def main():            
-
-    input("\n\033[1;32m1 - Place apple on the proxy. Press ENTER when done.\033[0m\n")
-
-    # --- STEP 1: Define trial filename ---
-    # Global variables
-    BAG_DIR = os.path.expanduser("/media/alejo/Pruning25/03_IL_bagfiles/experiment_1")
-    # BAG_DIR = os.path.expanduser("/home/alejo/lfd_bags/experiment_1")
-
-    os.makedirs(BAG_DIR, exist_ok=True)
-    # Search directory for existing trials and create next trial number
-    TRIAL = find_next_trial_number(BAG_DIR, prefix="trial_")
+def start_recording_bagfile(BAG_DIR, TRIAL):
 
     BAG_NAME_MAIN = os.path.join(BAG_DIR, TRIAL, "lfd_bag_main")
     BAG_NAME_PALM_CAMERA = os.path.join(BAG_DIR, TRIAL, "lfd_bag_palm_camera")
@@ -186,20 +189,49 @@ def main():
         "ros2", "bag", "record",
         "-o", BAG_NAME_FIXED_CAMERA,
         "fixed/rgb_camera/image_raw",     
-    ],start_new_session=True, stdin=subprocess.DEVNULL)  # 🚫 Detach from parent's stdin
+    ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
     # , preexec_fn=os.setsid)
 
     time.sleep(3.0)   
 
-    input("\n\033[1;32m2 - Now drive the arm to perform an apple-pick demonstration. Press ENTER when done.\033[0m\n")
-    print("Stopping bag recordings...")
+    return [bag_proc_main, bag_proc_palm_camera, bag_proc_fixed_camera]
 
-    for proc in [bag_proc_main, bag_proc_palm_camera, bag_proc_fixed_camera]:
-        os.killpg(os.getpgid(proc.pid), signal.SIGINT)
-      
+
+def stop_recording_bagfile(rosbag_list):
+
+    print("Stopping bag recordings...")
+    for proc in rosbag_list:
+        os.killpg(os.getpgid(proc.pid), signal.SIGINT)      
 
     print("✅ Recordings stopped.")
-    # print(f"Bags saved in:\n  - {BAG_NAME_MAIN}\n  - {BAG_NAME_PALM_CAMERA}\n  - {BAG_NAME_FIXED_CAMERA}")
+
+    return
+
+
+
+
+def main():            
+
+    input("\n\033[1;32m1 - Place apple on the proxy. Press ENTER when done.\033[0m\n")
+
+
+    # STEP 1: Define trial filename
+    BAG_DIR = os.path.expanduser("/media/alejo/Pruning25/03_IL_bagfiles/experiment_1_(robot)")
+    # BAG_DIR = os.path.expanduser("/home/alejo/lfd_bags/experiment_1")
+
+    os.makedirs(BAG_DIR, exist_ok=True)
+    # Search directory for existing trials and create next trial number
+    TRIAL = find_next_trial_number(BAG_DIR, prefix="trial_")
+
+
+    # STEP 2: Start recording rosbags
+    rosbag_list = start_recording_bagfile(BAG_DIR, TRIAL) 
+
+
+    # STEP 3: Stop recording
+    input("\n\033[1;32m2 - Now drive the arm to perform an apple-pick demonstration. Press ENTER when done.\033[0m\n")
+    stop_recording_bagfile(rosbag_list)
+    
 
     # --- STEP 4: Save metadata ---
     # print("Saving metadata...")
