@@ -794,37 +794,37 @@ class Trial:
 
 
 
-def extract_data_and_plot(bag_folder, trial_folder):
+def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixed_camera_bag=True):
     
-    bag_file = bag_folder + "/" + trial_folder + "/lfd_bag_main/lfd_bag_main_0.db3"
-    csv_dir = bag_folder + "/" + trial_folder + "/lfd_bag_main/bag_csvs"
+    bag_file = bag_folder + "/lfd_bag_main/lfd_bag_main_0.db3"
+    csv_dir = bag_folder + "/lfd_bag_main/bag_csvs"
 
     trial = Trial(bag_file, csv_dir)
     trial.list_topics()   # 🔹 prints all topics    
     trial.get_engagement_time()  # 🔹 estimates time of engagement from pressure data
-    trial.get_disposal_time()  # 🔹 estimates time of engagement from pressure data
-   
-    import os
+    trial.get_disposal_time()  # 🔹 estimates time of engagement from pressure data   
+    
+    if inhand_camera_bag:
+        # --- Palm camera ---
+        output_frames_palm = os.path.join(bag_folder, "lfd_bag_palm_camera", "camera_frames")
+        db3_palm = os.path.join(bag_folder, "lfd_bag_palm_camera", "lfd_bag_palm_camera_0.db3")
 
-    # --- Palm camera ---
-    output_frames_palm = os.path.join(bag_folder, trial_folder, "lfd_bag_palm_camera", "camera_frames")
-    db3_palm = os.path.join(bag_folder, trial_folder, "lfd_bag_palm_camera", "lfd_bag_palm_camera_0.db3")
+        if not os.path.exists(output_frames_palm):
+            # print(f"[INFO] Extracting palm camera frames to {output_frames_palm} ...")
+            extract_images_from_bag(db3_file_path=db3_palm, output_dir=output_frames_palm)
+        else:
+            print(f"[SKIP] Palm camera frames already exist at {output_frames_palm}. Skipping extraction.")
 
-    if not os.path.exists(output_frames_palm):
-        # print(f"[INFO] Extracting palm camera frames to {output_frames_palm} ...")
-        extract_images_from_bag(db3_file_path=db3_palm, output_dir=output_frames_palm)
-    else:
-        print(f"[SKIP] Palm camera frames already exist at {output_frames_palm}. Skipping extraction.")
+    if fixed_camera_bag:
+        # --- Fixed camera ---
+        output_frames_fixed = os.path.join(bag_folder, "lfd_bag_fixed_camera", "camera_frames")
+        db3_fixed = os.path.join(bag_folder, "lfd_bag_fixed_camera", "lfd_bag_fixed_camera_0.db3")
 
-    # --- Fixed camera ---
-    output_frames_fixed = os.path.join(bag_folder, trial_folder, "lfd_bag_fixed_camera", "camera_frames")
-    db3_fixed = os.path.join(bag_folder, trial_folder, "lfd_bag_fixed_camera", "lfd_bag_fixed_camera_0.db3")
-
-    if not os.path.exists(output_frames_fixed):
-        # print(f"[INFO] Extracting fixed camera frames to {output_frames_fixed} ...")
-        extract_images_from_bag(db3_file_path=db3_fixed, output_dir=output_frames_fixed)
-    else:
-        print(f"[SKIP] Fixed camera frames already exist at {output_frames_fixed}. Skipping extraction.")
+        if not os.path.exists(output_frames_fixed):
+            # print(f"[INFO] Extracting fixed camera frames to {output_frames_fixed} ...")
+            extract_images_from_bag(db3_file_path=db3_fixed, output_dir=output_frames_fixed)
+        else:
+            print(f"[SKIP] Fixed camera frames already exist at {output_frames_fixed}. Skipping extraction.")
 
 
     # --- EEF POSE --- 
@@ -855,8 +855,8 @@ def extract_data_and_plot(bag_folder, trial_folder):
         # Update file name and json file         
         if trial.singularities:            
             print("⚠️ Singularities detected during the trial! Updating metadata JSON and filename...")
-            filename = f"metadata_{trial_folder}.json"
-            json_path = os.path.join(bag_folder, trial_folder, filename)       
+            filename = f"metadata_{trial_number}.json"
+            json_path = os.path.join(bag_folder, filename)       
             print(json_path)
             with open(json_path, 'r') as f:            
                 metadata = json.load(f)
@@ -866,7 +866,7 @@ def extract_data_and_plot(bag_folder, trial_folder):
                 json.dump(metadata, f, indent=4)    
            
            
-            old_name = bag_folder + "/" + trial_folder
+            old_name = bag_folder
             base_name = os.path.basename(old_name)
             new_name = f"{base_name}_singular"
             new_path = os.path.join(os.path.dirname(old_name), new_name)

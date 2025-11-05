@@ -24,9 +24,7 @@ def find_next_trial_number(base_dir, prefix="trial_"):
     for d in existing_trials:
         num_part = d.replace(prefix, '').split('_')[0]  # remove prefix and anything after _
         if num_part.isdigit():
-            existing_numbers.append(int(num_part))
-
-    # print(existing_numbers)
+            existing_numbers.append(int(num_part))    
     
     return f"trial_{max(existing_numbers) + 1}" if existing_numbers else "trial_1"
 
@@ -39,10 +37,12 @@ def save_metadata(filename):
     """
     
     # --- Open default metadata template for the experiment
-    template_path = os.path.join(
-        os.path.dirname(filename), 
-        '..', 
-        'metadata_experiment2_template.json')
+    template_path = os.path.abspath(os.path.join(
+        os.path.dirname(filename),
+        '..',
+        'metadata_experiment3_template.json')
+        )
+
     with open(template_path, 'r') as template_file:
         experiment_info = json.load(template_file)
     
@@ -157,44 +157,55 @@ class SuctionMonitor(Node):
                 self.get_logger().error(f"Error stopping camera bag: {e}")
 
 
-def start_recording_bagfile(BAG_DIR, TRIAL):
+def start_recording_bagfile(BAG_FILEPATH, arm_bag=True, inhand_camera_bag=True, fixed_camera_bag=True):
 
-    BAG_NAME_MAIN = os.path.join(BAG_DIR, TRIAL, "lfd_bag_main")
-    BAG_NAME_PALM_CAMERA = os.path.join(BAG_DIR, TRIAL, "lfd_bag_palm_camera")
-    BAG_NAME_FIXED_CAMERA = os.path.join(BAG_DIR, TRIAL, "lfd_bag_fixed_camera")
+    bag_list = []
+
+    BAG_NAME_MAIN = os.path.join(BAG_FILEPATH, "lfd_bag_main")
+    BAG_NAME_PALM_CAMERA = os.path.join(BAG_FILEPATH, "lfd_bag_palm_camera")
+    BAG_NAME_FIXED_CAMERA = os.path.join(BAG_FILEPATH, "lfd_bag_fixed_camera")
 
 
     # --- STEP 2: Record ros2 bagfiles ---
-    # input("Hit Enter to start recording ROS 2 bag while in Free Drive...")    
-    bag_proc_main = subprocess.Popen([
-        "ros2", "bag", "record",
-        "-o", BAG_NAME_MAIN,
-        "/joint_states",
-        "/franka_robot_state_broadcaster/current_pose",
-        "/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame",
-        # "/franka_robot_state_broadcaster/robot_state",
-        "microROS/sensor_data",            
-        "/franka/joint_states"
-    ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
-    # , preexec_fn=os.setsid)
+    if arm_bag:
+        bag_proc_main = subprocess.Popen([
+            "ros2", "bag", "record",
+            "-o", BAG_NAME_MAIN,
+            "/joint_states",
+            "/franka_robot_state_broadcaster/current_pose",
+            "/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame",
+            # "/franka_robot_state_broadcaster/robot_state",
+            "microROS/sensor_data",            
+            "/franka/joint_states"
+        ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
+        # , preexec_fn=os.setsid)
 
-    bag_proc_palm_camera = subprocess.Popen([
-        "ros2", "bag", "record",
-        "-o", BAG_NAME_PALM_CAMERA,
-        "gripper/rgb_palm_camera/image_raw",     
-    ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
-    # , preexec_fn=os.setsid)
+        bag_list.append(bag_proc_main)
 
-    bag_proc_fixed_camera = subprocess.Popen([
-        "ros2", "bag", "record",
-        "-o", BAG_NAME_FIXED_CAMERA,
-        "fixed/rgb_camera/image_raw",     
-    ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
-    # , preexec_fn=os.setsid)
+    if inhand_camera_bag:
+        bag_proc_palm_camera = subprocess.Popen([
+            "ros2", "bag", "record",
+            "-o", BAG_NAME_PALM_CAMERA,
+            "gripper/rgb_palm_camera/image_raw",     
+        ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
+        # , preexec_fn=os.setsid)
 
-    time.sleep(3.0)   
+        bag_list.append(bag_proc_palm_camera)
+    
+    if fixed_camera_bag:
 
-    return [bag_proc_main, bag_proc_palm_camera, bag_proc_fixed_camera]
+        bag_proc_fixed_camera = subprocess.Popen([
+            "ros2", "bag", "record",
+            "-o", BAG_NAME_FIXED_CAMERA,
+            "fixed/rgb_camera/image_raw",     
+        ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
+        # , preexec_fn=os.setsid)
+
+        bag_list.append(bag_proc_fixed_camera)
+
+    time.sleep(1.0)   
+
+    return bag_list
 
 
 def stop_recording_bagfile(rosbag_list):
@@ -202,6 +213,8 @@ def stop_recording_bagfile(rosbag_list):
     print("Stopping bag recordings...")
     for proc in rosbag_list:
         os.killpg(os.getpgid(proc.pid), signal.SIGINT)      
+
+    time.sleep(1.0)   
 
     print("✅ Recordings stopped.")
 
