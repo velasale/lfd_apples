@@ -183,8 +183,9 @@ def start_recording_bagfile(BAG_FILEPATH, arm_bag=True, inhand_camera_bag=True, 
         bag_list.append(bag_proc_main)
 
     if inhand_camera_bag:
-        bag_proc_palm_camera = subprocess.Popen([
+        bag_proc_palm_camera = subprocess.Popen([            
             "ros2", "bag", "record",
+            "-b", "8048000000",
             "-o", BAG_NAME_PALM_CAMERA,
             "gripper/rgb_palm_camera/image_raw",     
         ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
@@ -196,6 +197,7 @@ def start_recording_bagfile(BAG_FILEPATH, arm_bag=True, inhand_camera_bag=True, 
 
         bag_proc_fixed_camera = subprocess.Popen([
             "ros2", "bag", "record",
+            "-b", "8048000000",
             "-o", BAG_NAME_FIXED_CAMERA,
             "fixed/rgb_camera/image_raw",     
         ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
