@@ -47,7 +47,7 @@ class GripperController(Node):
         self.auto_off_timer = None
 
         # Parameters
-        self.apple_disposal_coord = [-0.42, 0.56, 0.19]       
+        self.apple_disposal_coord = [-0.35, 0.60, 0.19]       
         self.disposal_range = 0.05
 
     # ----------------------- Helper to safely destroy timers -----------------------
