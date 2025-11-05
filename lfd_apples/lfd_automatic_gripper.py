@@ -15,7 +15,7 @@ class GripperController(Node):
         # Parameters
         self.declare_parameter('distance_threshold', 50)   # mm
         self.declare_parameter('pressure_threshold', 600)  # hPa
-        self.declare_parameter('release_timer', 10)        # sec
+        self.declare_parameter('release_timer', 20)        # sec
 
         self.distance_threshold = self.get_parameter('distance_threshold').value
         self.pressure_threshold = self.get_parameter('pressure_threshold').value
@@ -47,7 +47,7 @@ class GripperController(Node):
         self.auto_off_timer = None
 
         # Parameters
-        self.apple_disposal_coord = [-0.35, 0.60, 0.19]       
+        self.apple_disposal_coord = [-0.40, 0.67, 0.20]       
         self.disposal_range = 0.05
 
     # ----------------------- Helper to safely destroy timers -----------------------
