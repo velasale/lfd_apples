@@ -273,6 +273,7 @@ class MoveToHomeAndFreedrive(Node):
         result = result_future.result().result
         self.get_logger().info(f"Trajectory execution finished: {result}")
     
+    
 
 
 def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
@@ -330,6 +331,7 @@ def main():
             pass
 
         # --------------- Step 1: Human Demonstration --------------        
+        # Set relaxed collision thresholds
         input("\n\033[1;32m1 - Place apple on the proxy. Press ENTER when done.\033[0m\n")
         # Enable freedrive mode and record demonstration                
         node.swap_controller(node.arm_controller, node.gravity_controller)
@@ -352,8 +354,7 @@ def main():
 
         node.get_logger().info(f"Human demonstration {demo+1}/10 done. Now swapping controllers.")
         node.swap_controller(node.gravity_controller, node.arm_controller)
-        time.sleep(1.0)   
-
+        
         # ---------------- Step 2: Robot demonstration ------------------
         node.get_logger().info("Moving to home position...")
         while not node.move_to_home():
