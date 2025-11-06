@@ -16,6 +16,7 @@ from lfd_apples.listen_franka import main as listen_main
 from lfd_apples.listen_franka import start_recording_bagfile, stop_recording_bagfile, save_metadata, find_next_trial_number 
 from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array
 
+
 class MoveToHomeAndFreedrive(Node):
     def __init__(self):
         super().__init__('move_to_home_and_freedrive')
@@ -179,7 +180,7 @@ class MoveToHomeAndFreedrive(Node):
         self.get_logger().info(f"✅ {start_controller} activated successfully.")
         return True
 
-    def replay_joints(self, csv_path, downsample_factor=1, speed_factor=1.0):
+    def replay_joints(self, csv_path, downsample_factor=1, speed_factor=1.0, ramp_time=1.0):
 
         self.get_logger().info(f"Loading trajectory from {csv_path}")
         df = pd.read_csv(csv_path)
@@ -200,7 +201,7 @@ class MoveToHomeAndFreedrive(Node):
         # Adjusted for downsampling and speed scaling
         original_dt = 0.033 # Original time step in seconds
         dt = original_dt * downsample_factor / speed_factor
-        time_from_start = 0.0
+        time_from_start = ramp_time
 
         for _, row in df_joints.iterrows():
             point = JointTrajectoryPoint()
@@ -213,24 +214,38 @@ class MoveToHomeAndFreedrive(Node):
         total_duration = time_from_start
         self.get_logger().info(f"Prepared {len(self.trajectory_points)} trajectory points, total_duration={total_duration:.3f}s")
 
-        # --- Add a smooth-start buffer point (avoids initial jerk) ---
-        try:            
+
+        # --- Smooth ramp from current position to first point ---
+        try:
             joint_state_msg = rclpy.wait_for_message('/joint_states', JointState, node=self, timeout=2.0)
             current_positions = list(joint_state_msg.position[:7])
-            self.get_logger().info("Got current joint state for smooth start.")
+            self.get_logger().info("Got current joint state for smooth ramp.")
         except Exception:
             current_positions = self.home_positions
-            self.get_logger().warn("Could not get /joint_states, using first trajectory point as start.")
+            self.get_logger().warn("Could not get /joint_states, using home positions for ramp.")
 
-        initial_point = JointTrajectoryPoint()
-        initial_point.positions = current_positions
-        initial_point.velocities = [0.0] * 7
-        initial_point.accelerations = [0.0] * 7
-        initial_point.time_from_start.sec = 0
-        initial_point.time_from_start.nanosec = 10_000_000  # 0.1s offset
-        self.trajectory_points.insert(0, initial_point)
+        first_point_positions = self.trajectory_points[0].positions
 
-        self.get_logger().info("Waiting for action server for trajectory...")
+        # Generate ramp points
+        ramp_points = []
+        ramp_steps = max(int(ramp_time / dt), 2)  # at least 2 steps
+        for i in range(1, ramp_steps + 1):
+            alpha = i / ramp_steps
+            ramp_pos = [
+                (1 - alpha) * cur + alpha * target
+                for cur, target in zip(current_positions, first_point_positions)
+            ]
+            point = JointTrajectoryPoint()
+            point.positions = ramp_pos
+            point.velocities = [0.0] * 7
+            point.time_from_start.sec = int(alpha * ramp_time)
+            point.time_from_start.nanosec = int((alpha * ramp_time - int(alpha * ramp_time)) * 1e9)
+            ramp_points.append(point)
+
+        # Insert ramp points at the beginning
+        self.trajectory_points = ramp_points + self.trajectory_points
+        self.get_logger().info(f"Inserted {len(ramp_points)} ramp points for smooth start.")
+
         if not self.action_client.wait_for_server(timeout_sec=5.0):
             self.get_logger().error("Action server not available")
             return        
@@ -240,7 +255,7 @@ class MoveToHomeAndFreedrive(Node):
         goal_msg.trajectory.points = self.trajectory_points
 
         # Let the controller settle after activation
-        time.sleep(0.5)
+        time.sleep(1.0)
 
         self.get_logger().info("Sending trajectory via FollowJointTrajectory action...")
         send_goal_future = self.action_client.send_goal_async(goal_msg)
@@ -285,15 +300,13 @@ def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
 
 
 
-
-
 def main():
     rclpy.init()
 
     node = MoveToHomeAndFreedrive()
 
     BAG_MAIN_DIR = "/media/alejo/Pruning25/03_IL_bagfiles"
-    EXPERIMENT = "experiment_3"
+    EXPERIMENT = "experiment_4"
     BAG_FILEPATH = os.path.join(BAG_MAIN_DIR, EXPERIMENT)
     os.makedirs(BAG_FILEPATH, exist_ok=True)
     
@@ -326,8 +339,7 @@ def main():
 
         # Human demonstration
         input("\n\033[1;32m2 - Press ENTER to start and recording an apple-pick demonstration.\033[0m\n")
-        human_rosbag_list = start_recording_bagfile(HUMAN_BAG_FILEPATH, inhand_camera_bag=False)
-                
+        human_rosbag_list = start_recording_bagfile(HUMAN_BAG_FILEPATH, inhand_camera_bag=False)                
 
         # Stop recording
         time.sleep(3.0)       
@@ -363,9 +375,6 @@ def main():
         node.get_logger().info("Check ROBOT demo data")         
         check_data_plots(ROBOT_BAG_FILEPATH, TRIAL)
         node.get_logger().info(f"Robot demonstration {demo+1}/10 done.")
-
-
-
     
     node.destroy_node()
     rclpy.shutdown()
