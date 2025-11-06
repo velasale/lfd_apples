@@ -40,7 +40,7 @@ def save_metadata(filename):
     template_path = os.path.abspath(os.path.join(
         os.path.dirname(filename),
         '..',
-        'metadata_experiment3_template.json')
+        'metadata_experiment4_template.json')
         )
 
     with open(template_path, 'r') as template_file:
@@ -165,62 +165,69 @@ def start_recording_bagfile(BAG_FILEPATH, arm_bag=True, inhand_camera_bag=True, 
     BAG_NAME_PALM_CAMERA = os.path.join(BAG_FILEPATH, "lfd_bag_palm_camera")
     BAG_NAME_FIXED_CAMERA = os.path.join(BAG_FILEPATH, "lfd_bag_fixed_camera")
 
+    timestamp = int(time.time() * 1000) % 100000  # unique suffix
 
     # --- STEP 2: Record ros2 bagfiles ---
-    if arm_bag:
+    if arm_bag:        
         bag_proc_main = subprocess.Popen([
             "ros2", "bag", "record",
             "-o", BAG_NAME_MAIN,
             "/joint_states",
             "/franka_robot_state_broadcaster/current_pose",
             "/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame",
+            "/franka_robot_state_broadcaster/external_joint_torques",
+            "/franka_robot_state_broadcaster/desired_end_effector_twist",
+            "/franka_robot_state_broadcaster/desired_joint_states",
+            "/franka_robot_state_broadcaster/measured_joint_states",
             # "/franka_robot_state_broadcaster/robot_state",
-            "microROS/sensor_data",            
-            "/franka/joint_states"
+            "microROS/sensor_data",              
         ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
-        # , preexec_fn=os.setsid)
-
         bag_list.append(bag_proc_main)
 
-    if inhand_camera_bag:
-        bag_proc_palm_camera = subprocess.Popen([            
+    if inhand_camera_bag:        
+        bag_proc_palm_camera = subprocess.Popen([   
             "ros2", "bag", "record",
-            "-b", "8048000000",
+            "-b", "10000000000",
             "-o", BAG_NAME_PALM_CAMERA,
-            "gripper/rgb_palm_camera/image_raw",     
+            "gripper/rgb_palm_camera/image_raw",                 
         ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
-        # , preexec_fn=os.setsid)
+        bag_list.append(bag_proc_palm_camera)    
 
-        bag_list.append(bag_proc_palm_camera)
-    
-    if fixed_camera_bag:
-
-        bag_proc_fixed_camera = subprocess.Popen([
+    if fixed_camera_bag:        
+        bag_proc_fixed_camera = subprocess.Popen([            
             "ros2", "bag", "record",
-            "-b", "8048000000",
+            "-b", "10000000000",
             "-o", BAG_NAME_FIXED_CAMERA,
-            "fixed/rgb_camera/image_raw",     
+            "fixed/rgb_camera/image_raw",                 
         ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
-        # , preexec_fn=os.setsid)
-
         bag_list.append(bag_proc_fixed_camera)
 
     time.sleep(1.0)   
-
     return bag_list
 
 
-def stop_recording_bagfile(rosbag_list):
+def stop_recording_bagfile(rosbag_list, timeout=5.0):
+    """
+    Stop all rosbag2 processes safely and wait for termination.
+    """
+    print("🛑 Stopping bag recordings...")
 
-    print("Stopping bag recordings...")
+    # Graceful stop for known processes
     for proc in rosbag_list:
-        os.killpg(os.getpgid(proc.pid), signal.SIGINT)      
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+            proc.wait(timeout=timeout)
+            print(f"✅ Recorder process {proc.pid} stopped.")
+        except subprocess.TimeoutExpired:
+            print(f"⚠️ Recorder {proc.pid} did not terminate in {timeout}s, killing.")
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            print(f"ℹ️ Recorder {proc.pid} already stopped.")
 
-    time.sleep(1.0)   
-
-    print("✅ Recordings stopped.")
-
-    return
+    # Fallback: ensure no rogue ros2 bag recorders remain
+    time.sleep(0.5)
+    os.system("pkill -f 'ros2 bag record' >/dev/null 2>&1")
+    print("✅ All rosbag recordings stopped.")
 
 
 
