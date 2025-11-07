@@ -21,6 +21,8 @@ def downsample_robot_ee_pose_data(raw_data):
     # Implement downsampling logic here
     pass
 
+def estimate_robot_ee_pose():
+    pass
 
 
 
