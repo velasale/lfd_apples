@@ -1,0 +1,41 @@
+
+
+
+def downsample_pressure_and_tof_data(raw_data):
+    # Implement downsampling logic here
+    pass
+
+def downsample_inhand_camera_raw_images(raw_data):
+    # Implement downsampling logic here
+    pass    
+
+def downsample_eef_wrench_data(raw_data):
+    # Implement downsampling logic here
+    pass    
+
+def downsample_robot_joint_states_data(raw_data):
+    # Implement downsampling logic here
+    pass
+
+def downsample_robot_ee_pose_data(raw_data):
+    # Implement downsampling logic here
+    pass
+
+
+
+
+
+def main():
+
+    # Step 1: Load raw data
+
+    # Step 2: Downsample data and make all channels the same length
+
+
+
+    pass
+
+
+
+if __name__ == '__main__':
+    main()
