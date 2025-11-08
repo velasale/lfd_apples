@@ -47,7 +47,7 @@ class GripperController(Node):
         self.auto_off_timer = None
 
         # Parameters
-        self.apple_disposal_coord = [-0.40, 0.67, 0.20]       
+        self.apple_disposal_coord = [-0.42, 0.60, 0.22]       
         self.disposal_range = 0.05
 
     # ----------------------- Helper to safely destroy timers -----------------------
@@ -86,7 +86,15 @@ class GripperController(Node):
             self.destroy_timer_safe("auto_off_timer")
 
         # Check pressure → engage fingers & start timer
-        if (not self.cooldown) and (not self.flag_engagement) and max(msg.data[:3]) < self.pressure_threshold:
+        cnt = 0
+        if msg.data[0] < self.pressure_threshold:
+            cnt +=1
+        if msg.data[1] < self.pressure_threshold:
+            cnt +=1
+        if msg.data[2] < self.pressure_threshold:
+            cnt +=1
+
+        if (not self.cooldown) and (not self.flag_engagement) and cnt >1:
             self.get_logger().info(f"--- State 2 ---: Pressures {msg.data[:3]} < {self.pressure_threshold}, cups engaged, deploying fingers")
             req = SetBool.Request()
             req.data = True

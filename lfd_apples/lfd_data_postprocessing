@@ -18,9 +18,7 @@ def parse_array_string(s):
 
 def downsample_pressure_and_tof_data(raw_data_path, destination_path):
     
-    df_raw = pd.read_csv(raw_data_path)
-    
-    # Create a column for each of the variables
+    df_raw = pd.read_csv(raw_data_path)    
     df_raw["_data_as_list"] = df_raw["_data"].apply(parse_array_string)
 
     # Split that list into multiple independent columns
@@ -28,7 +26,6 @@ def downsample_pressure_and_tof_data(raw_data_path, destination_path):
 
     # Combine with the rest of the dataframe
     df_final = pd.concat([df_raw, data_expanded], axis=1)
-
 
     pass
 
@@ -94,11 +91,9 @@ def main():
         # Downsample data
         downsample_pressure_and_tof_data(raw_pressure_and_tof_path, post_pressure_and_tof_path)
 
-
-
     # Step 2: Downsample data and make all channels the same length
 
-
+    # Step 3: Crop data for each phase
 
 
     # Plot data before and after downsampling to double check everything is fine

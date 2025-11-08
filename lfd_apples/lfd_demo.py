@@ -43,13 +43,21 @@ class MoveToHomeAndFreedrive(Node):
         self.joint_names = [f"fr3_joint{i+1}" for i in range(7)]
         self.trajectory_points = []
 
-        self.home_positions = [ 1.0,
-                          -1.4,
-                           0.66,
-                          -2.2,
-                           0.3,
-                           2.23,
-                           1.17]
+        # # self.home_positions = [ 1.0,
+        #                   -1.4,
+        #                    0.66,
+        #                   -2.2,
+        #                    0.3,
+        #                    2.23,
+        #                    1.17]
+        
+        self.home_positions = [0.4064637778706366,
+                               -1.2363457989320374,
+                               0.8234026448549203,
+                               -2.3519163118503656,
+                               1.501212066601065,
+                               2.3090723008764695,
+                               -0.6601598609927846]
 
     def move_to_home(self):
         self.get_logger().info('Waiting for action server...')
@@ -199,7 +207,7 @@ class MoveToHomeAndFreedrive(Node):
 
         # Original data recorded at 1 kHz → dt = 0.001 s
         # Adjusted for downsampling and speed scaling
-        original_dt = 0.033 # Original time step in seconds
+        original_dt = 0.040 # Original time step in seconds
         dt = original_dt * downsample_factor / speed_factor
         time_from_start = ramp_time
 
@@ -272,9 +280,7 @@ class MoveToHomeAndFreedrive(Node):
         rclpy.spin_until_future_complete(self, result_future)
         result = result_future.result().result
         self.get_logger().info(f"Trajectory execution finished: {result}")
-    
-    
-
+       
 
 def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
 
@@ -366,6 +372,7 @@ def main():
 
         # Robot demonstration
         joints_csv = HUMAN_BAG_FILEPATH + '/lfd_bag_main/bag_csvs/joint_states.csv'        
+        time.sleep(1.5)  
         input("\n\033[1;32m4 - Press Enter to start ROBOT demonstration.\033[0m\n")        
         node.replay_joints(joints_csv)        
 
