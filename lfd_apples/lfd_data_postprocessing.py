@@ -57,23 +57,24 @@ def estimate_robot_ee_pose():
 
 def main():
 
-    # Step 1: Load raw data
-    SOURCE_DIR = "/media/alejo/Pruning25/01_IL_bagfiles"
-    DESTINATION_DIR = "/media/alejo/Pruning25/02_IL_postprocessed"
+    # ---------- Step 1: Load raw data ----------
+    MAIN_DIR = os.path.join("D:")
+    # MAIN_DIR = os.path.join('media', 'alejo', 'Pruning25')
+    SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")
+    DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_postprocessed")
 
     EXPERIMENT = "experiment_4"
 
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
     DESTINATION_PATH = os.path.join(DESTINATION_DIR, EXPERIMENT)
-
-    FIXED_CAM_SUBDIR = "robot/lfd_bag_fixed_camera/camera_frames/fixed_rgb_camera_image_raw"
-    INHAND_CAM_SUBDIR = "robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw"
-    ARM_SUBDIR = "robot/lfd_bag_main/bag_csvs"
-    GRIPPER_SUBDIR = "robot/lfd_bag_main/bag_csvs"    
+    FIXED_CAM_SUBDIR = os.path.join("robot", "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
+    INHAND_CAM_SUBDIR = os.path.join("robot", "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
+    ARM_SUBDIR = os.path.join("robot", "lfd_bag_main", "bag_csvs")
+    GRIPPER_SUBDIR = os.path.join("robot", "lfd_bag_main", "bag_csvs")
 
     trials = [trial for trial in os.listdir(SOURCE_PATH) if os.path.isdir(os.path.join(SOURCE_PATH, trial))]
 
-    # Step 2: Loop through all trials
+    # ---------- Step 2: Loop through all trials ----------
     for trial in trials:
         
         # Define paths to all raw data
