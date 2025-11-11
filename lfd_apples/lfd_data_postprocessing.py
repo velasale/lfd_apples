@@ -58,8 +58,8 @@ def estimate_robot_ee_pose():
 def main():
 
     # ---------- Step 1: Load raw data ----------
-    MAIN_DIR = os.path.join("D:")
-    # MAIN_DIR = os.path.join('media', 'alejo', 'Pruning25')
+    MAIN_DIR = os.path.join("D:")                                   # windows OS
+    # MAIN_DIR = os.path.join('media', 'alejo', 'Pruning25')        # ubuntu OS
     SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")
     DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_postprocessed")
 
