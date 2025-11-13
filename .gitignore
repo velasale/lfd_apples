@@ -1,5 +1,5 @@
 # Data #
-*.json
+# *.json
 *.bag
 # *.csv
 *.bag.active
