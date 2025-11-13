@@ -80,8 +80,8 @@ def rename_folder(SOURCE_PATH, start_index=100):
 
         # Rename file and subfolder
         print('Be cautious about using this method')
-        # os.rename(METADATA_OLD_PATH, METADATA_NEW_PATH)
-        # os.rename(OLD_PATH, NEW_PATH)
+        os.rename(METADATA_OLD_PATH, METADATA_NEW_PATH)
+        os.rename(OLD_PATH, NEW_PATH)
 
         start_index += 1
 
@@ -89,12 +89,12 @@ def rename_folder(SOURCE_PATH, start_index=100):
 def main():
 
     # ---------- Step 1: Load raw data ----------
-    MAIN_DIR = os.path.join("D:")                                   # windows OS
-    # MAIN_DIR = os.path.join('media', 'alejo', 'Pruning25')        # ubuntu OS
+    # MAIN_DIR = os.path.join("D:")                                   # windows OS
+    MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')        # ubuntu OS
     SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")
     DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_postprocessed")
 
-    EXPERIMENT = "experiment_3"
+    EXPERIMENT = "experiment_4"
 
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
     DESTINATION_PATH = os.path.join(DESTINATION_DIR, EXPERIMENT)
@@ -148,11 +148,11 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # main()
 
     # MAIN_DIR = os.path.join("D:")  # windows OS
-    # # MAIN_DIR = os.path.join('media', 'alejo', 'Pruning25')        # ubuntu OS
-    # SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")
-    # EXPERIMENT = "experiment_3"
-    # SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
-    # rename_folder(SOURCE_PATH, 1)
+    MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')        # ubuntu OS
+    SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
+    EXPERIMENT = "experiment_4"    
+    SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)   
+    rename_folder(SOURCE_PATH, 1)

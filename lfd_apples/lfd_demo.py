@@ -42,22 +42,15 @@ class MoveToHomeAndFreedrive(Node):
 
         self.joint_names = [f"fr3_joint{i+1}" for i in range(7)]
         self.trajectory_points = []
-
-        # # self.home_positions = [ 1.0,
-        #                   -1.4,
-        #                    0.66,
-        #                   -2.2,
-        #                    0.3,
-        #                    2.23,
-        #                    1.17]
-        
-        self.home_positions = [0.4064637778706366,
-                               -1.2363457989320374,
-                               0.8234026448549203,
-                               -2.3519163118503656,
-                               1.501212066601065,
-                               2.3090723008764695,
-                               -0.6601598609927846]
+                
+        self.home_positions = [0.6414350870607822,
+                               -1.5320604540253377,
+                               0.4850253317447517,
+                               -2.474376823551583,
+                               0.9726833812685999,
+                               2.1330229376987626,
+                               -1.0721952822461973]            
+           
 
     def move_to_home(self):
         self.get_logger().info('Waiting for action server...')
@@ -312,7 +305,8 @@ def main():
 
     node = MoveToHomeAndFreedrive()
 
-    BAG_MAIN_DIR = "/media/alejo/Pruning25/01_IL_bagfiles"
+    # BAG_MAIN_DIR = "/media/alejo/Pruning25/01_IL_bagfiles"
+    BAG_MAIN_DIR = "/media/alejo/IL_data/01_IL_bagfiles"
     EXPERIMENT = "experiment_4"
     BAG_FILEPATH = os.path.join(BAG_MAIN_DIR, EXPERIMENT)
     os.makedirs(BAG_FILEPATH, exist_ok=True)
