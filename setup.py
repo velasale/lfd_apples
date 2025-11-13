@@ -1,4 +1,6 @@
 from setuptools import find_packages, setup
+import os
+from glob import glob
 
 package_name = 'lfd_apples'
 
@@ -11,6 +13,8 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', ['launch/lfd_gripper.launch.py']),
+        # Install data directory (JSONs, etc.)
+        (os.path.join('share', package_name, 'data'), glob('lfd_apples/data/*.json')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

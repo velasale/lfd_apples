@@ -13,6 +13,7 @@ import json
 import datetime
 import matplotlib.pyplot as plt
 
+from ament_index_python.packages import get_package_share_directory
 
 
 def find_next_trial_number(base_dir, prefix="trial_"):
@@ -29,6 +30,13 @@ def find_next_trial_number(base_dir, prefix="trial_"):
     return f"trial_{max(existing_numbers) + 1}" if existing_numbers else "trial_1"
 
 
+
+def get_template_path():
+    pkg_share = get_package_share_directory('lfd_apples')
+    template_path = os.path.join(pkg_share, 'data', 'metadata_template.json')
+    return template_path
+
+
 def save_metadata(filename):
     """
     Create json file and save it with the same name as the bag file
@@ -37,17 +45,20 @@ def save_metadata(filename):
     """
     
     # --- Open default metadata template for the experiment
-    template_path = os.path.abspath(os.path.join(
-        os.path.dirname(filename),
-        '..',
-        'metadata_experiment4_template.json')
-        )
+    template_path = get_template_path()
 
     with open(template_path, 'r') as template_file:
         experiment_info = json.load(template_file)
     
     # Update some data
     experiment_info['general']['date'] = str(datetime.datetime.now())
+
+    apple_id = input("Type the apple id: ")  # Wait for user to press Enter
+    experiment_info['proxy']['apple']['id'] = apple_id
+
+    spur_id = input("Type the spur id: ")  # Wait for user to press Enter
+    experiment_info['proxy']['spur']['id'] = spur_id
+
 
     # --- Save metadata in file    
     with open(filename + '.json', "w") as outfile:

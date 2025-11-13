@@ -85,22 +85,26 @@
         "low": {
             "diameter": "3/16 in",
             "thickness": "3/16 in",
+            "max_pull_force": "2.2 lbs",
             "McMaster-ref": "5862K108"
         },
         "medium": {
             "diameter": "1/4 in",
             "thickness": "3/16 in",
+            "max_pull_force": "3.7 lbs",
             "McMaster-ref": "5862K109"
         },
         "high": {
             "diameter": "5/16 in",
-            "thickness": "5/16 in",
+            "thickness": "1/4 in",
+            "max_pull_force": "6 lbs",
             "McMaster-ref": "5862K178"
         },
         "strong": {
-            "diameter": "1/2 in",
-            "thickness": "1/4 in",
-            "McMaster-ref": "5862K182"
+            "diameter": "3/8 in",
+            "thickness": "3/8 in",
+            "max_pull_force": "10 lbs",
+            "McMaster-ref": "5862K123"
         }
     },
 
