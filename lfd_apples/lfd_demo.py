@@ -323,8 +323,7 @@ def main():
         TRIAL = find_next_trial_number(BAG_FILEPATH, prefix="trial_")
         os.makedirs(os.path.join(BAG_FILEPATH, TRIAL), exist_ok=True)
         HUMAN_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'human')
-        ROBOT_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'robot')
-        save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))
+        ROBOT_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'robot')        
 
         node.get_logger().info("Moving to home position...")
         while not node.move_to_home():
@@ -333,6 +332,7 @@ def main():
         # --------------- Step 1: Human Demonstration --------------        
         # Set relaxed collision thresholds
         input("\n\033[1;32m1 - Place apple on the proxy. Press ENTER when done.\033[0m\n")
+        save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))
         # Enable freedrive mode and record demonstration                
         node.swap_controller(node.arm_controller, node.gravity_controller)
         time.sleep(1.0)        
