@@ -16,10 +16,10 @@
     },
     "proxy": {
         "branch": {
-            "_spring_readme": "OD(0.18 in) Length(1 in), low: SpringRate(1 lbs/in) McMaster-ref(9044K17), medium: SpringRate(2.8 lbs/in) McMaster-ref(09044K42), high: SpringRate(4.4 lbs/in) McMaster-ref(5108N146)",
             "material": "wood",
             "diameter": "25 mm",
             "length": "85 cm",
+            "spring rate": "high",
             "frame_id":"robot base link",
             "pose": {
                 "position": [
@@ -32,19 +32,17 @@
                     0,
                     0
                 ]
-            },
-            "spring rate": "high"
+            }            
         },
         "spur": {
-	    "id": "2",
+	        "id": "2",
             "orientation": [
                 0,
                 0,
                 0
             ]
         },
-        "stem": {
-	    "_magnet_readme": "low: diam(3/16) thickness(3/16) McMaster-ref(5862K108), medium: diam(1/4) thickness(3/16) McMaster-ref(5862K109), high: diam(5/16) thickness(5/16), McMaster-ref(5862K178)",
+        "stem": {	        
             "material": "steel cable",
             "diameter": "1.6 mm",
             "length": "28 mm",
