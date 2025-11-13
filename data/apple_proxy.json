@@ -1,0 +1,128 @@
+{
+    "spurs": {
+        "id_1":{
+            "material": "TPU",
+            "diameter": "12 mm",
+            "length": "20 mm",
+            "total length": "47 mm",
+            "stem-side magnet": "medium",
+            "branch-side magnet": "strong"
+        },       
+        "id_2":{
+            "material": "TPU",
+            "diameter": "12 mm",
+            "length": "20 mm",
+            "total length": "47 mm",
+            "stem-side magnet": "high",
+            "branch-side magnet": "strong"
+        },
+        "id_3":{
+            "material": "TPU",
+            "diameter": "6 mm",
+            "length": "20 mm",
+            "total length": "47 mm",
+            "stem-side magnet": "high",
+            "branch-side magnet": "strong"
+        },
+        "id_4":{
+            "material": "TPU",
+            "diameter": "6 mm",
+            "length": "60 mm",
+            "total length": "86 mm",
+            "stem-side magnet": "medium",
+            "branch-side magnet": "strong"
+        },
+        "id_5":{
+            "material": "TPU",
+            "diameter": "6 mm",
+            "length": "40 mm",
+            "total length": "66 mm",
+            "stem-side magnet": "low",
+            "branch-side magnet": "strong"
+        },
+        "id_6":{
+            "material": "TPU",
+            "diameter": "6 mm",
+            "length": "60 mm",
+            "total length": "90 mm",
+            "stem-side magnet": "high",
+            "branch-side magnet": "strong"
+        }
+    },    
+    
+    "apples": {
+        "id_1":{
+            "color": "red-yellow",
+            "diameter": "82 mm",
+            "height": "70 mm",
+            "mass": "173 g",
+            "stem magnet": "medium"
+        },
+        "id_2":{
+            "color": "yellow",
+            "diameter": "81 mm",
+            "height": "72 mm",
+            "mass": "160 g",
+            "stem magnet": "high"
+        },
+        "id_3":{
+            "color": "red",
+            "diameter": "80 mm",
+            "height": "80 mm",
+            "mass": "254 g",
+            "stem magnet": "medium"
+        },
+        "id_4":{
+            "color": "yellow",
+            "diameter": "80 mm",
+            "height": "70 mm",
+            "mass": "252 g",
+            "stem magnet": "low"
+        }
+    },
+
+    "magnets": {
+        "low": {
+            "diameter": "3/16 in",
+            "thickness": "3/16 in",
+            "McMaster-ref": "5862K108"
+        },
+        "medium": {
+            "diameter": "1/4 in",
+            "thickness": "3/16 in",
+            "McMaster-ref": "5862K109"
+        },
+        "high": {
+            "diameter": "5/16 in",
+            "thickness": "5/16 in",
+            "McMaster-ref": "5862K178"
+        },
+        "strong": {
+            "diameter": "1/2 in",
+            "thickness": "1/4 in",
+            "McMaster-ref": "5862K182"
+        }
+    },
+
+    "springs": {
+        "low": {
+            "outer_diameter": "0.18 in",
+            "length": "1 in",
+            "spring_rate": "1 lbs/in",
+            "McMaster-ref": "9044K17"
+        },
+        "medium": {
+            "outer_diameter": "0.18 in",
+            "length": "1 in",
+            "spring_rate": "2.8 lbs/in",
+            "McMaster-ref": "09044K42"
+        },
+        "high": {
+            "outer_diameter": "0.18 in",
+            "length": "1 in",
+            "spring_rate": "4.4 lbs/in",
+            "McMaster-ref": "5108N146"
+        }
+    }
+
+}
