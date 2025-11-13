@@ -888,7 +888,8 @@ if __name__ == "__main__":
 
     bag_folder = "/home/alejo/lfd_bags/experiment_1"    
     bag_folder = '/media/alejo/Pruning25/03_IL_bagfiles/experiment_3/trial_2/robot'
-    trial_folder = "trial_2"
+    bag_folder = '/media/alejo/IL_data/01_IL_bagfiles/experiment_3 (pending_to_extract)/trial_55/robot'
+    trial_folder = "trial_55"
     extract_data_and_plot(bag_folder, trial_folder)
     
     
