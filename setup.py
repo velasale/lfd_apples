@@ -13,8 +13,9 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', ['launch/lfd_gripper.launch.py']),
+        ('share/' + package_name + '/resources', glob('lfd_apples/resources/*.sh')),
         # Install data directory (JSONs, etc.)
-        (os.path.join('share', package_name, 'data'), glob('lfd_apples/data/*.json')),
+        (os.path.join('share', package_name, 'data'), glob('lfd_apples/data/*.json')),        
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -31,6 +32,7 @@ setup(
             'lfd_replay = lfd_apples.lfd_replay:main',     
             'lfd_inhand_camera = lfd_apples.lfd_inhand_camera:main',
             'lfd_demo = lfd_apples.lfd_demo:main',
+            'franka_recover = lfd_apples.franka_recover:main',
         ],
     },
 )
