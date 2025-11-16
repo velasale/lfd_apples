@@ -306,10 +306,9 @@ def main():
         dfs_trimmed = [df_ds_all[0]] + [df.iloc[:, 1:] for df in df_ds_all[1:]]  
         combined_df = pd.concat(dfs_trimmed, axis=1)
 
-        # Save combined downsampled data to CSV file
-        destination_trial_path = os.path.join(DESTINATION_PATH, trial)
-        os.makedirs(destination_trial_path, exist_ok=True)
-        combined_csv_path = os.path.join(destination_trial_path, "downsampled_aligned_data.csv")
+        # Save combined downsampled data to CSV file        
+        os.makedirs(DESTINATION_PATH, exist_ok=True)
+        combined_csv_path = os.path.join(DESTINATION_PATH, trial + "_downsampled_aligned_data.csv")
         combined_df.to_csv(combined_csv_path, index=False)  
 
 
