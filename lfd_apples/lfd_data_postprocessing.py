@@ -311,7 +311,6 @@ def main():
         combined_csv_path = os.path.join(DESTINATION_PATH, trial + "_downsampled_aligned_data.csv")
         combined_df.to_csv(combined_csv_path, index=False)  
 
-
         plt.show()
 
     print(f'Trials without subfolders: {trials_without_subfolders}\n')
