@@ -47,7 +47,16 @@
             "total length": "90 mm",
             "stem-side magnet": "high",
             "branch-side magnet": "strong"
+        },
+        "id_7":{
+            "material": "TPU",
+            "diameter": "12 mm",
+            "length": "40 mm",
+            "total length": "65 mm",
+            "stem-side magnet": "medium",
+            "branch-side magnet": "strong"
         }
+
     },    
     
     "apples": {
