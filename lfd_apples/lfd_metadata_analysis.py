@@ -27,6 +27,7 @@ def complete_json_file(json_files):
     # STEP 2 — check completeness of JSON files
     # --------------------------------------
     incomplete_files = []
+    print('')
     for json_path in tqdm(json_files, desc="Checking JSON completeness"):
         try:
             with open(json_path, "r") as f:
@@ -179,9 +180,6 @@ def main():
     BASE_DIR = "/media/guest/IL_data/01_IL_bagfiles"
 
     json_files = collect_json_files(BASE_DIR)
-    # for i in json_files:
-        # print(i)
-
     count_trials_variations(json_files)
     complete_json_file(json_files)
 
