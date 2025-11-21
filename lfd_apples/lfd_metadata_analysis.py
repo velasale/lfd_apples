@@ -132,8 +132,6 @@ def complete_json_file(json_files):
     return incomplete_files
 
 
-
-
 def count_trials_variations(json_files):
 
     apple_counter = Counter()
@@ -165,19 +163,29 @@ def count_trials_variations(json_files):
         except Exception as e:
             print(f"Error reading {json_path}: {e}")
 
+    # --------------------------------------
+    # APPLE STATS
+    # --------------------------------------
+    total_apples = sum(apple_counter.values())
     print("\n=== Apple Counts ===")
     for apple, count in sorted(apple_counter.items(), key=lambda x: int(x[0])):
-        print(f"Apple {apple}: {count}")
+        pct = (count / total_apples) * 100 if total_apples > 0 else 0
+        print(f"Apple {apple}: {count} ({pct:.1f}%)")
 
+    # --------------------------------------
+    # SPUR STATS
+    # --------------------------------------
+    total_spurs = sum(spur_counter.values())
     print("\n=== Spur Counts ===")
     for spur, count in sorted(spur_counter.items(), key=lambda x: int(x[0])):
-        print(f"Spur {spur}: {count}")
+        pct = (count / total_spurs) * 100 if total_spurs > 0 else 0
+        print(f"Spur {spur}: {count} ({pct:.1f}%)")
 
 
 def main():
 
     # Path to your main directory
-    BASE_DIR = "/media/guest/IL_data/01_IL_bagfiles"
+    BASE_DIR = "/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)"
 
     json_files = collect_json_files(BASE_DIR)
     count_trials_variations(json_files)
