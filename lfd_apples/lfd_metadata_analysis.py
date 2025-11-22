@@ -134,8 +134,18 @@ def complete_json_file(json_files):
 
 def count_trials_variations(json_files):
 
+    # Open reference apple_proxy.json to get all possible variations
+    with open("lfd_apples/data/apple_proxy.json", "r") as ap_prox:
+        reference_data = json.load(ap_prox)
+    spurs_ref = reference_data.get("spurs", {})
+    apples_ref = reference_data.get("apples", {})
+
     apple_counter = Counter()
     spur_counter = Counter()
+
+    apple_colors = Counter()
+    stem_magnets = Counter()
+    stiffness_scales = Counter()
 
     # --------------------------------------
     # STEP 2 — process with tqdm
@@ -154,6 +164,13 @@ def count_trials_variations(json_files):
             apple_id = apple.get("id")
             spur_id  = spur.get("id")
 
+            apple_color = apples_ref.get(str("id_" + apple_id)).get("color")
+            stem_magnet = apples_ref.get(str("id_" + apple_id)).get("stem magnet")
+            apple_colors[apple_color] += 1
+            stem_magnets[stem_magnet] += 1
+            stiffness_scale = spurs_ref.get(str("id_" + spur_id)).get("stiffness-scale")    
+            stiffness_scales[stiffness_scale] += 1
+
             if apple_id is not None:
                 apple_counter[str(apple_id)] += 1
 
@@ -167,19 +184,59 @@ def count_trials_variations(json_files):
     # APPLE STATS
     # --------------------------------------
     total_apples = sum(apple_counter.values())
-    print("\n=== Apple Counts ===")
+    print("\n=== Apple Counts ===: ", total_apples)
     for apple, count in sorted(apple_counter.items(), key=lambda x: int(x[0])):
         pct = (count / total_apples) * 100 if total_apples > 0 else 0
         print(f"Apple {apple}: {count} ({pct:.1f}%)")
+    print("\n=== Apple Color Counts ===")
+    for color, count in sorted(apple_colors.items(), key=lambda x: x[0]):
+        pct = (count / total_apples) * 100 if total_apples > 0 else 0
+        print(f"Color {color}: {count} ({pct:.1f}%)")   
+    print("\n=== Stem Magnet Counts ===")
+    for magnet, count in sorted(stem_magnets.items(), key=lambda x: x[0]):
+        pct = (count / total_apples) * 100 if total_apples > 0 else 0
+        print(f"Stem Magnet {magnet}: {count} ({pct:.1f}%)")
 
     # --------------------------------------
     # SPUR STATS
     # --------------------------------------
     total_spurs = sum(spur_counter.values())
-    print("\n=== Spur Counts ===")
+    print("\n=== Spur Counts ===: ", total_spurs)
     for spur, count in sorted(spur_counter.items(), key=lambda x: int(x[0])):
         pct = (count / total_spurs) * 100 if total_spurs > 0 else 0
         print(f"Spur {spur}: {count} ({pct:.1f}%)")
+    print("\n=== Stiffness Scale Counts ===")
+    for scale, count in sorted(stiffness_scales.items(), key=lambda x: int(x[0])):
+        pct = (count / total_spurs) * 100 if total_spurs > 0 else 0
+        print(f"Stiffness Scale {scale}: {count} ({pct:.1f}%)")
+
+
+def read_comments(json_files):
+    # --------------------------------------
+    # STEP 3 — read comments from JSON files
+    # --------------------------------------
+    comments = []
+    print('')
+    for json_path in tqdm(json_files, desc="Reading comments from JSON files"):
+        try:
+            with open(json_path, "r") as f:
+                data = json.load(f)
+
+            comment = data.get("results", {}).get("comments")
+            if comment != "N/A":
+                comments.append((json_path, comment))
+
+        except Exception as e:
+            print(f"Error reading {json_path}: {e}")
+
+    print(f"Found {len(comments)} comments in JSON files")
+
+    for json_path, comment in comments:
+        print(f"{json_path}: {comment}")
+
+    return comments
+
+
 
 
 def main():
@@ -188,8 +245,10 @@ def main():
     BASE_DIR = "/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)"
 
     json_files = collect_json_files(BASE_DIR)
-    count_trials_variations(json_files)
-    complete_json_file(json_files)
+    # complete_json_file(json_files)
+    # count_trials_variations(json_files)
+    read_comments(json_files)
+
 
 
 if __name__ == '__main__':
