@@ -371,9 +371,9 @@ def plot_wrench_and_pressure(wrench_df, pressure_df):
     print(f'Zero force timestamps (s): {zero_t}')   
 
     if len(zero_t) == 0:
-        singularities = False
+        singularity = False
     else:
-        singularities = True
+        singularity = True
 
 
     # --- Extract Pressure Data ---
@@ -449,7 +449,7 @@ def plot_wrench_and_pressure(wrench_df, pressure_df):
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     plt.show()
 
-    return singularities
+    return singularity
 
 # Check consecutive indexes
 def find_consecutive_indexes(zero_indices):
@@ -627,7 +627,6 @@ class Trial:
 
     def _make_attr_name(self, topic_name):
         return topic_name.strip("/").replace("/", "_")
-
     
     def get_first_timestamp(self, cursor):
 
@@ -765,7 +764,6 @@ class Trial:
         
         return self.engagement_time
 
-
     def get_disposal_time(self):
         
         """Estimate the time when the gripper engaged based on pressure data."""
@@ -792,6 +790,80 @@ class Trial:
         
         return self.engagement_time
 
+    def extract_images_from_bag(self,db3_file_path, output_dir="camera_frames", save_avi=True, fps=30):
+        """
+        Automatically detect camera topics (containing 'camera' or 'image_raw') in a ROS2 .db3 bag
+        and extract frames for each one.
+        """
+        os.makedirs(output_dir, exist_ok=True)
+        conn = sqlite3.connect(db3_file_path)
+        cursor = conn.cursor()
+
+        # Find all topics in the bag
+        cursor.execute("SELECT id, name, type FROM topics")
+        topics = cursor.fetchall()
+
+        # Filter topics that look like camera topics
+        camera_topics = [t for t in topics if "camera" in t[1].lower() or "image_raw" in t[1].lower()]
+        if not camera_topics:
+            print("⚠️ No camera topics found in bag.")
+            conn.close()
+            return
+
+        for topic_id, topic_name, topic_type in camera_topics:
+            print(f"\n🔹 Found camera topic: {topic_name} ({topic_type})")
+            msg_class = get_message(topic_type)
+            cursor.execute("SELECT timestamp, data FROM messages WHERE topic_id=?", (topic_id,))
+            rows = cursor.fetchall()
+            if len(rows) == 0:
+                print(f"⚠️ No messages in topic '{topic_name}'")
+                continue
+
+            # Create folder per topic
+            topic_folder = os.path.join(output_dir, topic_name.strip("/").replace("/", "_"))
+            os.makedirs(topic_folder, exist_ok=True)
+            
+            video_writer = None
+
+            for i, (timestamp, data) in enumerate(rows):
+                msg = deserialize_message(data, msg_class)
+                height, width = msg.height, msg.width
+                encoding = msg.encoding.lower()
+                np_arr = np.frombuffer(msg.data, dtype=np.uint8)
+
+                if encoding in ["rgb8", "bgr8"]:
+                    img = np_arr.reshape((height, width, 3))
+                elif encoding == "mono8":
+                    img = np_arr.reshape((height, width))
+                else:
+                    print(f"⚠️ Skipping frame {i}: unsupported encoding '{encoding}'")
+                    continue
+
+                if encoding == "rgb8":
+                    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+                t_sec = (timestamp - self.first_timestamp) / 1e9
+                filename = os.path.join(topic_folder, f"frame_{i:05d}_{t_sec:.6f}.jpg")
+                cv2.imwrite(filename, img)
+
+                # Initialize AVI writer
+                if save_avi and video_writer is None:
+                    avi_path = os.path.join(topic_folder, f"{topic_name.strip('/').replace('/', '_')}.avi")
+                    fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+                    video_writer = cv2.VideoWriter(avi_path, fourcc, fps, (width, height))
+                    print(f"🎥 Saving AVI video to {avi_path} at {fps} FPS")
+
+                if save_avi:
+                    img_color = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                    video_writer.write(img_color)
+
+            if save_avi and video_writer is not None:
+                video_writer.release()
+            print(f"✅ Done extracting topic '{topic_name}' to '{topic_folder}'")
+
+        conn.close()
+
+
 
 
 def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixed_camera_bag=True):
@@ -811,7 +883,7 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
 
         if not os.path.exists(output_frames_palm):
             # print(f"[INFO] Extracting palm camera frames to {output_frames_palm} ...")
-            extract_images_from_bag(db3_file_path=db3_palm, output_dir=output_frames_palm)
+            trial.extract_images_from_bag(db3_file_path=db3_palm, output_dir=output_frames_palm)
         else:
             print(f"[SKIP] Palm camera frames already exist at {output_frames_palm}. Skipping extraction.")
 
@@ -822,7 +894,7 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
 
         if not os.path.exists(output_frames_fixed):
             # print(f"[INFO] Extracting fixed camera frames to {output_frames_fixed} ...")
-            extract_images_from_bag(db3_file_path=db3_fixed, output_dir=output_frames_fixed)
+            trial.extract_images_from_bag(db3_file_path=db3_fixed, output_dir=output_frames_fixed)
         else:
             print(f"[SKIP] Fixed camera frames already exist at {output_frames_fixed}. Skipping extraction.")
 
@@ -861,7 +933,7 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
             with open(json_path, 'r') as f:            
                 metadata = json.load(f)
             
-            metadata['results']['comments'] = trial.singularities
+            metadata['results']['singularity'] = trial.singularities
             with open(json_path, 'w') as f:
                 json.dump(metadata, f, indent=4)    
            
@@ -885,11 +957,9 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
     
 
 if __name__ == "__main__":
-
-    bag_folder = "/home/alejo/lfd_bags/experiment_1"    
-    bag_folder = '/media/alejo/Pruning25/03_IL_bagfiles/experiment_3/trial_2/robot'
-    bag_folder = '/media/alejo/IL_data/01_IL_bagfiles/experiment_3 (pending_to_extract)/trial_55/robot'
-    trial_folder = "trial_55"
+    
+    bag_folder = '/home/guest/Documents/trial_103/robot'
+    trial_folder = "trial_103"
     extract_data_and_plot(bag_folder, trial_folder)
     
     
