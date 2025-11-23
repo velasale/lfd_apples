@@ -11,6 +11,8 @@ import itertools
 from scipy.ndimage import gaussian_filter, median_filter
 import json
 
+from tqdm import tqdm
+
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 
@@ -350,7 +352,7 @@ def plot_pressure(df):
     plt.tight_layout()
 
 
-def plot_wrench_and_pressure(wrench_df, pressure_df):
+def plot_wrench_and_pressure(wrench_df, pressure_df, plot=True):
     """Plot wrench (forces & torques) and pressure data in a single 4x1 figure."""
     # --- Extract Wrench Data ---
     fx = np.array(wrench_df['_wrench._force._x'].to_list(), dtype=float)
@@ -387,67 +389,68 @@ def plot_wrench_and_pressure(wrench_df, pressure_df):
     tof_filtered = gaussian_filter(tof, 3)
 
     # --- Plotting 4x1 ---
-    fig, axs = plt.subplots(4, 1, figsize=(10, 10), sharex=True)
+    if plot:
+        fig, axs = plt.subplots(4, 1, figsize=(10, 10), sharex=True)
 
-    # Forces
-    axs[0].plot(t_wrench, fx, alpha=0.3, color='r')
-    axs[0].plot(t_wrench, wrench_filtered[0], color='r', label='Fx')
-    axs[0].plot(t_wrench, fy, alpha=0.3, color='g')
-    axs[0].plot(t_wrench, wrench_filtered[1], color='g', label='Fy')
-    axs[0].plot(t_wrench, fz, alpha=0.3, color='b')
-    axs[0].plot(t_wrench, wrench_filtered[2], color='b', label='Fz')
-    axs[0].set_ylabel("Force [N]")
-    axs[0].legend()
-    axs[0].grid(True)
-    axs[0].set_ylim([-20, 20])
+        # Forces
+        axs[0].plot(t_wrench, fx, alpha=0.3, color='r')
+        axs[0].plot(t_wrench, wrench_filtered[0], color='r', label='Fx')
+        axs[0].plot(t_wrench, fy, alpha=0.3, color='g')
+        axs[0].plot(t_wrench, wrench_filtered[1], color='g', label='Fy')
+        axs[0].plot(t_wrench, fz, alpha=0.3, color='b')
+        axs[0].plot(t_wrench, wrench_filtered[2], color='b', label='Fz')
+        axs[0].set_ylabel("Force [N]")
+        axs[0].legend()
+        axs[0].grid(True)
+        axs[0].set_ylim([-20, 20])
 
-    # --- Vertical dashed lines at zero_t ---
-    for zt in zero_t:    
-        for ax in axs:
-            ax.axvline(x=zt, color="k", linestyle="--", alpha=0.5)  # black dashed line
+        # --- Vertical dashed lines at zero_t ---
+        for zt in zero_t:    
+            for ax in axs:
+                ax.axvline(x=zt, color="k", linestyle="--", alpha=0.5)  # black dashed line
 
-    # Tangential + Normal
-    axs[1].plot(t_wrench, tangential_force, color='brown', label='Tangential √(Fx²+Fy²)')
-    axs[1].plot(t_wrench, wrench_filtered[2], color='b', label='Normal Fz')
-    axs[1].set_ylabel("Force [N]")
-    axs[1].legend()
-    axs[1].grid(True)
-    axs[1].set_ylim([-20, 20])
+        # Tangential + Normal
+        axs[1].plot(t_wrench, tangential_force, color='brown', label='Tangential √(Fx²+Fy²)')
+        axs[1].plot(t_wrench, wrench_filtered[2], color='b', label='Normal Fz')
+        axs[1].set_ylabel("Force [N]")
+        axs[1].legend()
+        axs[1].grid(True)
+        axs[1].set_ylim([-20, 20])
 
-    # Torques
-    axs[2].plot(t_wrench, tx, alpha=0.3, color='r')
-    axs[2].plot(t_wrench, wrench_filtered[3], color='r', label='Tx')
-    axs[2].plot(t_wrench, ty, alpha=0.3, color='g')
-    axs[2].plot(t_wrench, wrench_filtered[4], color='g', label='Ty')
-    axs[2].plot(t_wrench, tz, alpha=0.3, color='b')
-    axs[2].plot(t_wrench, wrench_filtered[5], color='b', label='Tz')
-    axs[2].set_ylabel("Torque [Nm]")
-    axs[2].legend()
-    axs[2].grid(True)
-    axs[3].set_ylim([-5, 5])
+        # Torques
+        axs[2].plot(t_wrench, tx, alpha=0.3, color='r')
+        axs[2].plot(t_wrench, wrench_filtered[3], color='r', label='Tx')
+        axs[2].plot(t_wrench, ty, alpha=0.3, color='g')
+        axs[2].plot(t_wrench, wrench_filtered[4], color='g', label='Ty')
+        axs[2].plot(t_wrench, tz, alpha=0.3, color='b')
+        axs[2].plot(t_wrench, wrench_filtered[5], color='b', label='Tz')
+        axs[2].set_ylabel("Torque [Nm]")
+        axs[2].legend()
+        axs[2].grid(True)
+        axs[3].set_ylim([-5, 5])
 
-    # Pressure + TOF
-    axs[3].plot(t_pressure, p1, label="suction cup a")
-    axs[3].plot(t_pressure, p2, label="suction cup b", linestyle='--')
-    axs[3].plot(t_pressure, p3, label="suction cup c", linestyle='-.')
-    axs[3].set_ylabel("Pressure [kPa]")
-    axs[3].set_xlabel("Elapsed Time [s]")
-    axs[3].grid(True)
-    axs[3].set_ylim([0, 110])
-    ax_tof = axs[3].twinx()
-    ax_tof.plot(t_pressure, tof_filtered, color='blue', label='tof filtered')
-    ax_tof.set_ylabel("tof [cm]")
-    ax_tof.set_ylim([0, 40])
+        # Pressure + TOF
+        axs[3].plot(t_pressure, p1, label="suction cup a")
+        axs[3].plot(t_pressure, p2, label="suction cup b", linestyle='--')
+        axs[3].plot(t_pressure, p3, label="suction cup c", linestyle='-.')
+        axs[3].set_ylabel("Pressure [kPa]")
+        axs[3].set_xlabel("Elapsed Time [s]")
+        axs[3].grid(True)
+        axs[3].set_ylim([0, 110])
+        ax_tof = axs[3].twinx()
+        ax_tof.plot(t_pressure, tof_filtered, color='blue', label='tof filtered')
+        ax_tof.set_ylabel("tof [cm]")
+        ax_tof.set_ylim([0, 40])
 
-    # Combine legends
-    lines1, labels1 = axs[3].get_legend_handles_labels()
-    lines2, labels2 = ax_tof.get_legend_handles_labels()
-    axs[3].legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+        # Combine legends
+        lines1, labels1 = axs[3].get_legend_handles_labels()
+        lines2, labels2 = ax_tof.get_legend_handles_labels()
+        axs[3].legend(lines1 + lines2, labels1 + labels2, loc='upper right')
 
-    plt.suptitle("Wrench and Pressure Data")
-    # plt.xlim([0, 50])
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
-    plt.show()
+        plt.suptitle("Wrench and Pressure Data")
+        # plt.xlim([0, 50])
+        plt.tight_layout(rect=[0, 0, 1, 0.97])
+        plt.show()
 
     return singularity
 
@@ -864,8 +867,6 @@ class Trial:
         conn.close()
 
 
-
-
 def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixed_camera_bag=True):
     
     bag_file = bag_folder + "/lfd_bag_main/lfd_bag_main_0.db3"
@@ -898,21 +899,9 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
         else:
             print(f"[SKIP] Fixed camera frames already exist at {output_frames_fixed}. Skipping extraction.")
 
-
-    # --- EEF POSE --- 
-    # Access topics directly
-    # print(trial.joint_states.head())
-    # print(trial.franka_robot_state_broadcaster_current_pose.head())
-    
-    # --- EEF WRENCH ---
-    # print(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
-    # plot_wrench(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
-
-    # --- PRESSURE SIGNALS ---
-    # plot_pressure(trial.microROS_sensor_data)    
     
     # --- 3D PLOT ---
-    plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time, trial.disposal_time)
+    # plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time, trial.disposal_time)
 
     # --- EEF WRENCH & PRESSURE ---
     has_wrench = hasattr(trial, "franka_robot_state_broadcaster_external_wrench_in_stiffness_frame")
@@ -921,28 +910,30 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
     if has_wrench and has_pressure:
         trial.singularities = plot_wrench_and_pressure(
             trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame,
-            trial.microROS_sensor_data
+            trial.microROS_sensor_data, 
+            plot=False
         )        
         
-        # Update file name and json file         
+        # Update json file         
         if trial.singularities:            
             print("⚠️ Singularities detected during the trial! Updating metadata JSON and filename...")
-            filename = f"metadata_{trial_number}.json"
-            json_path = os.path.join(bag_folder, filename)       
-            print(json_path)
-            with open(json_path, 'r') as f:            
-                metadata = json.load(f)
-            
-            metadata['results']['singularity'] = trial.singularities
-            with open(json_path, 'w') as f:
-                json.dump(metadata, f, indent=4)    
+
+        filename = f"metadata_{trial_number}.json"
+        json_path = os.path.abspath(os.path.join(bag_folder, "..", filename)) 
+        print(json_path)
+        with open(json_path, 'r') as f:            
+            metadata = json.load(f)
+        
+        metadata['results']['singularity'] = trial.singularities
+        with open(json_path, 'w') as f:
+            json.dump(metadata, f, indent=4)    
            
-           
-            old_name = bag_folder
-            base_name = os.path.basename(old_name)
-            new_name = f"{base_name}_singular"
-            new_path = os.path.join(os.path.dirname(old_name), new_name)
-            os.rename(old_name, new_path)            
+        
+        # old_name = bag_folder
+        # base_name = os.path.basename(old_name)
+        # new_name = f"{base_name}_singular"
+        # new_path = os.path.join(os.path.dirname(old_name), new_name)
+        # os.rename(old_name, new_path)            
           
 
     elif has_wrench:
@@ -954,12 +945,32 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
     # Show the figure non-blocking
     plt.show()
     
-    
+
+def batch_process_trials(base_folder):
+
+    trial_numbers = [ 
+        name for name in os.listdir(base_folder)
+        if os.path.isdir(os.path.join(base_folder, name))
+        ]
+
+    for trial_num in tqdm(trial_numbers):
+        # bag_folder = os.path.join(base_folder, trial_num, "robot")
+        # print(f"\nProcessing {trial_num} in folder: {bag_folder}")
+        # extract_data_and_plot(bag_folder, trial_num)
+
+        bag_folder = os.path.join(base_folder, trial_num, "human")
+        print(f"\nProcessing {trial_num} in folder: {bag_folder}")
+        extract_data_and_plot(bag_folder, trial_num, inhand_camera_bag=False)
+
+        print("\n\n")
+
 
 if __name__ == "__main__":
     
-    bag_folder = '/home/guest/Documents/trial_103/robot'
-    trial_folder = "trial_103"
-    extract_data_and_plot(bag_folder, trial_folder)
+    # bag_folder = '/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_9/robot'
+    # trial_folder = "trial_9"
+    # extract_data_and_plot(bag_folder, trial_folder)
+
+    batch_process_trials('/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)')
     
     
