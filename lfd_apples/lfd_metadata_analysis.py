@@ -132,7 +132,7 @@ def complete_json_file(json_files):
     return incomplete_files
 
 
-def count_trials_variations(json_files):
+def count_apple_proxy_variations(json_files):
 
     # Open reference apple_proxy.json to get all possible variations
     with open("lfd_apples/data/apple_proxy.json", "r") as ap_prox:
@@ -242,11 +242,11 @@ def read_comments(json_files):
 def main():
 
     # Path to your main directory
-    BASE_DIR = "/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)"
+    BASE_DIR = "/media/guest/IL_data/01_IL_bagfiles/only_human_demos"
 
     json_files = collect_json_files(BASE_DIR)
     # complete_json_file(json_files)
-    # count_trials_variations(json_files)
+    # count_apple_proxy_variations(json_files)
     read_comments(json_files)
 
 
