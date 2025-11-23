@@ -11,6 +11,8 @@ import itertools
 from scipy.ndimage import gaussian_filter, median_filter
 import json
 
+from tqdm import tqdm
+
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 
@@ -350,7 +352,7 @@ def plot_pressure(df):
     plt.tight_layout()
 
 
-def plot_wrench_and_pressure(wrench_df, pressure_df):
+def plot_wrench_and_pressure(wrench_df, pressure_df, plot=True):
     """Plot wrench (forces & torques) and pressure data in a single 4x1 figure."""
     # --- Extract Wrench Data ---
     fx = np.array(wrench_df['_wrench._force._x'].to_list(), dtype=float)
@@ -371,9 +373,9 @@ def plot_wrench_and_pressure(wrench_df, pressure_df):
     print(f'Zero force timestamps (s): {zero_t}')   
 
     if len(zero_t) == 0:
-        singularities = False
+        singularity = False
     else:
-        singularities = True
+        singularity = True
 
 
     # --- Extract Pressure Data ---
@@ -387,69 +389,70 @@ def plot_wrench_and_pressure(wrench_df, pressure_df):
     tof_filtered = gaussian_filter(tof, 3)
 
     # --- Plotting 4x1 ---
-    fig, axs = plt.subplots(4, 1, figsize=(10, 10), sharex=True)
+    if plot:
+        fig, axs = plt.subplots(4, 1, figsize=(10, 10), sharex=True)
 
-    # Forces
-    axs[0].plot(t_wrench, fx, alpha=0.3, color='r')
-    axs[0].plot(t_wrench, wrench_filtered[0], color='r', label='Fx')
-    axs[0].plot(t_wrench, fy, alpha=0.3, color='g')
-    axs[0].plot(t_wrench, wrench_filtered[1], color='g', label='Fy')
-    axs[0].plot(t_wrench, fz, alpha=0.3, color='b')
-    axs[0].plot(t_wrench, wrench_filtered[2], color='b', label='Fz')
-    axs[0].set_ylabel("Force [N]")
-    axs[0].legend()
-    axs[0].grid(True)
-    axs[0].set_ylim([-20, 20])
+        # Forces
+        axs[0].plot(t_wrench, fx, alpha=0.3, color='r')
+        axs[0].plot(t_wrench, wrench_filtered[0], color='r', label='Fx')
+        axs[0].plot(t_wrench, fy, alpha=0.3, color='g')
+        axs[0].plot(t_wrench, wrench_filtered[1], color='g', label='Fy')
+        axs[0].plot(t_wrench, fz, alpha=0.3, color='b')
+        axs[0].plot(t_wrench, wrench_filtered[2], color='b', label='Fz')
+        axs[0].set_ylabel("Force [N]")
+        axs[0].legend()
+        axs[0].grid(True)
+        axs[0].set_ylim([-20, 20])
 
-    # --- Vertical dashed lines at zero_t ---
-    for zt in zero_t:    
-        for ax in axs:
-            ax.axvline(x=zt, color="k", linestyle="--", alpha=0.5)  # black dashed line
+        # --- Vertical dashed lines at zero_t ---
+        for zt in zero_t:    
+            for ax in axs:
+                ax.axvline(x=zt, color="k", linestyle="--", alpha=0.5)  # black dashed line
 
-    # Tangential + Normal
-    axs[1].plot(t_wrench, tangential_force, color='brown', label='Tangential √(Fx²+Fy²)')
-    axs[1].plot(t_wrench, wrench_filtered[2], color='b', label='Normal Fz')
-    axs[1].set_ylabel("Force [N]")
-    axs[1].legend()
-    axs[1].grid(True)
-    axs[1].set_ylim([-20, 20])
+        # Tangential + Normal
+        axs[1].plot(t_wrench, tangential_force, color='brown', label='Tangential √(Fx²+Fy²)')
+        axs[1].plot(t_wrench, wrench_filtered[2], color='b', label='Normal Fz')
+        axs[1].set_ylabel("Force [N]")
+        axs[1].legend()
+        axs[1].grid(True)
+        axs[1].set_ylim([-20, 20])
 
-    # Torques
-    axs[2].plot(t_wrench, tx, alpha=0.3, color='r')
-    axs[2].plot(t_wrench, wrench_filtered[3], color='r', label='Tx')
-    axs[2].plot(t_wrench, ty, alpha=0.3, color='g')
-    axs[2].plot(t_wrench, wrench_filtered[4], color='g', label='Ty')
-    axs[2].plot(t_wrench, tz, alpha=0.3, color='b')
-    axs[2].plot(t_wrench, wrench_filtered[5], color='b', label='Tz')
-    axs[2].set_ylabel("Torque [Nm]")
-    axs[2].legend()
-    axs[2].grid(True)
-    axs[3].set_ylim([-5, 5])
+        # Torques
+        axs[2].plot(t_wrench, tx, alpha=0.3, color='r')
+        axs[2].plot(t_wrench, wrench_filtered[3], color='r', label='Tx')
+        axs[2].plot(t_wrench, ty, alpha=0.3, color='g')
+        axs[2].plot(t_wrench, wrench_filtered[4], color='g', label='Ty')
+        axs[2].plot(t_wrench, tz, alpha=0.3, color='b')
+        axs[2].plot(t_wrench, wrench_filtered[5], color='b', label='Tz')
+        axs[2].set_ylabel("Torque [Nm]")
+        axs[2].legend()
+        axs[2].grid(True)
+        axs[3].set_ylim([-5, 5])
 
-    # Pressure + TOF
-    axs[3].plot(t_pressure, p1, label="suction cup a")
-    axs[3].plot(t_pressure, p2, label="suction cup b", linestyle='--')
-    axs[3].plot(t_pressure, p3, label="suction cup c", linestyle='-.')
-    axs[3].set_ylabel("Pressure [kPa]")
-    axs[3].set_xlabel("Elapsed Time [s]")
-    axs[3].grid(True)
-    axs[3].set_ylim([0, 110])
-    ax_tof = axs[3].twinx()
-    ax_tof.plot(t_pressure, tof_filtered, color='blue', label='tof filtered')
-    ax_tof.set_ylabel("tof [cm]")
-    ax_tof.set_ylim([0, 40])
+        # Pressure + TOF
+        axs[3].plot(t_pressure, p1, label="suction cup a")
+        axs[3].plot(t_pressure, p2, label="suction cup b", linestyle='--')
+        axs[3].plot(t_pressure, p3, label="suction cup c", linestyle='-.')
+        axs[3].set_ylabel("Pressure [kPa]")
+        axs[3].set_xlabel("Elapsed Time [s]")
+        axs[3].grid(True)
+        axs[3].set_ylim([0, 110])
+        ax_tof = axs[3].twinx()
+        ax_tof.plot(t_pressure, tof_filtered, color='blue', label='tof filtered')
+        ax_tof.set_ylabel("tof [cm]")
+        ax_tof.set_ylim([0, 40])
 
-    # Combine legends
-    lines1, labels1 = axs[3].get_legend_handles_labels()
-    lines2, labels2 = ax_tof.get_legend_handles_labels()
-    axs[3].legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+        # Combine legends
+        lines1, labels1 = axs[3].get_legend_handles_labels()
+        lines2, labels2 = ax_tof.get_legend_handles_labels()
+        axs[3].legend(lines1 + lines2, labels1 + labels2, loc='upper right')
 
-    plt.suptitle("Wrench and Pressure Data")
-    # plt.xlim([0, 50])
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
-    plt.show()
+        plt.suptitle("Wrench and Pressure Data")
+        # plt.xlim([0, 50])
+        plt.tight_layout(rect=[0, 0, 1, 0.97])
+        plt.show()
 
-    return singularities
+    return singularity
 
 # Check consecutive indexes
 def find_consecutive_indexes(zero_indices):
@@ -627,7 +630,6 @@ class Trial:
 
     def _make_attr_name(self, topic_name):
         return topic_name.strip("/").replace("/", "_")
-
     
     def get_first_timestamp(self, cursor):
 
@@ -765,7 +767,6 @@ class Trial:
         
         return self.engagement_time
 
-
     def get_disposal_time(self):
         
         """Estimate the time when the gripper engaged based on pressure data."""
@@ -792,6 +793,78 @@ class Trial:
         
         return self.engagement_time
 
+    def extract_images_from_bag(self,db3_file_path, output_dir="camera_frames", save_avi=True, fps=30):
+        """
+        Automatically detect camera topics (containing 'camera' or 'image_raw') in a ROS2 .db3 bag
+        and extract frames for each one.
+        """
+        os.makedirs(output_dir, exist_ok=True)
+        conn = sqlite3.connect(db3_file_path)
+        cursor = conn.cursor()
+
+        # Find all topics in the bag
+        cursor.execute("SELECT id, name, type FROM topics")
+        topics = cursor.fetchall()
+
+        # Filter topics that look like camera topics
+        camera_topics = [t for t in topics if "camera" in t[1].lower() or "image_raw" in t[1].lower()]
+        if not camera_topics:
+            print("⚠️ No camera topics found in bag.")
+            conn.close()
+            return
+
+        for topic_id, topic_name, topic_type in camera_topics:
+            print(f"\n🔹 Found camera topic: {topic_name} ({topic_type})")
+            msg_class = get_message(topic_type)
+            cursor.execute("SELECT timestamp, data FROM messages WHERE topic_id=?", (topic_id,))
+            rows = cursor.fetchall()
+            if len(rows) == 0:
+                print(f"⚠️ No messages in topic '{topic_name}'")
+                continue
+
+            # Create folder per topic
+            topic_folder = os.path.join(output_dir, topic_name.strip("/").replace("/", "_"))
+            os.makedirs(topic_folder, exist_ok=True)
+            
+            video_writer = None
+
+            for i, (timestamp, data) in enumerate(rows):
+                msg = deserialize_message(data, msg_class)
+                height, width = msg.height, msg.width
+                encoding = msg.encoding.lower()
+                np_arr = np.frombuffer(msg.data, dtype=np.uint8)
+
+                if encoding in ["rgb8", "bgr8"]:
+                    img = np_arr.reshape((height, width, 3))
+                elif encoding == "mono8":
+                    img = np_arr.reshape((height, width))
+                else:
+                    print(f"⚠️ Skipping frame {i}: unsupported encoding '{encoding}'")
+                    continue
+
+                if encoding == "rgb8":
+                    img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+                t_sec = (timestamp - self.first_timestamp) / 1e9
+                filename = os.path.join(topic_folder, f"frame_{i:05d}_{t_sec:.6f}.jpg")
+                cv2.imwrite(filename, img)
+
+                # Initialize AVI writer
+                if save_avi and video_writer is None:
+                    avi_path = os.path.join(topic_folder, f"{topic_name.strip('/').replace('/', '_')}.avi")
+                    fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+                    video_writer = cv2.VideoWriter(avi_path, fourcc, fps, (width, height))
+                    print(f"🎥 Saving AVI video to {avi_path} at {fps} FPS")
+
+                if save_avi:
+                    img_color = img if len(img.shape) == 3 else cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                    video_writer.write(img_color)
+
+            if save_avi and video_writer is not None:
+                video_writer.release()
+            print(f"✅ Done extracting topic '{topic_name}' to '{topic_folder}'")
+
+        conn.close()
 
 
 def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixed_camera_bag=True):
@@ -811,7 +884,7 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
 
         if not os.path.exists(output_frames_palm):
             # print(f"[INFO] Extracting palm camera frames to {output_frames_palm} ...")
-            extract_images_from_bag(db3_file_path=db3_palm, output_dir=output_frames_palm)
+            trial.extract_images_from_bag(db3_file_path=db3_palm, output_dir=output_frames_palm)
         else:
             print(f"[SKIP] Palm camera frames already exist at {output_frames_palm}. Skipping extraction.")
 
@@ -822,25 +895,13 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
 
         if not os.path.exists(output_frames_fixed):
             # print(f"[INFO] Extracting fixed camera frames to {output_frames_fixed} ...")
-            extract_images_from_bag(db3_file_path=db3_fixed, output_dir=output_frames_fixed)
+            trial.extract_images_from_bag(db3_file_path=db3_fixed, output_dir=output_frames_fixed)
         else:
             print(f"[SKIP] Fixed camera frames already exist at {output_frames_fixed}. Skipping extraction.")
 
-
-    # --- EEF POSE --- 
-    # Access topics directly
-    # print(trial.joint_states.head())
-    # print(trial.franka_robot_state_broadcaster_current_pose.head())
-    
-    # --- EEF WRENCH ---
-    # print(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.head())
-    # plot_wrench(trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame)
-
-    # --- PRESSURE SIGNALS ---
-    # plot_pressure(trial.microROS_sensor_data)    
     
     # --- 3D PLOT ---
-    plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time, trial.disposal_time)
+    # plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time, trial.disposal_time)
 
     # --- EEF WRENCH & PRESSURE ---
     has_wrench = hasattr(trial, "franka_robot_state_broadcaster_external_wrench_in_stiffness_frame")
@@ -849,28 +910,30 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
     if has_wrench and has_pressure:
         trial.singularities = plot_wrench_and_pressure(
             trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame,
-            trial.microROS_sensor_data
+            trial.microROS_sensor_data, 
+            plot=False
         )        
         
-        # Update file name and json file         
+        # Update json file         
         if trial.singularities:            
             print("⚠️ Singularities detected during the trial! Updating metadata JSON and filename...")
-            filename = f"metadata_{trial_number}.json"
-            json_path = os.path.join(bag_folder, filename)       
-            print(json_path)
-            with open(json_path, 'r') as f:            
-                metadata = json.load(f)
-            
-            metadata['results']['comments'] = trial.singularities
-            with open(json_path, 'w') as f:
-                json.dump(metadata, f, indent=4)    
+
+        filename = f"metadata_{trial_number}.json"
+        json_path = os.path.abspath(os.path.join(bag_folder, "..", filename)) 
+        print(json_path)
+        with open(json_path, 'r') as f:            
+            metadata = json.load(f)
+        
+        metadata['results']['singularity'] = trial.singularities
+        with open(json_path, 'w') as f:
+            json.dump(metadata, f, indent=4)    
            
-           
-            old_name = bag_folder
-            base_name = os.path.basename(old_name)
-            new_name = f"{base_name}_singular"
-            new_path = os.path.join(os.path.dirname(old_name), new_name)
-            os.rename(old_name, new_path)            
+        
+        # old_name = bag_folder
+        # base_name = os.path.basename(old_name)
+        # new_name = f"{base_name}_singular"
+        # new_path = os.path.join(os.path.dirname(old_name), new_name)
+        # os.rename(old_name, new_path)            
           
 
     elif has_wrench:
@@ -882,14 +945,32 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
     # Show the figure non-blocking
     plt.show()
     
-    
+
+def batch_process_trials(base_folder):
+
+    trial_numbers = [ 
+        name for name in os.listdir(base_folder)
+        if os.path.isdir(os.path.join(base_folder, name))
+        ]
+
+    for trial_num in tqdm(trial_numbers):
+        # bag_folder = os.path.join(base_folder, trial_num, "robot")
+        # print(f"\nProcessing {trial_num} in folder: {bag_folder}")
+        # extract_data_and_plot(bag_folder, trial_num)
+
+        bag_folder = os.path.join(base_folder, trial_num, "human")
+        print(f"\nProcessing {trial_num} in folder: {bag_folder}")
+        extract_data_and_plot(bag_folder, trial_num, inhand_camera_bag=False)
+
+        print("\n\n")
+
 
 if __name__ == "__main__":
+    
+    # bag_folder = '/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_9/robot'
+    # trial_folder = "trial_9"
+    # extract_data_and_plot(bag_folder, trial_folder)
 
-    bag_folder = "/home/alejo/lfd_bags/experiment_1"    
-    bag_folder = '/media/alejo/Pruning25/03_IL_bagfiles/experiment_3/trial_2/robot'
-    bag_folder = '/media/alejo/IL_data/01_IL_bagfiles/experiment_3 (pending_to_extract)/trial_55/robot'
-    trial_folder = "trial_55"
-    extract_data_and_plot(bag_folder, trial_folder)
+    batch_process_trials('/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)')
     
     
