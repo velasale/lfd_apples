@@ -306,7 +306,8 @@ def main():
     node = MoveToHomeAndFreedrive()
 
     # BAG_MAIN_DIR = "/media/alejo/Pruning25/01_IL_bagfiles"
-    BAG_MAIN_DIR = "/media/alejo/IL_data/01_IL_bagfiles"
+    # BAG_MAIN_DIR = "/media/alejo/IL_data/01_IL_bagfiles"
+    BAG_MAIN_DIR = "/media/alejo/New Volume/01_IL_bagfiles"
     EXPERIMENT = "experiment_4"
     BAG_FILEPATH = os.path.join(BAG_MAIN_DIR, EXPERIMENT)
     os.makedirs(BAG_FILEPATH, exist_ok=True)
