@@ -970,7 +970,6 @@ if __name__ == "__main__":
     # bag_folder = '/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_9/robot'
     # trial_folder = "trial_9"
     # extract_data_and_plot(bag_folder, trial_folder)
-
-    batch_process_trials('/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)')
     
+    batch_process_trials('/media/guest/IL_data/01_IL_bagfiles/only_human_demos/without_palm_cam')    
     
