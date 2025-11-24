@@ -5,6 +5,8 @@ import numpy as np
 import cv2
 import os
 from tqdm import tqdm
+from transformers import AutoFeatureExtractor, AutoModel
+import torch
 
 # ---------------------------
 # Settings
@@ -16,8 +18,17 @@ frame_rate = 5  # frames per second
 # ---------------------------
 # Load DINO model
 # ---------------------------
-model = torch.hub.load('facebookresearch/dino:main', 'dino_vitb8')
+# model = torch.hub.load('facebookresearch/dino:main', 'dino_vitb8')
+# model.eval()
+
+
+
+model_name = "facebook/dinov3-base"
+
+extractor = AutoFeatureExtractor.from_pretrained(model_name)
+model = AutoModel.from_pretrained(model_name)
 model.eval()
+
 
 # ---------------------------
 # Preprocessing
