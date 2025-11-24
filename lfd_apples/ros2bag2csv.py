@@ -901,7 +901,7 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
 
     
     # --- 3D PLOT ---
-    # plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time, trial.disposal_time)
+    plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time, trial.disposal_time)
 
     # --- EEF WRENCH & PRESSURE ---
     has_wrench = hasattr(trial, "franka_robot_state_broadcaster_external_wrench_in_stiffness_frame")
@@ -911,7 +911,7 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
         trial.singularities = plot_wrench_and_pressure(
             trial.franka_robot_state_broadcaster_external_wrench_in_stiffness_frame,
             trial.microROS_sensor_data, 
-            plot=False
+            plot=True
         )        
         
         # Update json file         
