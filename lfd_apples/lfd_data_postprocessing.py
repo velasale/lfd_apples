@@ -243,8 +243,8 @@ def rename_folder(SOURCE_PATH, start_index=100):
 
         # Rename file and subfolder
         print('Be cautious about using this method')
-        # os.rename(METADATA_OLD_PATH, METADATA_NEW_PATH)
-        # os.rename(OLD_PATH, NEW_PATH)
+        os.rename(METADATA_OLD_PATH, METADATA_NEW_PATH)
+        os.rename(OLD_PATH, NEW_PATH)
 
         start_index += 1
 
@@ -327,11 +327,14 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    # main()
+   
 
     # MAIN_DIR = os.path.join("D:")  # windows OS
-    # MAIN_DIR = os.path.join('/media', 'guest', 'IL_data')        # ubuntu OS
-    # SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
-    # EXPERIMENT = "only_human_demos"    
-    # SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)   
-    # rename_folder(SOURCE_PATH, 1)
+    MAIN_DIR = os.path.join('/media', 'guest', 'IL_data')        # ubuntu OS
+    SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
+    EXPERIMENT = "only_human_demos"    
+    SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)   
+
+    SOURCE_PATH = '/media/guest/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
+    rename_folder(SOURCE_PATH, 1)
