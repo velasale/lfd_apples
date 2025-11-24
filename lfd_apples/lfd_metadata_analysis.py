@@ -242,12 +242,22 @@ def read_comments(json_files):
 def main():
 
     # Path to your main directory
-    BASE_DIR = "/media/guest/IL_data/01_IL_bagfiles/only_human_demos"
+    BASE_DIR = "/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)"
+    json_files_sd1 = collect_json_files(BASE_DIR)
 
-    json_files = collect_json_files(BASE_DIR)
-    # complete_json_file(json_files)
-    # count_apple_proxy_variations(json_files)
-    read_comments(json_files)
+    BASE_DIR_2 = "/media/guest/New Volume/01_IL_bagfiles/experiment_4/"
+    json_files_sd2 = collect_json_files(BASE_DIR_2)
+
+    # Path to your main directory
+    BASE_DIR_3 = "/media/guest/IL_data/01_IL_bagfiles/only_human_demos"
+    json_files_sd3 = collect_json_files(BASE_DIR_3)
+
+    # Combine both lists
+    json_files = json_files_sd1 + json_files_sd2 + json_files_sd3
+
+    complete_json_file(json_files)
+    count_apple_proxy_variations(json_files)
+    # read_comments(json_files)
 
 
 
