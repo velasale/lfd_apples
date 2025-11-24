@@ -42,14 +42,25 @@ class MoveToHomeAndFreedrive(Node):
 
         self.joint_names = [f"fr3_joint{i+1}" for i in range(7)]
         self.trajectory_points = []
-                
-        self.home_positions = [0.6414350870607822,
-                               -1.5320604540253377,
-                               0.4850253317447517,
-                               -2.474376823551583,
-                               0.9726833812685999,
-                               2.1330229376987626,
-                               -1.0721952822461973]            
+        
+        # Home position with eef pose starting on - x
+        # self.home_positions = [0.6414350870607822,
+        #                        -1.5320604540253377,
+        #                        0.4850253317447517,
+        #                        -2.474376823551583,
+        #                        0.9726833812685999,
+        #                        2.1330229376987626,
+        #                        -1.0721952822461973]
+        
+        # Home position with eef pose starting on + x
+        self.home_positions = [1.8144304752349854,
+                               -1.0095794200897217,
+                               -0.8489214777946472,
+                               -2.585618019104004,
+                               0.9734971523284912,
+                               2.7978947162628174,
+                               -2.0960772037506104]
+        
            
 
     def move_to_home(self):
