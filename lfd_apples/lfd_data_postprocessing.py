@@ -214,6 +214,7 @@ def get_timestamp_vector_from_images(image_folder_path):
 def estimate_robot_ee_pose():
     pass
 
+
 def rename_folder(SOURCE_PATH, start_index=100):
     """ Rename trials"""
 
