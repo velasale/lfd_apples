@@ -612,12 +612,13 @@ class Trial:
         self.singularities = False
 
         # If CSVs already exist → load them
+        self._load_topics()
         if self._csvs_exist():
             print("📂 Loading topics from CSVs...")
             self._load_from_csv()
         else:
             print("🗄️ Parsing bag file and saving CSVs...")
-            self._load_topics()
+            # self._load_topics()
             self.save_to_files(self.csv_dir)
 
         # Parameters
@@ -793,7 +794,7 @@ class Trial:
         
         return self.engagement_time
 
-    def extract_images_from_bag(self,db3_file_path, output_dir="camera_frames", save_avi=True, fps=30):
+    def extract_images_from_bag(self, db3_file_path, output_dir="camera_frames", save_avi=True, fps=30):
         """
         Automatically detect camera topics (containing 'camera' or 'image_raw') in a ROS2 .db3 bag
         and extract frames for each one.
@@ -901,7 +902,7 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
 
     
     # --- 3D PLOT ---
-    plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time, trial.disposal_time)
+    # plot_3dpose(trial.franka_robot_state_broadcaster_current_pose, trial.engagement_time, trial.disposal_time)
 
     # --- EEF WRENCH & PRESSURE ---
     has_wrench = hasattr(trial, "franka_robot_state_broadcaster_external_wrench_in_stiffness_frame")
@@ -920,6 +921,7 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
 
         filename = f"metadata_{trial_number}.json"
         json_path = os.path.abspath(os.path.join(bag_folder, "..", filename)) 
+        # json_path = os.path.abspath(os.path.join(bag_folder, filename)) 
         print(json_path)
         with open(json_path, 'r') as f:            
             metadata = json.load(f)
@@ -959,6 +961,7 @@ def batch_process_trials(base_folder):
         # extract_data_and_plot(bag_folder, trial_num)
 
         bag_folder = os.path.join(base_folder, trial_num, "human")
+        # bag_folder = os.path.join(base_folder, trial_num, "")
         print(f"\nProcessing {trial_num} in folder: {bag_folder}")
         extract_data_and_plot(bag_folder, trial_num, inhand_camera_bag=False)
 
@@ -967,9 +970,9 @@ def batch_process_trials(base_folder):
 
 if __name__ == "__main__":
     
-    # bag_folder = '/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_9/robot'
+    # bag_folder = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/without_palm_cam/trial_9/human'
     # trial_folder = "trial_9"
     # extract_data_and_plot(bag_folder, trial_folder)
     
-    batch_process_trials('/media/guest/IL_data/01_IL_bagfiles/only_human_demos/without_palm_cam')    
+    batch_process_trials('/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam')    
     
