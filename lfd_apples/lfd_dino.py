@@ -1,3 +1,10 @@
+# ---------------------------
+# Settings
+# ---------------------------
+image_folder = "/home/alejo/Documents/temporal/trial_5/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw"
+output_video = "/home/alejo/Documents/temporal/trial_5/dinov2_patch_heatmap_video.mp4"
+frame_rate = 30  # frames per second
+
 import torch
 from PIL import Image
 import torchvision.transforms as T
@@ -5,30 +12,15 @@ import numpy as np
 import cv2
 import os
 from tqdm import tqdm
-from transformers import AutoFeatureExtractor, AutoModel
-import torch
+from transformers import AutoImageProcessor, AutoModel
 
 # ---------------------------
-# Settings
+# Load DINOv2 model
 # ---------------------------
-image_folder = "/home/guest/My Projects/Temporal/trial_103/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw"
-output_video = "/home/guest/My Projects/Temporal/trial_103/trial_103_dino_heatmap_video.mp4"
-frame_rate = 5  # frames per second
-
-# ---------------------------
-# Load DINO model
-# ---------------------------
-# model = torch.hub.load('facebookresearch/dino:main', 'dino_vitb8')
-# model.eval()
-
-
-
-model_name = "facebook/dinov3-base"
-
-extractor = AutoFeatureExtractor.from_pretrained(model_name)
+model_name = "facebook/dinov2-base"
+processor = AutoImageProcessor.from_pretrained(model_name)
 model = AutoModel.from_pretrained(model_name)
 model.eval()
-
 
 # ---------------------------
 # Preprocessing
@@ -42,21 +34,33 @@ transform = T.Compose([
 ])
 
 def extract_patch_features(img_path):
-    """Extract patch features (excluding CLS token)"""
+    """Extract patch-level features from DINOv2"""
     img = Image.open(img_path).convert("RGB")
     img_t = transform(img).unsqueeze(0)
 
     with torch.no_grad():
-        feats = model.get_intermediate_layers(img_t, n=1)[0]  # shape: (1, 197, 384)
-        patch_feats = feats[:, 1:, :]  # remove CLS token
+        outputs = model(pixel_values=img_t)
+        feats = outputs.last_hidden_state  # (1, num_tokens, hidden_dim)
+        patch_feats = feats[:, 1:, :]      # remove CLS token
 
     return patch_feats.squeeze(0).cpu().numpy(), img
 
 # ---------------------------
 # Prepare video writer
 # ---------------------------
-sample_img = Image.open(os.path.join(image_folder, sorted(os.listdir(image_folder))[0])).convert("RGB")
+# Get a sample image to determine frame size
+sample_img_path = next((os.path.join(image_folder, f) for f in sorted(os.listdir(image_folder))
+                        if f.lower().endswith(('.jpg', '.png', '.jpeg'))), None)
+if sample_img_path is None:
+    raise RuntimeError("No images found in the folder!")
+
+sample_img = Image.open(sample_img_path).convert("RGB")
 W, H = sample_img.size
+W, H = int(W), int(H)  # make sure they are integers
+
+# Ensure output directory exists
+os.makedirs(os.path.dirname(output_video), exist_ok=True)
+
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 video_writer = cv2.VideoWriter(output_video, fourcc, frame_rate, (W, H))
 
@@ -77,8 +81,8 @@ for fname in tqdm(sorted(os.listdir(image_folder))):
     # Upsample heatmap to original image size
     heatmap_resized = np.array(Image.fromarray(patch_map).resize((W, H), resample=Image.BILINEAR))
 
-    # Normalize heatmap 0-255
-    heatmap_resized = ((heatmap_resized - heatmap_resized.min()) / (heatmap_resized.ptp()) * 255).astype(np.uint8)
+    # Normalize heatmap 0-255 (NumPy 2.x compatible)
+    heatmap_resized = ((heatmap_resized - heatmap_resized.min()) / np.ptp(heatmap_resized) * 255).astype(np.uint8)
     heatmap_color = cv2.applyColorMap(heatmap_resized, cv2.COLORMAP_VIRIDIS)
 
     # Convert PIL image to OpenCV format
