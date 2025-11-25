@@ -105,17 +105,18 @@ def dino_patch_heatmap_video(image_folder, output_video, frame_rate=30):
     print(f"Video saved to {output_video}")
 
 
-def yolo_detection_video(image_folder, output_video, model_name='yolov8n.pt', frame_rate=30):
+def yolo_centers_video(
+        image_folder, 
+        output_video, 
+        model_name='yolov8n-seg.pt', 
+        frame_rate=30, 
+        conf_thresh=0.4, 
+        cross_size=10,
+        font_scale=0.5):
     """
-    Generate a video overlaying YOLO detections on images.
-    
-    Args:
-        image_folder (str): Folder with input images.
-        output_video (str): Path to save the output video.
-        model_name (str): YOLO model checkpoint ('yolov8n.pt', 'yolov8s.pt', etc.)
-        frame_rate (int): FPS of output video.
+    Generate a video overlaying YOLO segmentation centers as yellow crosshairs
+    and display the center coordinates next to each crosshair.
     """
-    # Load YOLO model
     model = YOLO(model_name)
 
     # Prepare video writer
@@ -126,12 +127,10 @@ def yolo_detection_video(image_folder, output_video, model_name='yolov8n.pt', fr
 
     sample_img = cv2.imread(sample_img_path)
     H, W, _ = sample_img.shape
-
     os.makedirs(os.path.dirname(output_video), exist_ok=True)
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video_writer = cv2.VideoWriter(output_video, fourcc, frame_rate, (W, H))
 
-    # Process images
     for fname in tqdm(sorted(os.listdir(image_folder))):
         if not fname.lower().endswith(('.jpg', '.png', '.jpeg')):
             continue
@@ -139,33 +138,129 @@ def yolo_detection_video(image_folder, output_video, model_name='yolov8n.pt', fr
         img = cv2.imread(img_path)
 
         # Run YOLO inference
-        results = model(img)
+        results = model(img, conf=conf_thresh)
 
-        # Draw bounding boxes
         for result in results:
-            boxes = result.boxes.xyxy.cpu().numpy()  # x1, y1, x2, y2
-            scores = result.boxes.conf.cpu().numpy()
-            class_ids = result.boxes.cls.cpu().numpy().astype(int)
+            masks = result.masks
+            if masks is not None:
+                mask_data = masks.data.cpu().numpy()
+                for mask in mask_data:
+                    mask_resized = cv2.resize(mask, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_NEAREST)
+                    M = cv2.moments(mask_resized)
+                    if M["m00"] != 0:
+                        cX = int(M["m10"] / M["m00"])
+                        cY = int(M["m01"] / M["m00"])
 
-            for (x1, y1, x2, y2), score, class_id in zip(boxes, scores, class_ids):
-                label = f"{model.names[class_id]} {score:.2f}"
-                cv2.rectangle(img, (int(x1), int(y1)), (int(x2), int(y2)), (0,255,0), 2)
-                cv2.putText(img, label, (int(x1), int(y1)-5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+                        # Draw yellow crosshair
+                        color = (0, 255, 255)
+                        cv2.line(img, (cX - cross_size, cY), (cX + cross_size, cY), color, 2)
+                        cv2.line(img, (cX, cY - cross_size), (cX, cY + cross_size), color, 2)
+
+                        # Display coordinates next to crosshair
+                        coord_text = f"({cX},{cY})"
+                        cv2.putText(img, coord_text, (cX + cross_size + 2, cY - cross_size - 2),
+                                    cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, 1)
+
+        # Overlay filename at top-left
+        cv2.putText(img, fname, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 0), 1)
 
         video_writer.write(img)
 
     video_writer.release()
-    print(f"YOLO video saved to {output_video}")
+    print(f"YOLO crosshair video with coordinates saved to {output_video}")
+
+
+
+def yolo_latent_heatmap_video(image_folder,
+                                      output_video,
+                                      model_name='yolov8n-seg.pt',
+                                      frame_rate=30,
+                                      layer_index=12,   # first backbone block
+                                      imgsz=640,
+                                      print_layer_shape=True):
+    """
+    Generate a video overlaying YOLOv8 latent feature heatmaps using model.predict().
+    Handles preprocessing internally to avoid tensor mismatch errors.
+    """
+
+    model = YOLO(model_name)
+    backbone_feature = {}
+
+    # Forward hook: capture the output of a backbone layer
+    def hook(module, input, output):
+        backbone_feature['feat'] = output
+        if print_layer_shape:
+            print(f"Layer {layer_index} ({module.__class__.__name__}) output shape: {output.shape}")
+        
+
+    model.model.model[layer_index].register_forward_hook(hook)
+
+    # Video writer setup
+    sample_img_path = next((os.path.join(image_folder, f)
+                            for f in sorted(os.listdir(image_folder))
+                            if f.lower().endswith(('.jpg', '.png', '.jpeg'))), None)
+    if sample_img_path is None:
+        raise RuntimeError("No images found in folder!")
+        
+
+    sample_img = cv2.imread(sample_img_path)
+    H, W, _ = sample_img.shape
+    os.makedirs(os.path.dirname(output_video), exist_ok=True)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(output_video, fourcc, frame_rate, (W, H))
+
+    # Process each image
+    for fname in tqdm(sorted(os.listdir(image_folder))):
+        if not fname.lower().endswith(('.jpg', '.png', '.jpeg')):
+            continue
+
+        img_path = os.path.join(image_folder, fname)
+        img_cv = cv2.imread(img_path)
+
+        # Forward pass: YOLO handles resizing/padding internally
+        with torch.no_grad():
+            _ = model.predict(source=img_cv, imgsz=imgsz, verbose=False)
+
+        # Get latent feature map from the hook
+        feat_map = backbone_feature['feat']
+
+        # Convert to 2D heatmap (average over channels)
+        heatmap = feat_map.squeeze(0).mean(0).cpu().numpy()
+        heatmap = ((heatmap - heatmap.min()) / np.ptp(heatmap) * 255).astype(np.uint8)
+
+
+        # Resize heatmap to original image size
+        heatmap_resized = cv2.resize(heatmap, (W, H))
+        heatmap_color = cv2.applyColorMap(heatmap_resized, cv2.COLORMAP_VIRIDIS)
+
+        # Overlay heatmap on original image
+        overlay = cv2.addWeighted(img_cv, 0.6, heatmap_color, 0.4, 0)
+        cv2.putText(overlay, fname, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+
+        video_writer.write(overlay)
+
+    video_writer.release()
+    print(f"YOLO latent heatmap video saved to {output_video}")
 
 
 def main():
   
     image_folder = "/home/alejo/Documents/temporal/trial_5/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw"
-    output_video = "/home/alejo/Documents/temporal/trial_5/dinov2_patch_heatmap_video.mp4"
+    # dino_output_video = "/home/alejo/Documents/temporal/trial_5/dinov2_patch_heatmap_video.mp4"
+    yolo_output_video = "/home/alejo/Documents/temporal/trial_5/yolo_detection_video.mp4"
     frame_rate = 30  # frames per second
 
-    dino_patch_heatmap_video(image_folder, output_video, frame_rate)
+    # dino_patch_heatmap_video(image_folder, dino_output_video, frame_rate)
+
+    # Get the path to the folder containing this script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    pt_path = os.path.join(script_dir, "resources", "best_segmentation.pt")
+    # yolo_centers_video(image_folder, yolo_output_video , model_name=pt_path, frame_rate=frame_rate)
+
+
+    # Example usage
+    yolo_output_video = "/home/alejo/Documents/temporal/trial_5/yolo_latent_video.mp4"
+    yolo_latent_heatmap_video(image_folder, yolo_output_video, model_name=pt_path)
 
 
 if __name__ == "__main__":
