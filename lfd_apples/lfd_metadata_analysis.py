@@ -136,6 +136,21 @@ def complete_json_file(json_files):
                     with open(json_path, "w") as f:
                         json.dump(data, f, indent=4)
 
+            # Fix spur id
+            if spur_diam == "12 mm" and spur_length == "40 mm" and stem_magnet == "medium" and spur.get("id") != "7":
+                print(f"Correcting spur ID to 7 in {json_path}")
+
+                # Assign correct ID
+                spur["id"] = "7"
+
+                # Write back into main structure
+                proxy["spur"] = spur
+                data["proxy"] = proxy
+
+                # Save JSON back to file
+                with open(json_path, "w") as f:
+                    json.dump(data, f, indent=4)
+            
 
 
         except Exception as e:
