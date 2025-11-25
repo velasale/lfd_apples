@@ -970,9 +970,9 @@ def batch_process_trials(base_folder):
 
 if __name__ == "__main__":
     
-    # bag_folder = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/without_palm_cam/trial_9/human'
-    # trial_folder = "trial_9"
-    # extract_data_and_plot(bag_folder, trial_folder)
+    bag_folder = '/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_1/robot'
+    trial_folder = "trial_1"
+    extract_data_and_plot(bag_folder, trial_folder)
     
-    batch_process_trials('/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam')    
+    # batch_process_trials('/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam')    
     
