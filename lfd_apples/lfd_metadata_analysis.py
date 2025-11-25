@@ -39,15 +39,22 @@ def complete_json_file(json_files):
             spur = proxy.get("spur", {})
             stem = proxy.get("stem", {})
 
+            apple_mass = apple.get("mass")
+            apple_diameter = apple.get("diameter")  
+            apple_height = apple.get("height")
+
+            spur_diam = spur.get("diameter")
+            spur_length = spur.get("length")
+            stem_magnet = stem.get("magnet")
+
+
             # Check apple id
             if "id" not in apple: 
                 print(f"Found APPLE case {json_path}")
                 incomplete_files.append(json_path)
 
                 # Case 1: All initial trials performed with apple with mass 173g
-                apple_mass = apple.get("mass")
-                apple_diameter = apple.get("diameter")  
-                apple_height = apple.get("height")
+                
 
                 if apple_mass == "173 g":
                     print(f"Found apple case 1 in {json_path}")
@@ -80,16 +87,11 @@ def complete_json_file(json_files):
             # Check spur id
             if "id" not in spur:
                 print(f"Found missing SPUR case {json_path}")
-                incomplete_files.append(json_path)
-
-                spur_diam = spur.get("diameter")
-                spur_length = spur.get("length")
-                stem_magnet = stem.get("magnet")
-
+                incomplete_files.append(json_path)                
 
                 # SPUR ID 7
                 if spur_diam == "12 mm" and spur_length == "40 mm" and stem_magnet == "medium":
-                    print(f"Found case 2 in {json_path}")
+                    print(f"Found stem case 1 in {json_path}")
 
                     # Assign an ID — adjust as needed
                     spur["id"] = "7"
@@ -104,10 +106,27 @@ def complete_json_file(json_files):
                 
                 # SPUR ID 4
                 if spur_diam == "5 mm" and spur_length == "60 mm" and stem_magnet == "medium":
-                    print(f"Found case 3 in {json_path}")
+                    print(f"Found stem case 2 in {json_path}")
 
                     # Assign an ID — adjust as needed
                     spur["id"] = "4"
+
+                    # Write back into main structure
+                    proxy["spur"] = spur
+                    data["proxy"] = proxy
+
+                    # Save JSON back to file
+                    with open(json_path, "w") as f:
+                        json.dump(data, f, indent=4)
+
+                # SPUR ID 1
+                if spur_diam == "10 mm" and spur_length == "25 mm" and stem_magnet == "medium":
+                    print(f"Found stem case 3 in {json_path}")
+
+                    # Assign an ID — adjust as needed
+                    spur["id"] = "7"
+                    spur["diameter"] = "12 mm"
+                    spur["length"] = "40 mm"
 
                     # Write back into main structure
                     proxy["spur"] = spur
@@ -242,14 +261,14 @@ def read_comments(json_files):
 def main():
 
     # Path to your main directory
-    BASE_DIR = "/media/guest/IL_data/01_IL_bagfiles/experiment_1_(pull)"
+    BASE_DIR = "/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)"
     json_files_sd1 = collect_json_files(BASE_DIR)
 
-    BASE_DIR_2 = "/media/guest/New Volume/01_IL_bagfiles/experiment_4/"
+    BASE_DIR_2 = "/media/alejo/New Volume/01_IL_bagfiles/experiment_4/"
     json_files_sd2 = collect_json_files(BASE_DIR_2)
 
     # Path to your main directory
-    BASE_DIR_3 = "/media/guest/IL_data/01_IL_bagfiles/only_human_demos"
+    BASE_DIR_3 = "/media/alejo/IL_data/01_IL_bagfiles/only_human_demos"
     json_files_sd3 = collect_json_files(BASE_DIR_3)
 
     # Combine both lists
