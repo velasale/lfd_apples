@@ -10,6 +10,7 @@ from ultralytics import YOLO
 import cv2
 import os
 from tqdm import tqdm
+import pandas as pd
 
 
 def dino_patch_heatmap_video(image_folder, output_video, frame_rate=30):
@@ -170,7 +171,6 @@ def yolo_centers_video(
     print(f"YOLO crosshair video with coordinates saved to {output_video}")
 
 
-
 def yolo_latent_heatmap_video(image_folder,
                                       output_video,
                                       model_name='yolov8n-seg.pt',
@@ -243,6 +243,78 @@ def yolo_latent_heatmap_video(image_folder,
     print(f"YOLO latent heatmap video saved to {output_video}")
 
 
+def pooled_latent_heatmap_video(image_folder, output_video, model_name, layer_index=12, frame_rate=30):
+    """
+    Generate a video where each frame overlays a pooled latent feature heatmap.
+    Pooling reduces the latent feature map to a vector per channel.
+    
+    Args:
+        image_folder (str): folder with images
+        output_video (str): path to save video
+        model: a YOLO model (with .predict method)
+        layer_index (int): which layer to hook for latent features
+        frame_rate (int)
+    """
+    backbone_feature = {}
+
+    # Hook to capture the feature map
+    def hook(module, input, output):
+        backbone_feature['feat'] = output
+
+    model = YOLO(model_name)
+
+    model.model.model[layer_index].register_forward_hook(hook)
+
+    # Video writer setup
+    sample_img_path = next((os.path.join(image_folder, f)
+                            for f in sorted(os.listdir(image_folder))
+                            if f.lower().endswith(('.jpg', '.png', '.jpeg'))), None)
+    if sample_img_path is None:
+        raise RuntimeError("No images found in folder!")
+        
+    sample_img = cv2.imread(sample_img_path)
+    H, W, _ = sample_img.shape
+    os.makedirs(os.path.dirname(output_video), exist_ok=True)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video_writer = cv2.VideoWriter(output_video, fourcc, frame_rate, (W, H))
+
+    for fname in tqdm(sorted(os.listdir(image_folder))):
+        if not fname.lower().endswith(('.jpg', '.png', '.jpeg')):
+            continue
+        img_path = os.path.join(image_folder, fname)
+        img_cv = cv2.imread(img_path)
+
+        with torch.no_grad():
+            _ = model.predict(source=img_cv, imgsz=640, verbose=False)
+
+        feat_map = backbone_feature['feat']  # [1, C, H', W']
+        feat_map = feat_map.squeeze(0)       # [C, H', W']
+
+        # -----------------------------
+        # Global average pooling
+        # -----------------------------
+        pooled_vector = feat_map.mean(dim=(1, 2))  # [C]
+
+        # Normalize for heatmap visualization
+        heatmap_2d = pooled_vector.unsqueeze(1).repeat(1, 10).cpu().numpy()  # make it 2D for visualization
+        heatmap_2d = ((heatmap_2d - heatmap_2d.min()) / (np.ptp(heatmap_2d) + 1e-6) * 255).astype(np.uint8)
+        heatmap_resized = cv2.resize(heatmap_2d, (W, H))
+        heatmap_color = cv2.applyColorMap(heatmap_resized, cv2.COLORMAP_VIRIDIS)
+
+        # Overlay heatmap
+        overlay = cv2.addWeighted(img_cv, 0.6, heatmap_color, 0.4, 0)
+        cv2.putText(overlay, fname, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+
+        video_writer.write(overlay)
+
+    # Save pooled vector to CSV
+    df = pd.DataFrame([pooled_vector.cpu().numpy()])
+    df.to_csv("pooled_features.csv", index=False)
+
+    video_writer.release()
+    print(f"Pooled latent heatmap video saved to {output_video}")
+
+
 def main():
   
     image_folder = "/home/alejo/Documents/temporal/trial_5/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw"
@@ -255,13 +327,14 @@ def main():
     # Get the path to the folder containing this script
     script_dir = os.path.dirname(os.path.abspath(__file__))
     pt_path = os.path.join(script_dir, "resources", "best_segmentation.pt")
+
     # yolo_centers_video(image_folder, yolo_output_video , model_name=pt_path, frame_rate=frame_rate)
 
-
-    # Example usage
     yolo_output_video = "/home/alejo/Documents/temporal/trial_5/yolo_latent_video.mp4"
-    yolo_latent_heatmap_video(image_folder, yolo_output_video, model_name=pt_path)
+    # yolo_latent_heatmap_video(image_folder, yolo_output_video, model_name=pt_path)
 
+    yolo_pool_output_video = "/home/alejo/Documents/temporal/trial_5/yolo_pool_video.mp4"
+    pooled_latent_heatmap_video(image_folder, yolo_pool_output_video, model_name=pt_path)
 
 if __name__ == "__main__":
     main()  
