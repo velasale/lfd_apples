@@ -311,13 +311,22 @@ def main():
     INHAND_CAM_SUBDIR = os.path.join("robot", "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
     ARM_SUBDIR = os.path.join("robot", "lfd_bag_main", "bag_csvs")
     GRIPPER_SUBDIR = os.path.join("robot", "lfd_bag_main", "bag_csvs")
+    
+    trials = [trial for trial in os.listdir(SOURCE_PATH)
+              if os.path.isdir(os.path.join(SOURCE_PATH, trial))]
 
-    trials = [trial for trial in os.listdir(SOURCE_PATH) if os.path.isdir(os.path.join(SOURCE_PATH, trial))]
+    trials_sorted = sorted(
+        trials, 
+        key=lambda x: int(x.split("_")[-1])
+        )
+    
+    start_index = trials_sorted.index("trial_195")
+    
 
     # ---------- Step 2: Loop through all trials ----------
     trials_without_subfolders = []
     trials_with_one_subfolder = []
-    for trial in tqdm(trials):
+    for trial in tqdm(trials_sorted[start_index:]):
 
         # Double check trial folders
         trial_subfolders = os.listdir(os.path.join(SOURCE_PATH, trial))
