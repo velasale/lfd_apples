@@ -252,6 +252,60 @@ def get_timestamp_vector_from_images(image_folder_path):
     return timestamps
 
 
+def derive_actions_from_ee_pose(reference_df, raw_data_path, compare_plots=True):
+
+    df_raw = pd.read_csv(raw_data_path)        
+    
+    # Combine with the rest of the dataframe
+    df_final = pd.concat([df_raw], axis=1)
+    df_final.drop(columns=["_header._stamp._sec", "_header._stamp._nanosec", "_header._frame_id", "timestamp"], inplace=True)
+
+    # Interpolate to reference timestamps
+    df_downsampled = interpolate_to_reference_multi(df_final, reference_df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
+
+    # Compute actions as differences in position and orientation
+    positions = df_downsampled[['_pose._position._x', '_pose._position._y', '_pose._position._z']].values
+    orientations = df_downsampled[['_pose._orientation._x', '_pose._orientation._y', '_pose._orientation._z', '_pose._orientation._w']].values
+
+    # Compute differences
+    delta_times = np.diff(df_downsampled['timestamp_vector'].values, prepend=df_downsampled['timestamp_vector'].values[0])
+    # Avoid division by zero for first entry (set to 1 so speed = 0/1 = 0)
+    delta_times[delta_times == 0] = 1e-9   # or 1.0 if timestamps are stable
+
+    delta_positions = np.diff(positions, axis=0, prepend=positions[0:1, :])
+    delta_orientations = np.diff(orientations, axis=0, prepend=orientations[0:1, :])
+
+    # Compute speeds (m/s)
+    linear_speeds = delta_positions / delta_times[:, None]
+    orientation_speeds = delta_orientations / delta_times[:, None]
+
+    # Create a new DataFrame for actions
+    action_columns = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z', 'delta_ori_w']
+    actions_df = pd.DataFrame(np.hstack((linear_speeds, orientation_speeds)), columns=action_columns)
+
+    if compare_plots:
+        # Compare plots before and after downsampling
+        # Ensure numeric 1-D arrays
+        plt.figure()    
+
+        x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
+        y_ds = np.array(actions_df['delta_pos_x']).flatten()
+        plt.plot(x_ds, y_ds, label='Action delta pos x')
+
+        y_ds = np.array(actions_df['delta_pos_y']).flatten()
+        plt.plot(x_ds, y_ds, label='Action delta pos y')
+
+        y_ds = np.array(actions_df['delta_pos_z']).flatten()
+        plt.plot(x_ds, y_ds, label='Action delta pos z')
+        
+        plt.legend()
+        plt.title('Action delta pos x Over Time')        
+
+    return actions_df
+
+
+
+
 def estimate_robot_ee_pose():
     pass
 
@@ -297,20 +351,19 @@ def main():
     # MAIN_DIR = os.path.join("D:")                                   # windows OS
     MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')        # ubuntu OS
     SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")
-    EXPERIMENT = "experiment_1_(pull)"
-
-    # MAIN_DIR = os.path.join("/home", "alejo")
-    # SOURCE_DIR = os.path.join(MAIN_DIR, "Documents")
-    # EXPERIMENT = "temporal"
+    # EXPERIMENT = "experiment_1_(pull)"
+    EXPERIMENT = "only_human_demos/with_palm_cam"   
 
     DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_preprocessed")    
 
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
     DESTINATION_PATH = os.path.join(DESTINATION_DIR, EXPERIMENT)
-    FIXED_CAM_SUBDIR = os.path.join("robot", "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
-    INHAND_CAM_SUBDIR = os.path.join("robot", "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
-    ARM_SUBDIR = os.path.join("robot", "lfd_bag_main", "bag_csvs")
-    GRIPPER_SUBDIR = os.path.join("robot", "lfd_bag_main", "bag_csvs")
+    
+    demonstrator = ""  # "human" or "robot"
+    FIXED_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
+    INHAND_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
+    ARM_SUBDIR = os.path.join(demonstrator, "lfd_bag_main", "bag_csvs")
+    GRIPPER_SUBDIR = os.path.join(demonstrator, "lfd_bag_main", "bag_csvs")
     
     trials = [trial for trial in os.listdir(SOURCE_PATH)
               if os.path.isdir(os.path.join(SOURCE_PATH, trial))]
@@ -320,7 +373,7 @@ def main():
         key=lambda x: int(x.split("_")[-1])
         )
     
-    start_index = trials_sorted.index("trial_195")
+    start_index = trials_sorted.index("trial_64")
     
 
     # ---------- Step 2: Loop through all trials ----------
@@ -343,7 +396,7 @@ def main():
         raw_eef_wrench_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.csv")        
         raw_ee_pose_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_current_pose.csv")
                
-        # Downsample data and align datasets based on in-hand camera timestamps
+        # Downsample data and align datasets based on in-hand camera images timestamps
         compare_plots = False
         df = pd.DataFrame()
         df['timestamp_vector'] = get_timestamp_vector_from_images(raw_palm_camera_images_path)
@@ -359,6 +412,9 @@ def main():
         
         df_ds_4 = downsample_robot_ee_pose_data(df, raw_ee_pose_path, compare_plots=compare_plots)
         df_ds_5 = reduce_size_inhand_camera_raw_images(raw_palm_camera_images_path, layer=12)
+
+        # Compute ACTIONS based on ee pose
+        df_dfs_6 = derive_actions_from_ee_pose(df, raw_ee_pose_path, compare_plots=True)
         
         # Combine all downsampled data into a single DataFrame
         df_ds_all = [df_ds_1, df_ds_2, df_ds_3, df_ds_4, df_ds_5]
@@ -372,11 +428,11 @@ def main():
 
         if compare_plots:
             plt.show()
+        plt.show()
 
     print(f'Trials without subfolders: {trials_without_subfolders}\n')
     print(f'Trials with one subfolder: {trials_with_one_subfolder}\n')
-
-    # Step 2: Downsample data and make all channels the same length
+    
 
     # Step 3: Crop data for each phase
 
