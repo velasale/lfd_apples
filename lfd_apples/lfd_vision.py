@@ -2,8 +2,6 @@ import torch
 from PIL import Image
 import torchvision.transforms as T
 import numpy as np
-import cv2
-import os
 from tqdm import tqdm
 from transformers import AutoImageProcessor, AutoModel
 from ultralytics import YOLO
@@ -243,75 +241,109 @@ def yolo_latent_heatmap_video(image_folder,
     print(f"YOLO latent heatmap video saved to {output_video}")
 
 
-def pooled_latent_heatmap_video(image_folder, output_video, model_name, layer_index=12, frame_rate=30):
+def extract_pooled_latent_vector(
+        img_cv,
+        model,
+        layer_index=12
+):
     """
-    Generate a video where each frame overlays a pooled latent feature heatmap.
-    Pooling reduces the latent feature map to a vector per channel.
-    
-    Args:
-        image_folder (str): folder with images
-        output_video (str): path to save video
-        model: a YOLO model (with .predict method)
-        layer_index (int): which layer to hook for latent features
-        frame_rate (int)
+    Takes a single OpenCV image and returns a pooled latent vector.
     """
     backbone_feature = {}
 
-    # Hook to capture the feature map
+    # hook used only for this call
     def hook(module, input, output):
         backbone_feature['feat'] = output
 
+    # register hook
+    handle = model.model.model[layer_index].register_forward_hook(hook)
+
+    with torch.no_grad():
+        _ = model.predict(source=img_cv, imgsz=640, verbose=False)
+
+    # remove hook
+    handle.remove()
+
+    # get feature map
+    feat_map = backbone_feature['feat']  # [1, C, H', W']
+    feat_map = feat_map.squeeze(0)       # [C, H', W']
+
+    # pooled latent vector
+    pooled_vector = feat_map.mean(dim=(1, 2))  # [C]
+
+    return pooled_vector.cpu().numpy(), feat_map
+
+
+
+def pooled_latent_heatmap_video(
+        image_folder, 
+        output_video, 
+        model_name, 
+        layer_index=12, 
+        frame_rate=30
+):
     model = YOLO(model_name)
 
-    model.model.model[layer_index].register_forward_hook(hook)
-
-    # Video writer setup
-    sample_img_path = next((os.path.join(image_folder, f)
-                            for f in sorted(os.listdir(image_folder))
-                            if f.lower().endswith(('.jpg', '.png', '.jpeg'))), None)
+    # get sample frame for video size
+    sample_img_path = next(
+        (os.path.join(image_folder, f)
+         for f in sorted(os.listdir(image_folder))
+         if f.lower().endswith(('.jpg', '.png', '.jpeg'))),
+        None
+    )
     if sample_img_path is None:
         raise RuntimeError("No images found in folder!")
-        
+
     sample_img = cv2.imread(sample_img_path)
     H, W, _ = sample_img.shape
+
     os.makedirs(os.path.dirname(output_video), exist_ok=True)
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     video_writer = cv2.VideoWriter(output_video, fourcc, frame_rate, (W, H))
 
+    pooled_vectors = []  # store vectors for CSV
+
     for fname in tqdm(sorted(os.listdir(image_folder))):
         if not fname.lower().endswith(('.jpg', '.png', '.jpeg')):
             continue
+
         img_path = os.path.join(image_folder, fname)
         img_cv = cv2.imread(img_path)
 
-        with torch.no_grad():
-            _ = model.predict(source=img_cv, imgsz=640, verbose=False)
+        # extract image-level pooled latent vector
+        pooled_vector, feat_map = extract_pooled_latent_vector(
+            img_cv, 
+            model,
+            layer_index=layer_index
+        )
+        pooled_vectors.append(pooled_vector)
 
-        feat_map = backbone_feature['feat']  # [1, C, H', W']
-        feat_map = feat_map.squeeze(0)       # [C, H', W']
+        # heatmap for visualization
+        heatmap_2d = (
+            pooled_vector.reshape(-1, 1).repeat(10, axis=1)
+        )
+        heatmap_2d = (
+            (heatmap_2d - heatmap_2d.min()) 
+            / (np.ptp(heatmap_2d) + 1e-6) * 255
+        ).astype(np.uint8)
 
-        # -----------------------------
-        # Global average pooling
-        # -----------------------------
-        pooled_vector = feat_map.mean(dim=(1, 2))  # [C]
-
-        # Normalize for heatmap visualization
-        heatmap_2d = pooled_vector.unsqueeze(1).repeat(1, 10).cpu().numpy()  # make it 2D for visualization
-        heatmap_2d = ((heatmap_2d - heatmap_2d.min()) / (np.ptp(heatmap_2d) + 1e-6) * 255).astype(np.uint8)
         heatmap_resized = cv2.resize(heatmap_2d, (W, H))
         heatmap_color = cv2.applyColorMap(heatmap_resized, cv2.COLORMAP_VIRIDIS)
 
-        # Overlay heatmap
         overlay = cv2.addWeighted(img_cv, 0.6, heatmap_color, 0.4, 0)
-        cv2.putText(overlay, fname, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+        cv2.putText(
+            overlay, fname, (10, 30),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1
+        )
 
         video_writer.write(overlay)
 
-    # Save pooled vector to CSV
-    df = pd.DataFrame([pooled_vector.cpu().numpy()])
+    video_writer.release()
+
+    # save all pooled vectors to CSV
+    df = pd.DataFrame(pooled_vectors)
     df.to_csv("pooled_features.csv", index=False)
 
-    video_writer.release()
     print(f"Pooled latent heatmap video saved to {output_video}")
 
 

@@ -5,6 +5,10 @@ import re
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from lfd_vision import extract_pooled_latent_vector
+from ultralytics import YOLO
+import cv2
+
 
 def interpolate_to_reference_multi(df_values, df_ref, ts_col_values, ts_col_ref, method="linear"):
     """
@@ -80,10 +84,45 @@ def downsample_pressure_and_tof_data(df, raw_data_path, compare_plots=True):
     return df_downsampled
 
 
-def downsample_inhand_camera_raw_images(raw_data_path, destination_path):
-    # Implement downsampling logic here
-    pass    
+def reduce_size_inhand_camera_raw_images(raw_data_path, layer=12):
 
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    pt_path = os.path.join(script_dir, "resources", "best_segmentation.pt")
+
+    model = YOLO(pt_path)
+    rows = []
+
+    for fname in sorted(os.listdir(raw_data_path)):
+        if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
+            continue
+
+        image_path = os.path.join(raw_data_path, fname)
+        img_cv = cv2.imread(image_path)
+
+        if img_cv is None:
+            print(f"Could not read {image_path}, skipping.")
+            continue
+
+        pooled_vector, feat_map = extract_pooled_latent_vector(
+            img_cv,
+            model,
+            layer_index=layer
+        )
+
+        # build row: first filename, then 256 feature values
+        row = [fname] + pooled_vector.tolist()
+        rows.append(row)
+
+        # print(fname, pooled_vector.shape)
+    
+    feature_dim = len(rows[0]) - 1  # typically 256
+    columns = ["filename"] + [f"f{i}" for i in range(feature_dim)]
+    df = pd.DataFrame(rows, columns=columns)
+
+    df.drop(columns=["filename"], inplace=True)
+
+    return df
+      
 
 def downsample_eef_wrench_data(df, raw_data_path, compare_plots=True):
 
@@ -292,9 +331,7 @@ def main():
         # Define paths to all raw data
         raw_palm_camera_images_path = os.path.join(SOURCE_PATH, trial, INHAND_CAM_SUBDIR)        
         raw_pressure_and_tof_path = os.path.join(SOURCE_PATH, trial, GRIPPER_SUBDIR, "microROS_sensor_data.csv")
-        raw_eef_wrench_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.csv")
-
-        
+        raw_eef_wrench_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.csv")        
         raw_ee_pose_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_current_pose.csv")
                
         # Downsample data and align datasets based on in-hand camera timestamps
@@ -310,12 +347,12 @@ def main():
         except FileNotFoundError:
             raw_joint_states_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "joint_states.csv")
             df_ds_3 = downsample_robot_joint_states_data(df, raw_joint_states_path, compare_plots=compare_plots)
-
         
         df_ds_4 = downsample_robot_ee_pose_data(df, raw_ee_pose_path, compare_plots=compare_plots)
+        df_ds_5 = reduce_size_inhand_camera_raw_images(raw_palm_camera_images_path, layer=12)
         
         # Combine all downsampled data into a single DataFrame
-        df_ds_all = [df_ds_1, df_ds_2, df_ds_3, df_ds_4]
+        df_ds_all = [df_ds_1, df_ds_2, df_ds_3, df_ds_4, df_ds_5]
         dfs_trimmed = [df_ds_all[0]] + [df.iloc[:, 1:] for df in df_ds_all[1:]]  
         combined_df = pd.concat(dfs_trimmed, axis=1)
 
