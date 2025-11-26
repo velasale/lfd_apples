@@ -31,7 +31,7 @@ setup(
             'lfd_automatic_gripper = lfd_apples.lfd_automatic_gripper:main',    
             'lfd_replay = lfd_apples.lfd_replay:main',     
             'lfd_inhand_camera = lfd_apples.lfd_inhand_camera:main',
-            'lfd_demo = lfd_apples.lfd_demo:main',
+            'lfd_data_collection = lfd_apples.lfd_data_collection:main',
             'franka_recover = lfd_apples.franka_recover:main',
         ],
     },
