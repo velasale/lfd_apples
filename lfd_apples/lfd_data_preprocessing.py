@@ -148,11 +148,11 @@ def downsample_eef_wrench_data(df, raw_data_path, compare_plots=True):
 
         x = np.array(df_final['elapsed_time']).flatten()
         y = np.array(df_final['_wrench._force._z']).flatten()
-        plt.plot(x, y, label='Original wrench Force Z')
+        plt.plot(x, y, label='Original wrench Force Z', alpha=0.5)
 
         x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
         y_ds = np.array(df_downsampled['_wrench._force._z']).flatten()
-        plt.plot(x_ds, y_ds, label='Downsampled wrench Force z', linestyle='--')
+        plt.plot(x_ds, y_ds, label='Downsampled wrench Force z')
         
         plt.legend()
         plt.title('Wrench Force XBefore and After Downsampling')        
@@ -299,18 +299,17 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_
         plt.figure()    
 
         x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-        y_ds = np.array(df_downsampled['delta_pos_y']).flatten()
-        plt.plot(x_ds, y_ds, label='Downsampled Action delta pos y')
+        y_ds = np.array(df_downsampled['delta_pos_x']).flatten()
+        plt.plot(x_ds, y_ds, label='Downsampled Action delta pos x')
 
         x_ds = np.array(actions_df['elapsed_time']).flatten()
-        y_ds = np.array(actions_df['delta_pos_y']).flatten()
-        plt.plot(x_ds, y_ds, label='Original Action delta pos y', alpha=0.5)
+        y_ds = np.array(actions_df['delta_pos_x']).flatten()
+        plt.plot(x_ds, y_ds, label='Original Action delta pos x', alpha=0.5)
         
         plt.legend()
         plt.title('Action delta pos x Over Time')        
 
     return df_downsampled
-
 
 
 def estimate_robot_ee_pose():
@@ -356,21 +355,24 @@ def main():
 
     # ---------- Step 1: Load raw data ----------
     # MAIN_DIR = os.path.join("D:")                                   # windows OS
-    MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')        # ubuntu OS
+    MAIN_DIR = os.path.join('/media', 'alejo', 'New Volume')        # ubuntu OS
     SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")
-    # EXPERIMENT = "experiment_1_(pull)"
-    EXPERIMENT = "only_human_demos/with_palm_cam"   
-
-    DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_preprocessed")    
-
+    EXPERIMENT = "experiment_4"
+    # EXPERIMENT = "only_human_demos/with_palm_cam"   
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
-    DESTINATION_PATH = os.path.join(DESTINATION_DIR, EXPERIMENT)
-    
-    demonstrator = ""  # "human" or "robot"
+
+    demonstrator = "robot"  # "human" or "robot"
     FIXED_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
     INHAND_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
     ARM_SUBDIR = os.path.join(demonstrator, "lfd_bag_main", "bag_csvs")
     GRIPPER_SUBDIR = os.path.join(demonstrator, "lfd_bag_main", "bag_csvs")
+
+    # Destination path
+    MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')  
+    DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_preprocessed")    
+    EXPERIMENT = "experiment_1_(pull)"    
+    DESTINATION_PATH = os.path.join(DESTINATION_DIR, EXPERIMENT)
+        
     
     trials = [trial for trial in os.listdir(SOURCE_PATH)
               if os.path.isdir(os.path.join(SOURCE_PATH, trial))]
@@ -380,7 +382,7 @@ def main():
         key=lambda x: int(x.split("_")[-1])
         )
     
-    start_index = trials_sorted.index("trial_64")
+    start_index = trials_sorted.index("trial_305")
     
 
     # ---------- Step 2: Loop through all trials ----------
@@ -421,9 +423,9 @@ def main():
         df_ds_5 = reduce_size_inhand_camera_raw_images(raw_palm_camera_images_path, layer=12)
 
         # Compute ACTIONS based on ee pose
-        df_dfs_6 = derive_actions_from_ee_pose(df, raw_ee_pose_path, compare_plots=True)
+        df_dfs_6 = derive_actions_from_ee_pose(df, raw_ee_pose_path, compare_plots)
         
-        # Combine all downsampled data into a single DataFrame
+        # Combine all downsampled data (STATES AND ACTIONS) into a single DataFrame
         df_ds_all = [df_ds_1, df_ds_2, df_ds_3, df_ds_4, df_ds_5, df_dfs_6]
         dfs_trimmed = [df_ds_all[0]] + [df.iloc[:, 1:] for df in df_ds_all[1:]]  
         combined_df = pd.concat(dfs_trimmed, axis=1)
@@ -435,7 +437,7 @@ def main():
 
         if compare_plots:
             plt.show()
-        plt.show()
+        
 
     print(f'Trials without subfolders: {trials_without_subfolders}\n')
     print(f'Trials with one subfolder: {trials_with_one_subfolder}\n')
@@ -451,13 +453,6 @@ def main():
 
 if __name__ == '__main__':
     main()
-   
-
-    # # MAIN_DIR = os.path.join("D:")  # windows OS
-    # MAIN_DIR = os.path.join('/media', 'guest', 'IL_data')        # ubuntu OS
-    # SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
-    # EXPERIMENT = "only_human_demos"    
-    # SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)   
-
-    # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
-    # rename_folder(SOURCE_PATH, 1)
+      
+    # SOURCE_PATH = '/media/alejo/New Volume/01_IL_bagfiles/experiment_4'
+    # rename_folder(SOURCE_PATH, 237)
