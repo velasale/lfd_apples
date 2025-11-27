@@ -8,6 +8,7 @@ from tqdm import tqdm
 from lfd_vision import extract_pooled_latent_vector
 from ultralytics import YOLO
 import cv2
+from scipy.ndimage import gaussian_filter, median_filter, gaussian_filter1d
 
 
 def interpolate_to_reference_multi(df_values, df_ref, ts_col_values, ts_col_ref, method="linear"):
@@ -252,7 +253,10 @@ def get_timestamp_vector_from_images(image_folder_path):
     return timestamps
 
 
-def derive_actions_from_ee_pose(reference_df, raw_data_path, compare_plots=True):
+def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_plots=True):
+    """ Applies a gaussian filter, Derive actions based on end-effector pose changes over time, and downsamples. 
+    Actions are computed as differences in position and orientation over time.
+    """
 
     df_raw = pd.read_csv(raw_data_path)        
     
@@ -260,28 +264,34 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, compare_plots=True)
     df_final = pd.concat([df_raw], axis=1)
     df_final.drop(columns=["_header._stamp._sec", "_header._stamp._nanosec", "_header._frame_id", "timestamp"], inplace=True)
 
-    # Interpolate to reference timestamps
-    df_downsampled = interpolate_to_reference_multi(df_final, reference_df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
-
     # Compute actions as differences in position and orientation
-    positions = df_downsampled[['_pose._position._x', '_pose._position._y', '_pose._position._z']].values
-    orientations = df_downsampled[['_pose._orientation._x', '_pose._orientation._y', '_pose._orientation._z', '_pose._orientation._w']].values
+    positions = df_final[['_pose._position._x', '_pose._position._y', '_pose._position._z']].values
+    orientations = df_final[['_pose._orientation._x', '_pose._orientation._y', '_pose._orientation._z', '_pose._orientation._w']].values
 
-    # Compute differences
-    delta_times = np.diff(df_downsampled['timestamp_vector'].values, prepend=df_downsampled['timestamp_vector'].values[0])
+    # Filter signals if needed (e.g., smoothing) - optional step
+    sigma = 100  # adjust for more/less smoothing
+    filtered_positions = gaussian_filter1d(positions, sigma=sigma, axis=0)
+    filtered_orientations = gaussian_filter1d(orientations, sigma=sigma, axis=0)  
+
+    # Compute deltas
+    delta_times = np.diff(df_final['elapsed_time'].values, prepend=df_final['elapsed_time'].values[0])
     # Avoid division by zero for first entry (set to 1 so speed = 0/1 = 0)
     delta_times[delta_times == 0] = 1e-9   # or 1.0 if timestamps are stable
+    delta_positions = np.diff(filtered_positions, axis=0, prepend=filtered_positions[0:1, :])
+    delta_orientations = np.diff(filtered_orientations, axis=0, prepend=filtered_orientations[0:1, :])
 
-    delta_positions = np.diff(positions, axis=0, prepend=positions[0:1, :])
-    delta_orientations = np.diff(orientations, axis=0, prepend=orientations[0:1, :])
 
     # Compute speeds (m/s)
     linear_speeds = delta_positions / delta_times[:, None]
     orientation_speeds = delta_orientations / delta_times[:, None]
-
     # Create a new DataFrame for actions
     action_columns = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z', 'delta_ori_w']
     actions_df = pd.DataFrame(np.hstack((linear_speeds, orientation_speeds)), columns=action_columns)
+    # Copy the elapsed_time column
+    actions_df['elapsed_time'] = df_final['elapsed_time'].values
+
+    # Interpolate to reference timestamps
+    df_downsampled = interpolate_to_reference_multi(actions_df, reference_df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
 
     if compare_plots:
         # Compare plots before and after downsampling
@@ -289,20 +299,17 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, compare_plots=True)
         plt.figure()    
 
         x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-        y_ds = np.array(actions_df['delta_pos_x']).flatten()
-        plt.plot(x_ds, y_ds, label='Action delta pos x')
+        y_ds = np.array(df_downsampled['delta_pos_y']).flatten()
+        plt.plot(x_ds, y_ds, label='Downsampled Action delta pos y')
 
+        x_ds = np.array(actions_df['elapsed_time']).flatten()
         y_ds = np.array(actions_df['delta_pos_y']).flatten()
-        plt.plot(x_ds, y_ds, label='Action delta pos y')
-
-        y_ds = np.array(actions_df['delta_pos_z']).flatten()
-        plt.plot(x_ds, y_ds, label='Action delta pos z')
+        plt.plot(x_ds, y_ds, label='Original Action delta pos y', alpha=0.5)
         
         plt.legend()
         plt.title('Action delta pos x Over Time')        
 
-    return actions_df
-
+    return df_downsampled
 
 
 
@@ -417,7 +424,7 @@ def main():
         df_dfs_6 = derive_actions_from_ee_pose(df, raw_ee_pose_path, compare_plots=True)
         
         # Combine all downsampled data into a single DataFrame
-        df_ds_all = [df_ds_1, df_ds_2, df_ds_3, df_ds_4, df_ds_5]
+        df_ds_all = [df_ds_1, df_ds_2, df_ds_3, df_ds_4, df_ds_5, df_dfs_6]
         dfs_trimmed = [df_ds_all[0]] + [df.iloc[:, 1:] for df in df_ds_all[1:]]  
         combined_df = pd.concat(dfs_trimmed, axis=1)
 
