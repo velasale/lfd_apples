@@ -86,3 +86,31 @@ Failed to lock the realtime publisher issue
 ```c
 #define NON_POLLING TRUE
 ```   
+
+### Controllers
+By default, moveit controllers do not have **gravity_compensation_example_controller**. 
+
+To fix this simply replace the file **fr3_ros_controllers.yaml** with the one in this repo at **config/fr3_ros_controllers.yaml**.
+
+
+
+## FILES DESCRIPTION
+
+### I. Scripts for Data Collection
+
+- lfd_automatic_gripper.py
+- lfd_data_collection.py
+- lfd_inhand_camera.py
+
+
+### II. Scripts for Data Pre-processing
+- lfd_data_preprocessing.py
+- lfd_vision.py
+
+
+### III. Scripts for Learning
+- lfd_learning.py
+
+
+### IV. Scripts for Data Analysis
+- lfd_metadata_analysis.py
