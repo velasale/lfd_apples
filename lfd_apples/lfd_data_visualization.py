@@ -5,9 +5,9 @@ import os
 import numpy as np
 
 # ==== USER PATHS ====
-images_folder = "/home/alejo/Documents/temporal/data_visualization/trial_200/camera_frames/gripper_rgb_palm_camera_image_raw"
-csv_path = "/home/alejo/Documents/temporal/data_visualization/trial_200/trial_200_downsampled_aligned_data.csv"
-output_video_path = "/home/alejo/Documents/temporal/data_visualization/trial_200/output_with_vectors.mp4"
+images_folder = "/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_1/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw"
+csv_path = "/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_1_approach/trial_1_downsampled_aligned_data_(phase_1_approach).csv"
+output_video_path = "/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_1_approach/trial_1.mp4"
 
 
 # ==== LOAD CSV ====
@@ -40,7 +40,7 @@ for img_path in image_paths:
     row = df[df["timestamp_str"] == timestamp]
 
     if row.empty:
-        print(f"No CSV match for timestamp {timestamp}") 
+        # print(f"No CSV match for timestamp {timestamp}") 
         continue
 
     # Read vectors

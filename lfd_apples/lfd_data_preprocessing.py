@@ -9,6 +9,7 @@ from lfd_vision import extract_pooled_latent_vector
 from ultralytics import YOLO
 import cv2
 from scipy.ndimage import gaussian_filter, median_filter, gaussian_filter1d
+from ros2bag2csv import plot_pressure
 
 
 def interpolate_to_reference_multi(df_values, df_ref, ts_col_values, ts_col_ref, method="linear"):
@@ -351,7 +352,51 @@ def rename_folder(SOURCE_PATH, start_index=100):
         start_index += 1
 
 
-def main():
+def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
+
+    tof_values = df['tof'].values
+    tof_filtered = gaussian_filter(tof_values, 3)
+   
+
+    # Create boolean mask: True if tof < threshold
+    below_threshold = tof_filtered < tof_threshold
+
+    # Detect transition: previous >= threshold, current < threshold
+    transition_indices = np.where((~below_threshold[:-1]) & (below_threshold[1:]))[0] + 1
+
+    if len(transition_indices) == 0:
+        plot_pressure(df, time_vector='timestamp_vector')        
+        print(f'No contact detected in {trial}, skipping cropping.')
+        
+        return None
+
+    if len(transition_indices) > 1:
+        plot_pressure(df, time_vector='timestamp_vector')        
+        print(f'Multiple contact points detected in {trial}, needs attention.')        
+
+        for index_phase_1_end in transition_indices:
+            time_phase_1_end = df['timestamp_vector'].values[index_phase_1_end]     
+            plt.axvline(x=time_phase_1_end, color='red', linestyle='--', label='Phase 1 End')        
+
+        # Ask the user which contact point to pick
+        plt.show()
+        user_input = input(f"Enter index (0-{len(transition_indices)-1}) of correct phase 1 end: ")
+        
+        chosen_idx = int(user_input)
+        idx_phase_1_end = transition_indices[chosen_idx]
+    
+                  
+    if len(transition_indices) == 1:
+        # Index of phase 1 end (first drop below threshold)
+        idx_phase_1_end = transition_indices[0]
+
+    return idx_phase_1_end
+
+
+
+# --- Main stages of preprocessing ---  
+
+def stage_1_align_and_downsample():
 
     # ---------- Step 1: Load raw data ----------
     # MAIN_DIR = os.path.join("D:")                                   # windows OS
@@ -451,8 +496,155 @@ def main():
     print('done!')
 
 
+def stage_2_crop_data_to_task_phases():
+
+    # --- Step 1: Define the columns for each harvesting phase ---
+    # Action space columns
+    action_cols = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z', 'delta_ori_w']
+
+    # State space columns
+    air_pressure_cols = ['scA', 'scB', 'scC']
+    tof_cols = ['tof']
+    wrench_cols = ['_wrench._force._x', '_wrench._force._y', '_wrench._force._z',
+                   '_wrench._torque._x', '_wrench._torque._y', '_wrench._torque._z']
+    ee_pose_cols = ['_pose._position._x', '_pose._position._y', '_pose._position._z',
+                    '_pose._orientation._x', '_pose._orientation._y', '_pose._orientation._z', '_pose._orientation._w']
+    joint_states_cols = ['pos_joint_1', 'pos_joint_2', 'pos_joint_3', 'pos_joint_4', 'pos_joint_5', 'pos_joint_6', 'pos_joint_7',
+                         'vel_joint_1', 'vel_joint_2', 'vel_joint_3', 'vel_joint_4', 'vel_joint_5', 'vel_joint_6', 'vel_joint_7',
+                         'eff_joint_1', 'eff_joint_2', 'eff_joint_3', 'eff_joint_4', 'eff_joint_5', 'eff_joint_6', 'eff_joint_7']  
+    inhand_cam_feature_cols = [f"f{i}" for i in range(1,128)]  # assuming 128 features
+
+    # Columns to keep per phase
+    phase_1_approach_cols = tof_cols + inhand_cam_feature_cols + ee_pose_cols + joint_states_cols + action_cols
+    phase_2_contact_cols = tof_cols + air_pressure_cols + ee_pose_cols + joint_states_cols + wrench_cols + action_cols
+    phase_3_pick_cols = ee_pose_cols + joint_states_cols + wrench_cols + action_cols
+    phase_4_disposal_cols = tof_cols + air_pressure_cols + ee_pose_cols + joint_states_cols + wrench_cols + action_cols
+
+
+    # --- Step 2: Define Data Source and Destination paths ----   
+    SOURCE_PATH = '/media/alejo/IL_data/02_IL_preprocessed/experiment_1_(pull)'
+    trials = [f for f in os.listdir(SOURCE_PATH)
+             if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]
+      
+    DESTINATION_PATH = '/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)'
+    os.makedirs(DESTINATION_PATH, exist_ok=True)
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick', 'phase_4_disposal']
+    for phase in phases:
+        os.makedirs(os.path.join(DESTINATION_PATH, phase), exist_ok=True)
+    
+    
+    # --- Step 3: Loop through all trials ---
+    trials_without_contact = []
+    for trial in (trials):
+        print(f'\nCropping {trial} into task phases...')
+
+        df = pd.read_csv(os.path.join(SOURCE_PATH, trial))        
+                
+        # ------------------------ First: Define cropping indices --------------------------
+        # End of phase 1: defined by tof < 5cm (contact)        
+        idx_phase_1_end = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
+        if idx_phase_1_end is None:
+            trials_without_contact.append(trial)
+            continue  # Skip cropping for this trial
+        
+        phase_1_time = 5.0  # in seconds
+        idx_phase_1_start = idx_phase_1_end - int(phase_1_time * 30)  # assuming 30 Hz
+
+        # End of phase 2: defined by at least two suction cups engages
+                
+
+        n_total = len(df)
+        idx_phase_2_end = int(0.5 * n_total)
+        idx_phase_3_end = int(0.75 * n_total)
+
+        # ------------------------- Second: Crop data for each phase -----------------------
+        df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]
+        # plt.plot(df_phase_1['timestamp_vector'],df_phase_1['tof'])        
+        # plt.show()
+
+        df_phase_2 = df.iloc[idx_phase_1_end:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
+        df_phase_3 = df.iloc[idx_phase_2_end:idx_phase_3_end][['timestamp_vector'] + phase_3_pick_cols]
+        df_phase_4 = df.iloc[idx_phase_3_end:][['timestamp_vector'] + phase_4_disposal_cols]
+
+        # Save cropped data to CSV files
+        base_filename = os.path.splitext(trial)[0]
+        df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
+        df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
+        df_phase_3.to_csv(os.path.join(DESTINATION_PATH, 'phase_3_pick', f"{base_filename}_(phase_3_pick).csv"), index=False)
+        df_phase_4.to_csv(os.path.join(DESTINATION_PATH, 'phase_4_disposal', f"{base_filename}_(phase_4_disposal).csv"), index=False)
+
+
+
+def stage_3_fix_hw_issues():
+
+    # Find trials whose pressure sensors had issues (e.g. pressure drops to -1)
+
+    SOURCE_PATH = '/media/alejo/IL_data/02_IL_preprocessed/experiment_1_(pull)'
+    trials = [f for f in os.listdir(SOURCE_PATH)
+             if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]
+      
+    
+    # ---------- Step 2: Loop through all trials ----------   
+    faulty_trials_scA = []  
+    faulty_trials_scB = []
+    faulty_trials_scC = []
+
+    for trial in (trials):
+
+        print(f'\nChecking {trial} for faulty pressure sensor data...')
+
+        df = pd.read_csv(os.path.join(SOURCE_PATH, trial))
+
+        scA = df['scA'].values 
+        scB = df['scB'].values 
+        scC = df['scC'].values 
+
+        # Identify segments where pressure is -1
+        faulty_indices_scA = np.where(scA == -1)[0]   
+        faulty_indices_scB = np.where(scB == -1)[0]   
+        faulty_indices_scC = np.where(scC == -1)[0]        
+
+
+        if len(faulty_indices_scA) != 0:
+            faulty_trials_scA.append(trial)
+            # print(f'Fixing {trial}, found {len(faulty_indices_scA)} faulty indices in scA.')            
+        elif len(faulty_indices_scB) != 0:
+            faulty_trials_scB.append(trial)
+            # print(f'Fixing {trial}, found {len(faulty_indices_scB)} faulty indices in scB.')           
+        elif len(faulty_indices_scC) != 0:
+            faulty_trials_scC.append(trial)
+            # print(f'Fixing {trial}, found {len(faulty_indices_scC)} faulty indices in scC.')         
+        else:       
+            continue  # No issues detected  
+
+        scA = np.copy(scA) / 10.0  # scale if needed
+        scB = np.copy(scB) / 10.0
+        scC = np.copy(scC) / 10.0
+
+        # plot to visualize
+        plt.figure()
+        plt.plot(scA, label='Original scA', alpha=0.5, color='blue', linewidth=2)
+        plt.plot(scB, label='Original scB', alpha=0.5, color='orange', linewidth=2)
+        plt.plot(scC, label='Original scC', alpha=0.5, color='green', linewidth=2)
+        plt.legend()
+        plt.ylim([-10, 120])
+        plt.grid()
+        plt.show()
+
+        
+    
+    print(f'\nTrials with faulty scA data: {faulty_trials_scA}\n'
+          f'Trials with faulty scB data: {faulty_trials_scB}\n'
+          f'Trials with faulty scC data: {faulty_trials_scC}\n')
+
+  
+
 if __name__ == '__main__':
-    main()
+
+    # stage_1_align_and_downsample()
+
+    stage_2_crop_data_to_task_phases()
+
       
     # SOURCE_PATH = '/media/alejo/New Volume/01_IL_bagfiles/experiment_4'
     # rename_folder(SOURCE_PATH, 237)
