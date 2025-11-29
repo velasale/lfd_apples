@@ -51,6 +51,10 @@ def quat_to_omega(q, q_dot):
     q_dot: quaternion derivative [dx,dy,dz,dw]
     Returns: omega = [wx,wy,wz] in rad/s
     """
+
+    q_norm = np.linalg.norm(q)
+    q = q / q_norm
+
     # quaternion inverse
     q_inv = np.array([-q[0], -q[1], -q[2], q[3]])
 
@@ -126,10 +130,8 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
 
         wx, wy, wz = quat_to_omega(q, q_dot)
 
-        # Distance between camera and eef
+        # Rotation-induced linear velocities at camera offset
         r = 0.06       # in meters
-
-        # Linear velocity induced by rotation
         v_rot_x = wy * r
         v_rot_y = - wx * r
 
@@ -276,7 +278,6 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
             (255, 255, 255),  # white text
             1
         )
-
 
         video.write(img)
 
