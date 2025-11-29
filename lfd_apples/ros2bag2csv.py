@@ -302,21 +302,22 @@ def plot_wrench(df):
     plt.tight_layout()    
 
 
-def plot_pressure(df):
+def plot_pressure(df, time_vector='elapsed_time'):
+
     # Convert raw array field into list of ints
-    df["_data"] = df["_data"].apply(parse_array)
+    if "_data" in df.columns:
+        df["_data"] = df["_data"].apply(parse_array)
+        # Expand into new columns
+        df[["scA", "scB", "scC", "tof"]] = pd.DataFrame(df["_data"].tolist(), index=df.index)
 
-    colors = itertools.cycle(('#0072B2', '#E69F00', '#000000'))
-
-    # Expand into new columns
-    df[["p1", "p2", "p3", "tof"]] = pd.DataFrame(df["_data"].tolist(), index=df.index)
+    colors = itertools.cycle(('#0072B2', '#E69F00', '#000000'))    
 
     # Ensure they are numeric numpy arrays
-    p1 = df["p1"].astype(float).to_numpy() / 10  # convert to kPa
-    p2 = df["p2"].astype(float).to_numpy() / 10  # convert to kPa 
-    p3 = df["p3"].astype(float).to_numpy()  / 10  # convert to kPa
+    p1 = df["scA"].astype(float).to_numpy() / 10  # convert to kPa
+    p2 = df["scB"].astype(float).to_numpy() / 10  # convert to kPa 
+    p3 = df["scC"].astype(float).to_numpy()  / 10  # convert to kPa
     tof = df["tof"].astype(float).to_numpy() / 10  # convert to cm
-    t  = df["elapsed_time"].astype(float).to_numpy()
+    t  = df[time_vector].astype(float).to_numpy()
 
     # Apply median filter to smooth the signals
     tof_filtered = gaussian_filter(tof, 3)
@@ -329,7 +330,7 @@ def plot_pressure(df):
     ax1.plot(t, p3, label="suction cup c", color = next(colors), linestyle='-.')
     ax1.set_xlabel("Elapsed Time [s]")
     ax1.set_ylabel("Air Pressure [kPa]")
-    ax1.set_ylim([0,110])
+    ax1.set_ylim([-10,110])
     ax1.grid()
 
     # Right axis: Time-of-flight
@@ -345,7 +346,7 @@ def plot_pressure(df):
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines + lines2, labels + labels2, loc='upper right')
 
-    plt.xlim([0,50])
+    # plt.xlim([0,50])
     
     plt.title("Air Pressure Signals vs Elapsed Time")       
     
