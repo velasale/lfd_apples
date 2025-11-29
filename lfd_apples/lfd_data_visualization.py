@@ -44,6 +44,31 @@ def get_paths(trial_num="trial_1"):
 
     return str(images_folder), str(csv_path), str(output_video_path)
 
+
+def quat_to_omega(q, q_dot):
+    """
+    q: current quaternion [x,y,z,w]
+    q_dot: quaternion derivative [dx,dy,dz,dw]
+    Returns: omega = [wx,wy,wz] in rad/s
+    """
+    # quaternion inverse
+    q_inv = np.array([-q[0], -q[1], -q[2], q[3]])
+
+    # quaternion multiplication q_dot ⊗ q_inv
+    x1, y1, z1, w1 = q_dot
+    x2, y2, z2, w2 = q_inv
+    prod = np.array([
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    ])
+
+    # angular velocity vector part
+    omega = 2 * prod[:3]
+    return omega
+
+
 def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path):
 
     # ==== LOAD CSV ====
@@ -79,17 +104,46 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
             # print(f"No CSV match for timestamp {timestamp}")
             continue
 
-        # Read vectors
+        # Linear speeds
         v_x = row["delta_pos_x"].values[0]
         v_y = row["delta_pos_y"].values[0]
+
+        # Quaternion rates
+        q_dot = np.array([
+            row["delta_ori_x"].values[0],
+            row["delta_ori_y"].values[0],
+            row["delta_ori_z"].values[0],
+            row["delta_ori_w"].values[0]
+            ])
+
+        # Quaternions
+        q = np.array([
+            row["_pose._orientation._x"].values[0],
+            row["_pose._orientation._y"].values[0],
+            row["_pose._orientation._z"].values[0],
+            row["_pose._orientation._w"].values[0]
+            ])
+
+        wx, wy, wz = quat_to_omega(q, q_dot)
+
+        # Distance between camera and eef
+        r = 0.06       # in meters
+
+        # Linear velocity induced by rotation
+        v_rot_x = wy * r
+        v_rot_y = - wx * r
+
+        # Total linear velocity projected into camera plane
+        total_v_x = v_x + v_rot_x
+        total_v_y = v_y + v_rot_y
 
         # Rotation angle in degrees
         angle_deg = 60 + 180
         angle_rad = np.radians(angle_deg)
 
-        # Rotate vector
-        v_x_rot = v_x * np.cos(angle_rad) - v_y * np.sin(angle_rad)
-        v_y_rot = v_x * np.sin(angle_rad) + v_y * np.cos(angle_rad)
+        # Transform vector
+        v_x_rot = total_v_x * np.cos(angle_rad) - total_v_y * np.sin(angle_rad)
+        v_y_rot = total_v_x * np.sin(angle_rad) + total_v_y * np.cos(angle_rad)
 
         img = cv2.imread(img_path)
 
