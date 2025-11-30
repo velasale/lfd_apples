@@ -73,7 +73,80 @@ def quat_to_omega(q, q_dot):
     return omega
 
 
-def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path):
+def draw_vector_arrow(img, start, end, color, min_length=8, thickness=2, tipLength=0.3):
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    length = np.hypot(dx, dy)
+
+    if length < min_length:
+        direction = np.array([dx, dy]) / (length + 1e-9)
+        end = (int(start[0] + direction[0] * min_length), int(start[1] + direction[1] * min_length))
+
+    # Draw black border for arrow
+    cv2.arrowedLine(img, start, end, (0,0,0), thickness=thickness+2, tipLength=tipLength, line_type=cv2.LINE_AA)
+    # Draw main arrow on top
+    cv2.arrowedLine(img, start, end, color, thickness=thickness, tipLength=tipLength, line_type=cv2.LINE_AA)
+
+
+def draw_omega_z_arrow(img, cx, cy, omega_z, radius=30, scale=10, color=(255, 0, 0), thickness=2, arrow_head_len=10):
+    # Scale angular velocity
+    omega_angle = omega_z * scale
+    # Determine direction: positive CCW, negative CW
+    direction = np.sign(omega_angle) if omega_angle != 0 else 1
+    angle_deg = int(abs(omega_angle) * 180 / np.pi)
+
+    start_angle = -90
+    end_angle = start_angle + direction * angle_deg
+
+    # Draw black border arc
+    cv2.ellipse(img, (cx, cy), (radius, radius), 0, start_angle, end_angle, (0,0,0), thickness+2, lineType=cv2.LINE_AA)
+    # Draw main arc
+    cv2.ellipse(img, (cx, cy), (radius, radius), 0, start_angle, end_angle, color, thickness, lineType=cv2.LINE_AA)
+
+    # Compute arrowhead
+    theta = np.deg2rad(end_angle)
+    x_end = int(cx + radius * np.cos(theta))
+    y_end = int(cy + radius * np.sin(theta))
+
+    # Tangent direction depends on omega sign
+    tangent_angle = theta + direction * np.pi/2
+    dx = np.cos(tangent_angle)
+    dy = np.sin(tangent_angle)
+
+    x1 = int(x_end - arrow_head_len * (dx + 0.3 * np.cos(theta)))
+    y1 = int(y_end - arrow_head_len * (dy + 0.3 * np.sin(theta)))
+    x2 = int(x_end - arrow_head_len * (dx - 0.3 * np.cos(theta)))
+    y2 = int(y_end - arrow_head_len * (dy - 0.3 * np.sin(theta)))
+
+    # Black border arrowhead
+    cv2.line(img, (x_end, y_end), (x1, y1), (0,0,0), thickness+2, lineType=cv2.LINE_AA)
+    cv2.line(img, (x_end, y_end), (x2, y2), (0,0,0), thickness+2, lineType=cv2.LINE_AA)
+    # Main arrowhead
+    cv2.line(img, (x_end, y_end), (x1, y1), color, thickness, lineType=cv2.LINE_AA)
+    cv2.line(img, (x_end, y_end), (x2, y2), color, thickness, lineType=cv2.LINE_AA)
+
+    # Text label with black border
+    # cv2.putText(img, "ωz", (cx + radius + 5, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,0,0), 3, lineType=cv2.LINE_AA)
+    # cv2.putText(img, "ωz", (cx + radius + 5, cy), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, lineType=cv2.LINE_AA)
+
+
+def draw_crosshair(img, cx, cy, color=(0, 255, 255), arm=15, corner=40, thickness=1):
+
+    cv2.circle(img, (cx, cy), 3, color, -1)
+    cv2.line(img, (cx, cy - arm), (cx, cy + arm), color, thickness)
+    cv2.line(img, (cx - arm, cy), (cx + arm, cy), color, thickness)
+    # Corner accents (L-shapes)
+    cv2.line(img, (cx - corner, cy - corner), (cx - arm, cy - corner), color, thickness)
+    cv2.line(img, (cx - corner, cy - corner), (cx - corner, cy - arm), color, thickness)
+    cv2.line(img, (cx + corner, cy - corner), (cx + arm, cy - corner), color, thickness)
+    cv2.line(img, (cx + corner, cy - corner), (cx + corner, cy - arm), color, thickness)
+    cv2.line(img, (cx - corner, cy + corner), (cx - arm, cy + corner), color, thickness)
+    cv2.line(img, (cx - corner, cy + corner), (cx - corner, cy + arm), color, thickness)
+    cv2.line(img, (cx + corner, cy + corner), (cx + arm, cy + corner), color, thickness)
+    cv2.line(img, (cx + corner, cy + corner), (cx + corner, cy + arm), color, thickness)
+
+
+def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, output_video_path):
 
     # ==== LOAD CSV ====
     df = pd.read_csv(csv_path)
@@ -113,7 +186,7 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
                            row["delta_pos_y"].values[0],
                            row["delta_pos_z"].values[0]])
 
-        # eef quaternions
+        # eef quaternions in base frame
         q = np.array([
             row["_pose._orientation._x"].values[0],
             row["_pose._orientation._y"].values[0],
@@ -121,13 +194,17 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
             row["_pose._orientation._w"].values[0]
         ])
 
-        # eef quaternion rates
+        # eef quaternion rates in base frame
         q_dot = np.array([
             row["delta_ori_x"].values[0],
             row["delta_ori_y"].values[0],
             row["delta_ori_z"].values[0],
             row["delta_ori_w"].values[0]
             ])
+
+        # =================================================================
+        #           Transform values from BASE to CAMERA frame
+        # =================================================================
 
         # Compute angular velocity in EEF frame
         omega = quat_to_omega(q, q_dot)
@@ -146,169 +223,33 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
         # Project to 2D for camera plane
         total_v_x = v_camera[0]
         total_v_y = v_camera[1]
+        total_v_z = v_camera[2]
 
         # Rotation angle in degrees
         angle_deg = 55
         angle_rad = np.radians(angle_deg)
 
         # Transform vector
-        v_x_rot = total_v_x * np.cos(angle_rad) - total_v_y * np.sin(angle_rad)
-        v_y_rot = total_v_x * np.sin(angle_rad) + total_v_y * np.cos(angle_rad)
+        v_x_cam = total_v_x * np.cos(angle_rad) - total_v_y * np.sin(angle_rad)
+        v_y_cam = total_v_x * np.sin(angle_rad) + total_v_y * np.cos(angle_rad)
 
+        # ====================================================================
+        #                  Draw crosshair and vectors in image
+        # ====================================================================
         img = cv2.imread(img_path)
-
-        # Center of image
-        cx, cy = width // 2, height // 2
-
+        cx, cy = width // 2, height // 2        # Center of image
+        margin = 80
         # Scale vector to be visible
         scale = 400
-        end_x = int(cx + v_x_rot * scale)
-        end_y = int(cy - v_y_rot * scale)
 
-        # ===============================
-        #     DRAW FANCY CROSSHAIR
-        # ===============================
-        cross_color = (0, 255, 255)    # yellow BGR
-
+        draw_crosshair(img, cx, cy)
+        draw_vector_arrow(img, (cx, cy), (cx + int(v_x_cam * scale), cy), (0, 0, 255))  # Vx
+        draw_vector_arrow(img, (cx, cy), (cx, cy + int(v_y_cam * scale)), (0, 255, 0))  # Vy
+        draw_vector_arrow(img, (cx, cy), (cx + int(v_x_cam * scale), cy + int(v_y_cam * scale)), (0, 255, 255))  # Resultant
         # Center dot
-        cv2.circle(img, (cx, cy), 3, cross_color, -1)
-
-        # Size of cross arms
-        arm = 15
-        thickness = 1
-
-        # Vertical line
-        cv2.line(img, (cx, cy - arm), (cx, cy + arm), cross_color, thickness)
-
-        # Horizontal line
-        cv2.line(img, (cx - arm, cy), (cx + arm, cy), cross_color, thickness)
-
-        # Corner accents (L shapes)
-        corner = 40
-        cv2.line(img, (cx - corner, cy - corner), (cx - arm, cy - corner), cross_color, thickness)
-        cv2.line(img, (cx - corner, cy - corner), (cx - corner, cy - arm), cross_color, thickness)
-
-        cv2.line(img, (cx + corner, cy - corner), (cx + arm, cy - corner), cross_color, thickness)
-        cv2.line(img, (cx + corner, cy - corner), (cx + corner, cy - arm), cross_color, thickness)
-
-        cv2.line(img, (cx - corner, cy + corner), (cx - arm, cy + corner), cross_color, thickness)
-        cv2.line(img, (cx - corner, cy + corner), (cx - corner, cy + arm), cross_color, thickness)
-
-        cv2.line(img, (cx + corner, cy + corner), (cx + arm, cy + corner), cross_color, thickness)
-        cv2.line(img, (cx + corner, cy + corner), (cx + corner, cy + arm), cross_color, thickness)
-
-        # ===============================
-        #   SETTINGS
-        # ===============================
-        scale = 500
-        min_length = 8  # pixels – ensures you always see the arrow
-        thick = 2  # main line thickness
-        tip = 0.30  # arrowhead size
-
-        def draw_arrow(img, start, end, color, thickness=2, tipLength=0.3):
-            """
-            Draw a clean arrow with outline + anti-aliasing.
-            Ensures all coordinates are Python ints.
-            """
-
-            # Convert all inputs to pure ints
-            start = (int(start[0]), int(start[1]))
-            end = (int(end[0]), int(end[1]))
-
-            # Outline (black)
-            cv2.arrowedLine(
-                img, start, end, (0, 0, 0),
-                thickness=thickness + 2, tipLength=tipLength,
-                line_type=cv2.LINE_AA
-            )
-            # Main arrow
-            cv2.arrowedLine(
-                img, start, end, color,
-                thickness=thickness, tipLength=tipLength,
-                line_type=cv2.LINE_AA
-            )
-
-        # ===============================
-        #        DRAW Vx (RED)
-        # ===============================
-        end_x_vx = int(cx + v_x_rot * scale)
-        end_y_vx = cy
-
-        # enforce min length
-        if abs(end_x_vx - cx) < min_length:
-            end_x_vx = cx + min_length * np.sign(v_x_rot)
-
-        draw_arrow(
-            img,
-            (cx, cy),
-            (end_x_vx, end_y_vx),
-            (0, 0, 255),  # red
-            thickness=thick,
-            tipLength=tip
-        )
-
-        # ===============================
-        #        DRAW Vy (GREEN)
-        # ===============================
-        end_x_vy = cx
-        end_y_vy = int(cy + v_y_rot * scale)
-
-        if abs(end_y_vy - cy) < min_length:
-            end_y_vy = cy + min_length * np.sign(v_y_rot)
-
-        draw_arrow(
-            img,
-            (cx, cy),
-            (end_x_vy, end_y_vy),
-            (0, 255, 0),  # green
-            thickness=thick,
-            tipLength=tip
-        )
-
-        # ===============================
-        #    DRAW RESULTANT (YELLOW)
-        # ===============================
-        end_x = int(cx + v_x_rot * scale)
-        end_y = int(cy + v_y_rot * scale)
-
-        # keep min length
-        if np.hypot(end_x - cx, end_y - cy) < min_length:
-            direction = np.array([v_x_rot, v_y_rot])
-            direction = direction / (np.linalg.norm(direction) + 1e-9)
-            end_x = int(cx + direction[0] * min_length)
-            end_y = int(cy + direction[1] * min_length)
-
-        draw_arrow(
-            img,
-            (cx, cy),
-            (end_x, end_y),
-            (0, 255, 255),  # yellow
-            thickness=2,
-            tipLength=0.35
-        )
-
-        # ===============================
-        #           DRAW Vz (BLUE)
-        # ===============================
-        v_z = row["delta_pos_z"].values[0]
-
-        margin = 80
-        start_x_vz = margin
-        start_y_vz = margin
-
-        end_x_vz = int(start_x_vz + v_z * scale)
-
-        if abs(end_x_vz - start_x_vz) < min_length:
-            end_x_vz = start_x_vz + min_length * np.sign(v_z)
-
-        draw_arrow(
-            img,
-            (start_x_vz, start_y_vz),
-            (end_x_vz, start_y_vz),
-            (255, 0, 0),  # blue
-            thickness=2,
-            tipLength=0.3
-        )
+        cv2.circle(img, (margin, margin), 3, (255, 255, 255), -1)
+        draw_vector_arrow(img, (margin, margin), (margin + int(total_v_z * scale), margin), (255, 0, 0))  # Vz
+        # draw_omega_z_arrow(img, cx, cy, omega[2], radius=30, scale=10)
 
         img = cv2.rotate(img, cv2.ROTATE_180)
 
@@ -319,7 +260,7 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
         ts_margin = 30
         cv2.putText(
             img,
-            f"t = {float(timestamp):.3f}s",  # three decimals
+            f"{trial_name}, t = {float(timestamp):.3f}s",  # three decimals
             (ts_margin, ts_margin),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,
@@ -344,7 +285,7 @@ def main():
         images_folder, csv_path, output_video_path = get_paths(trial_name)
 
         # Visualize Inhand Camera and Ground Truth Actions
-        combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path)
+        combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, output_video_path)
 
 
 if __name__ == '__main__':
