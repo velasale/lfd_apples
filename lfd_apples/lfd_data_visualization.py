@@ -5,7 +5,7 @@ import os
 import numpy as np
 from pathlib import Path
 import platform
-
+from scipy.spatial.transform import Rotation as R
 
 def get_paths(trial_num="trial_1"):
     # Detect OS and set IL_data base directory
@@ -108,11 +108,20 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
             # print(f"No CSV match for timestamp {timestamp}")
             continue
 
-        # Linear speeds
-        v_x = row["delta_pos_x"].values[0]
-        v_y = row["delta_pos_y"].values[0]
+        # eef linear velocity in base frame
+        v_base = np.array([row["delta_pos_x"].values[0],
+                           row["delta_pos_y"].values[0],
+                           row["delta_pos_z"].values[0]])
 
-        # Quaternion rates
+        # eef quaternions
+        q = np.array([
+            row["_pose._orientation._x"].values[0],
+            row["_pose._orientation._y"].values[0],
+            row["_pose._orientation._z"].values[0],
+            row["_pose._orientation._w"].values[0]
+        ])
+
+        # eef quaternion rates
         q_dot = np.array([
             row["delta_ori_x"].values[0],
             row["delta_ori_y"].values[0],
@@ -120,27 +129,26 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
             row["delta_ori_w"].values[0]
             ])
 
-        # Quaternions
-        q = np.array([
-            row["_pose._orientation._x"].values[0],
-            row["_pose._orientation._y"].values[0],
-            row["_pose._orientation._z"].values[0],
-            row["_pose._orientation._w"].values[0]
-            ])
+        # Compute angular velocity in EEF frame
+        omega = quat_to_omega(q, q_dot)
 
-        wx, wy, wz = quat_to_omega(q, q_dot)
+        # Rotate linear velocity into EEF frame
+        r_eef = R.from_quat(q)
+        v_eef = r_eef.inv().apply(v_base)
 
-        # Rotation-induced linear velocities at camera offset
-        r = 0.06       # in meters
-        v_rot_x = wy * r
-        v_rot_y = - wx * r
+        # Rotation-induced velocity at camera offset
+        r_cam = np.array([0, 0, 0.06])  # camera offset in EEF frame
+        v_rot = np.cross(omega, r_cam)
 
-        # Total linear velocity projected into camera plane
-        total_v_x = v_x + v_rot_x
-        total_v_y = v_y + v_rot_y
+        # Total linear velocity at camera in EEF frame
+        v_camera = v_eef + v_rot
+
+        # Project to 2D for camera plane
+        total_v_x = v_camera[0]
+        total_v_y = v_camera[1]
 
         # Rotation angle in degrees
-        angle_deg = 60 + 180
+        angle_deg = 60
         angle_rad = np.radians(angle_deg)
 
         # Transform vector
