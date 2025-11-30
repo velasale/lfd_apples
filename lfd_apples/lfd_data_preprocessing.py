@@ -1,15 +1,21 @@
 import os
+import platform
 import pandas as pd
 import ast
 import re
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-from lfd_vision import extract_pooled_latent_vector
-from ultralytics import YOLO
-import cv2
+
+# from lfd_vision import extract_pooled_latent_vector
+# from ultralytics import YOLO
+# import cv2
+
 from scipy.ndimage import gaussian_filter, median_filter, gaussian_filter1d
+
 from ros2bag2csv import plot_pressure
+from pathlib import Path
+
 
 
 def interpolate_to_reference_multi(df_values, df_ref, ts_col_values, ts_col_ref, method="linear"):
@@ -281,7 +287,6 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_
     delta_positions = np.diff(filtered_positions, axis=0, prepend=filtered_positions[0:1, :])
     delta_orientations = np.diff(filtered_orientations, axis=0, prepend=filtered_orientations[0:1, :])
 
-
     # Compute speeds (m/s)
     linear_speeds = delta_positions / delta_times[:, None]
     orientation_speeds = delta_orientations / delta_times[:, None]
@@ -371,7 +376,10 @@ def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
         return None
 
     if len(transition_indices) > 1:
-        plot_pressure(df, time_vector='timestamp_vector')        
+
+        return "Multiple"       # TODO remove this line
+
+        plot_pressure(df, time_vector='timestamp_vector')
         print(f'Multiple contact points detected in {trial}, needs attention.')        
 
         for index_phase_1_end in transition_indices:
@@ -384,6 +392,8 @@ def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
         
         chosen_idx = int(user_input)
         idx_phase_1_end = transition_indices[chosen_idx]
+
+
     
                   
     if len(transition_indices) == 1:
@@ -391,7 +401,6 @@ def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
         idx_phase_1_end = transition_indices[0]
 
     return idx_phase_1_end
-
 
 
 # --- Main stages of preprocessing ---  
@@ -521,12 +530,17 @@ def stage_2_crop_data_to_task_phases():
     phase_4_disposal_cols = tof_cols + air_pressure_cols + ee_pose_cols + joint_states_cols + wrench_cols + action_cols
 
 
-    # --- Step 2: Define Data Source and Destination paths ----   
-    SOURCE_PATH = '/media/alejo/IL_data/02_IL_preprocessed/experiment_1_(pull)'
+    # --- Step 2: Define Data Source and Destination paths ----
+    if platform.system() == "Windows":
+        SOURCE_PATH = Path(r"D:\02_IL_preprocessed\experiment_1_(pull)")
+        DESTINATION_PATH = Path(r"D:\03_IL_preprocessed\experiment_1_(pull)")
+    else:
+        SOURCE_PATH = Path("/media/alejo/IL_data/02_IL_preprocessed/experiment_1_(pull)")
+        DESTINATION_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)")
+
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]
-      
-    DESTINATION_PATH = '/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)'
+
     os.makedirs(DESTINATION_PATH, exist_ok=True)
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick', 'phase_4_disposal']
     for phase in phases:
@@ -535,6 +549,7 @@ def stage_2_crop_data_to_task_phases():
     
     # --- Step 3: Loop through all trials ---
     trials_without_contact = []
+    trials_with_multiple_contacts = []
     for trial in (trials):
         print(f'\nCropping {trial} into task phases...')
 
@@ -546,12 +561,16 @@ def stage_2_crop_data_to_task_phases():
         if idx_phase_1_end is None:
             trials_without_contact.append(trial)
             continue  # Skip cropping for this trial
+        elif idx_phase_1_end == "Multiple":
+            trials_with_multiple_contacts.append(trial)
+            continue
         
-        phase_1_time = 5.0  # in seconds
+        phase_1_time = 7.0  # in seconds
         idx_phase_1_start = idx_phase_1_end - int(phase_1_time * 30)  # assuming 30 Hz
+        phase_1_extra_time_end = 2.0
+        idx_phase_1_end += int(phase_1_extra_time_end * 30)
 
         # End of phase 2: defined by at least two suction cups engages
-                
 
         n_total = len(df)
         idx_phase_2_end = int(0.5 * n_total)
@@ -562,16 +581,25 @@ def stage_2_crop_data_to_task_phases():
         # plt.plot(df_phase_1['timestamp_vector'],df_phase_1['tof'])        
         # plt.show()
 
-        df_phase_2 = df.iloc[idx_phase_1_end:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
-        df_phase_3 = df.iloc[idx_phase_2_end:idx_phase_3_end][['timestamp_vector'] + phase_3_pick_cols]
-        df_phase_4 = df.iloc[idx_phase_3_end:][['timestamp_vector'] + phase_4_disposal_cols]
+        # df_phase_2 = df.iloc[idx_phase_1_end:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
+        # df_phase_3 = df.iloc[idx_phase_2_end:idx_phase_3_end][['timestamp_vector'] + phase_3_pick_cols]
+        # df_phase_4 = df.iloc[idx_phase_3_end:][['timestamp_vector'] + phase_4_disposal_cols]
 
         # Save cropped data to CSV files
         base_filename = os.path.splitext(trial)[0]
         df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
-        df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
-        df_phase_3.to_csv(os.path.join(DESTINATION_PATH, 'phase_3_pick', f"{base_filename}_(phase_3_pick).csv"), index=False)
-        df_phase_4.to_csv(os.path.join(DESTINATION_PATH, 'phase_4_disposal', f"{base_filename}_(phase_4_disposal).csv"), index=False)
+        # df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
+        # df_phase_3.to_csv(os.path.join(DESTINATION_PATH, 'phase_3_pick', f"{base_filename}_(phase_3_pick).csv"), index=False)
+        # df_phase_4.to_csv(os.path.join(DESTINATION_PATH, 'phase_4_disposal', f"{base_filename}_(phase_4_disposal).csv"), index=False)
+
+    print('\n----Trials without contact:----')
+    for trial in trials_without_contact:
+        print(trial)
+
+    print('\n----Trials with multiple contacts:----')
+    for trial in trials_with_multiple_contacts:
+        print(trial)
+
 
 
 
@@ -637,7 +665,6 @@ def stage_3_fix_hw_issues():
           f'Trials with faulty scB data: {faulty_trials_scB}\n'
           f'Trials with faulty scC data: {faulty_trials_scC}\n')
 
-  
 
 if __name__ == '__main__':
 
