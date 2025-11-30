@@ -148,7 +148,7 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
         total_v_y = v_camera[1]
 
         # Rotation angle in degrees
-        angle_deg = 60
+        angle_deg = 55
         angle_rad = np.radians(angle_deg)
 
         # Transform vector
@@ -198,77 +198,117 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
         cv2.line(img, (cx + corner, cy + corner), (cx + corner, cy + arm), cross_color, thickness)
 
         # ===============================
-        #        DRAW Vx (RED)
+        #   SETTINGS
         # ===============================
         scale = 500
-        end_x_vx = int(cx + v_x_rot * scale)
-        end_y_vx = cy  # only horizontal component
+        min_length = 8  # pixels – ensures you always see the arrow
+        thick = 2  # main line thickness
+        tip = 0.30  # arrowhead size
 
-        cv2.arrowedLine(
+        def draw_arrow(img, start, end, color, thickness=2, tipLength=0.3):
+            """
+            Draw a clean arrow with outline + anti-aliasing.
+            Ensures all coordinates are Python ints.
+            """
+
+            # Convert all inputs to pure ints
+            start = (int(start[0]), int(start[1]))
+            end = (int(end[0]), int(end[1]))
+
+            # Outline (black)
+            cv2.arrowedLine(
+                img, start, end, (0, 0, 0),
+                thickness=thickness + 2, tipLength=tipLength,
+                line_type=cv2.LINE_AA
+            )
+            # Main arrow
+            cv2.arrowedLine(
+                img, start, end, color,
+                thickness=thickness, tipLength=tipLength,
+                line_type=cv2.LINE_AA
+            )
+
+        # ===============================
+        #        DRAW Vx (RED)
+        # ===============================
+        end_x_vx = int(cx + v_x_rot * scale)
+        end_y_vx = cy
+
+        # enforce min length
+        if abs(end_x_vx - cx) < min_length:
+            end_x_vx = cx + min_length * np.sign(v_x_rot)
+
+        draw_arrow(
             img,
             (cx, cy),
             (end_x_vx, end_y_vx),
-            (0, 0, 255),    # red (BGR)
-            thickness=2,
-            tipLength=0.25
+            (0, 0, 255),  # red
+            thickness=thick,
+            tipLength=tip
         )
 
         # ===============================
         #        DRAW Vy (GREEN)
         # ===============================
         end_x_vy = cx
-        end_y_vy = int(cy + v_y_rot * scale)  # invert y
+        end_y_vy = int(cy + v_y_rot * scale)
 
-        cv2.arrowedLine(
+        if abs(end_y_vy - cy) < min_length:
+            end_y_vy = cy + min_length * np.sign(v_y_rot)
+
+        draw_arrow(
             img,
             (cx, cy),
             (end_x_vy, end_y_vy),
-            (0, 255, 0),    # green
-            thickness=2,
-            tipLength=0.25
+            (0, 255, 0),  # green
+            thickness=thick,
+            tipLength=tip
         )
 
         # ===============================
-        #     DRAW RESULTANT VECTOR (YELLOW)
+        #    DRAW RESULTANT (YELLOW)
         # ===============================
         end_x = int(cx + v_x_rot * scale)
         end_y = int(cy + v_y_rot * scale)
 
-        cv2.arrowedLine(
+        # keep min length
+        if np.hypot(end_x - cx, end_y - cy) < min_length:
+            direction = np.array([v_x_rot, v_y_rot])
+            direction = direction / (np.linalg.norm(direction) + 1e-9)
+            end_x = int(cx + direction[0] * min_length)
+            end_y = int(cy + direction[1] * min_length)
+
+        draw_arrow(
             img,
             (cx, cy),
             (end_x, end_y),
-            (0, 255, 255),   # yellow
-            thickness=4,
-            tipLength=0.3
+            (0, 255, 255),  # yellow
+            thickness=2,
+            tipLength=0.35
         )
 
         # ===============================
-        #          DRAW Vz (BLUE)
+        #           DRAW Vz (BLUE)
         # ===============================
         v_z = row["delta_pos_z"].values[0]
 
-
-        # Bottom-right corner anchor point
         margin = 80
-        start_x_vz = 0 + margin    # shift left so it fits fully
-        start_y_vz = 0 + margin
-
-        # Center dot
-        cv2.circle(img, (start_x_vz, start_y_vz), 3, (255, 255, 255), -1)
+        start_x_vz = margin
+        start_y_vz = margin
 
         end_x_vz = int(start_x_vz + v_z * scale)
-        end_y_vz = start_y_vz  # horizontal only
 
-        cv2.arrowedLine(
+        if abs(end_x_vz - start_x_vz) < min_length:
+            end_x_vz = start_x_vz + min_length * np.sign(v_z)
+
+        draw_arrow(
             img,
             (start_x_vz, start_y_vz),
-            (end_x_vz, end_y_vz),
-            (255, 0, 0),   # blue (BGR)
-            thickness=3,
-            tipLength=0.25
+            (end_x_vz, start_y_vz),
+            (255, 0, 0),  # blue
+            thickness=2,
+            tipLength=0.3
         )
-
 
         img = cv2.rotate(img, cv2.ROTATE_180)
 
