@@ -137,7 +137,7 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
         v_eef = r_eef.inv().apply(v_base)
 
         # Rotation-induced velocity at camera offset
-        r_cam = np.array([0, 0, 0.06])  # camera offset in EEF frame
+        r_cam = np.array([0, 0, -0.06])  # camera offset in EEF frame
         v_rot = np.cross(omega, r_cam)
 
         # Total linear velocity at camera in EEF frame
@@ -217,7 +217,7 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
         #        DRAW Vy (GREEN)
         # ===============================
         end_x_vy = cx
-        end_y_vy = int(cy - v_y_rot * scale)  # invert y
+        end_y_vy = int(cy + v_y_rot * scale)  # invert y
 
         cv2.arrowedLine(
             img,
@@ -232,7 +232,7 @@ def combine_inhand_camera_and_actions(images_folder, csv_path, output_video_path
         #     DRAW RESULTANT VECTOR (YELLOW)
         # ===============================
         end_x = int(cx + v_x_rot * scale)
-        end_y = int(cy - v_y_rot * scale)
+        end_y = int(cy + v_y_rot * scale)
 
         cv2.arrowedLine(
             img,
