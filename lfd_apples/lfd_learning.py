@@ -122,21 +122,23 @@ def main():
     # --- 4. Train ---
     rf.fit(X_train_norm, Y_train)
 
-    # --- Plot loss curve ---
-    plt.figure(figsize=(8,5))
-    plt.plot(rf.loss_curve_, label="Training Loss")
+    # # --- Plot loss curve ---
+    # plt.figure(figsize=(8,5))
+    # plt.plot(rf.loss_curve_, label="Training Loss")
 
-    if hasattr(rf, "validation_scores_"):
-        # validation_scores_ are R^2 scores per epoch
-        val_loss = [1 - v for v in rf.validation_scores_]  # convert R^2 -> pseudo-loss
-        plt.plot(val_loss, label="Validation (1 - R2)")
+    # if hasattr(rf, "validation_scores_"):
+    #     # validation_scores_ are R^2 scores per epoch
+    #     val_loss = [1 - v for v in rf.validation_scores_]  # convert R^2 -> pseudo-loss
+    #     plt.plot(val_loss, label="Validation (1 - R2)")
 
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss / 1-R2")
-    plt.title("MLP Training and Validation Progress")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+    # plt.xlabel("Epoch")
+    # plt.ylabel("Loss / 1-R2")
+    # plt.title("MLP Training and Validation Progress")
+    # plt.legend()
+    # plt.grid(True)
+    # plt.show()
+
+    print(rf.feature_importances_)
 
     
     with open("random_forest_model.pkl", "wb") as f:

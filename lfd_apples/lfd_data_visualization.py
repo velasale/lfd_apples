@@ -279,7 +279,7 @@ def infer_actions():
 
     # Get the current script directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(script_dir, 'data', 'mlp_model_100_100.pkl')
+    model_path = os.path.join(script_dir, 'data', 'random_forest_model.pkl')
 
     # Load model
     with open(model_path, "rb") as f:
