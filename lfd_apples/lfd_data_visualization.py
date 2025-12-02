@@ -285,8 +285,8 @@ def infer_actions():
     with open(model_path, "rb") as f:
         rf_loaded = pickle.load(f)
 
-    # Load inputs
-    trial_number = '99' 
+    # Load inputs   62-113
+    trial_number = '92' 
 
     dir = '/media/alejo/IL_data/04_IL_learning/experiment_1_(pull)/phase_1_validation/'
     trial = 'trial_' + trial_number + '_downsampled_aligned_data_(phase_1_approach).csv'
