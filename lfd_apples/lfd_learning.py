@@ -7,6 +7,7 @@ from sklearn.metrics import mean_squared_error, r2_score
 import pickle
 from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import mean_squared_error, r2_score
+import matplotlib.pyplot as plt
 
 import pandas as pd
 import numpy as np
@@ -92,35 +93,52 @@ def main():
     X_train_norm, Y_train, X_val_norm, Y_val, mean, std = prepare_data(all_data, input_cols)
 
 
-    # # Classifier
-    # # Initialize regressor
-    # rf = RandomForestRegressor(
-    #     n_estimators=100,
-    #     warm_start=True,
-    #     n_jobs=-1,
-    #     verbose=2,
-    #     random_state=42
-    # )
-
-    # --- 2. Initialize MLP ---
-    mlp = MLPRegressor(
-        hidden_layer_sizes=(50, 50),  # two hidden layers with 50 neurons each
-        activation='relu',
-        solver='adam',
-        learning_rate='adaptive',
-        max_iter=1000,
-        early_stopping=True,
-        n_iter_no_change=50,
-        random_state=42,
-        verbose=True
+    # Classifier
+    # Initialize regressor
+    rf = RandomForestRegressor(
+        n_estimators=100,
+        warm_start=True,
+        n_jobs=-1,
+        verbose=2,
+        random_state=42
     )
 
-    rf = mlp
-  
+    # # --- 2. Initialize MLP ---
+    # mlp = MLPRegressor(
+    #     hidden_layer_sizes=(100, 100),  # two hidden layers with 50 neurons each
+    #     activation='relu',
+    #     solver='adam',
+    #     learning_rate='adaptive',
+    #     max_iter=1500,
+    #     early_stopping=True,
+    #     n_iter_no_change=50,
+    #     random_state=42,
+    #     verbose=True
+    # )
 
+    # rf = mlp
+  
+    
     # --- 4. Train ---
     rf.fit(X_train_norm, Y_train)
-    # Save
+
+    # --- Plot loss curve ---
+    plt.figure(figsize=(8,5))
+    plt.plot(rf.loss_curve_, label="Training Loss")
+
+    if hasattr(rf, "validation_scores_"):
+        # validation_scores_ are R^2 scores per epoch
+        val_loss = [1 - v for v in rf.validation_scores_]  # convert R^2 -> pseudo-loss
+        plt.plot(val_loss, label="Validation (1 - R2)")
+
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss / 1-R2")
+    plt.title("MLP Training and Validation Progress")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    
     with open("random_forest_model.pkl", "wb") as f:
         pickle.dump(rf, f)
 

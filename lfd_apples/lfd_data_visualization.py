@@ -279,14 +279,14 @@ def infer_actions():
 
     # Get the current script directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(script_dir, 'data', 'mlp_model_50_50.pkl')
+    model_path = os.path.join(script_dir, 'data', 'mlp_model_100_100.pkl')
 
     # Load model
     with open(model_path, "rb") as f:
         rf_loaded = pickle.load(f)
 
     # Load inputs
-    trial_number = '93' 
+    trial_number = '99' 
 
     dir = '/media/alejo/IL_data/04_IL_learning/experiment_1_(pull)/phase_1_validation/'
     trial = 'trial_' + trial_number + '_downsampled_aligned_data_(phase_1_approach).csv'
@@ -330,25 +330,31 @@ def infer_actions():
     output_video_path = os.path.join(DESTINATION_PATH, 'trial_' + trial_number + '_predictions.mp4')
     combine_inhand_camera_and_actions('trial_' + trial_number, images_folder, csv_path, output_video_path)
 
-    # Plot Ground Truth vs Predictions
-    fig = plt.figure()
-    plt.plot(df['timestamp_vector'], groundtruth_delta_x, label='Ground Truth')
-    plt.plot(df['timestamp_vector'],df["delta_pos_x"], label='Predictions')
-    plt.title('EEF linear velocity x-axis')
-    plt.legend()
+    fig, axs = plt.subplots(3, 1, figsize=(6, 8), sharex=True)
 
-    fig = plt.figure()
-    plt.plot(df['timestamp_vector'], groundtruth_delta_y, label='Ground Truth')
-    plt.plot(df['timestamp_vector'], df["delta_pos_y"], label='Predictions')
-    plt.title('EEF linear velocity y-axis')
-    plt.legend()
+    # Row 1: X-axis
+    axs[0].plot(df['timestamp_vector'], groundtruth_delta_x, label='Ground Truth')
+    axs[0].plot(df['timestamp_vector'], df['delta_pos_x'], label='Predictions')
+    axs[0].set_title('EEF linear velocity x-axis')
+    axs[0].legend()
+    axs[0].grid(True)
 
-    fig = plt.figure()
-    plt.plot(df['timestamp_vector'], groundtruth_delta_z, label='Ground Truth')
-    plt.plot(df['timestamp_vector'], df["delta_pos_z"], label='Predictions')
-    plt.title('EEF linear velocity z-axis')
-    plt.legend()
+    # Row 2: Y-axis
+    axs[1].plot(df['timestamp_vector'], groundtruth_delta_y, label='Ground Truth')
+    axs[1].plot(df['timestamp_vector'], df['delta_pos_y'], label='Predictions')
+    axs[1].set_title('EEF linear velocity y-axis')
+    axs[1].legend()
+    axs[1].grid(True)
 
+    # Row 3: Z-axis
+    axs[2].plot(df['timestamp_vector'], groundtruth_delta_z, label='Ground Truth')
+    axs[2].plot(df['timestamp_vector'], df['delta_pos_z'], label='Predictions')
+    axs[2].set_title('EEF linear velocity z-axis')
+    axs[2].legend()
+    axs[2].grid(True)
+
+    plt.xlabel("Timestamp")
+    plt.tight_layout()
     plt.show()
 
    
