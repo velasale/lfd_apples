@@ -6,6 +6,8 @@ import numpy as np
 from pathlib import Path
 import platform
 from scipy.spatial.transform import Rotation as R
+import pickle
+import matplotlib.pyplot as plt
 
 def get_paths(trial_num="trial_1"):
     # Detect OS and set IL_data base directory
@@ -240,7 +242,7 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
         cx, cy = width // 2, height // 2        # Center of image
         margin = 80
         # Scale vector to be visible
-        scale = 400
+        scale = 600
 
         draw_crosshair(img, cx, cy)
         draw_vector_arrow(img, (cx, cy), (cx + int(v_x_cam * scale), cy), (0, 0, 255))  # Vx
@@ -267,15 +269,77 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
             (255, 255, 255),  # white text
             1
         )
-
         video.write(img)
 
     video.release()
     print("Video saved:", output_video_path)
 
+
+def infer_actions():
+
+    # Get the current script directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    model_path = os.path.join(script_dir, 'data', 'random_forest_model.pkl')
+
+    # Load model
+    with open(model_path, "rb") as f:
+        rf_loaded = pickle.load(f)
+
+    # Load inputs
+    dir = '/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_1_approach/'
+    trial = 'trial_1_downsampled_aligned_data_(phase_1_approach).csv'
+    filepath = os.path.join(dir, trial)
+    df = pd.read_csv(filepath)
+
+    groundtruth_delta_x = df['delta_pos_x'].values
+
+    
+    #  Names of the columns you dropped (ground truth)
+    output_cols = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z', 'delta_ori_w']
+    # delete ground truth (last seven columns)
+    df_just_inputs = df.drop(columns=['timestamp_vector'] + output_cols)
+    arr = df_just_inputs.to_numpy()
+
+    # --- 2. Load normalization stats (mean/std) if you saved them ---
+    mean = np.load(os.path.join(script_dir, "data", "mean.npy"))
+    std = np.load(os.path.join(script_dir, "data", "std.npy"))
+    X_new_norm = (arr - mean) / std
+
+    # Infere output
+    Y_predictions = rf_loaded.predict(X_new_norm)
+
+    # --- 4. Assign predictions back to original dataframe ---
+    for i, col in enumerate(output_cols):
+        df[col] = Y_predictions[:, i]
+    
+    # --- 5. Optionally, save to a new CSV ---
+    DESTINATION_PATH = '/media/alejo/IL_data/04_IL_preprocessed/experiment_1_(pull)/phase_1_approach/'
+    os.makedirs(DESTINATION_PATH, exist_ok=True)
+    output_path = os.path.join(DESTINATION_PATH, "trial_1_predictions.csv")
+    df.to_csv(output_path, index=False)
+
+    # Create video to compare
+    # Visualize Inhand Camera and Ground Truth Actions
+    images_folder = '/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_1/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw'
+    csv_path = output_path
+    output_video_path = os.path.join(DESTINATION_PATH, "trial_1_predictions.mp4")
+    combine_inhand_camera_and_actions('trial_1', images_folder, csv_path, output_video_path)
+
+    # Plot Ground Truth vs Predictions
+    plt.plot(groundtruth_delta_x, label='Ground Truth')
+    plt.plot(df["delta_pos_x"], label='Predictions')
+    plt.legend()
+    plt.show()
+
+
+
+    
+
+
 def main():
 
-    folder = r"D:\03_IL_preprocessed\experiment_1_(pull)\phase_1_approach"
+    # folder = r"D:\03_IL_preprocessed\experiment_1_(pull)\phase_1_approach"
+    folder = '/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_1_approach'
     trials = [f for f in os.listdir(folder) if f.endswith(".csv")]
 
     for trial in trials:
@@ -290,4 +354,6 @@ def main():
 
 if __name__ == '__main__':
 
-    main()
+    # main()
+
+    infer_actions()
