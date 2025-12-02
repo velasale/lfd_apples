@@ -7,7 +7,7 @@
 *.idea
 *.xlsx
 *.avi
-*.pkl
+lfd_apples/data/*.pkl
 
 # Cache#
 **/__pycache__/
