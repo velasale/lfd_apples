@@ -279,19 +279,23 @@ def infer_actions():
 
     # Get the current script directory
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(script_dir, 'data', 'random_forest_model.pkl')
+    model_path = os.path.join(script_dir, 'data', 'mlp_model_50_50.pkl')
 
     # Load model
     with open(model_path, "rb") as f:
         rf_loaded = pickle.load(f)
 
     # Load inputs
-    dir = '/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_1_approach/'
-    trial = 'trial_1_downsampled_aligned_data_(phase_1_approach).csv'
+    trial_number = '93' 
+
+    dir = '/media/alejo/IL_data/04_IL_learning/experiment_1_(pull)/phase_1_validation/'
+    trial = 'trial_' + trial_number + '_downsampled_aligned_data_(phase_1_approach).csv'
     filepath = os.path.join(dir, trial)
     df = pd.read_csv(filepath)
 
     groundtruth_delta_x = df['delta_pos_x'].values
+    groundtruth_delta_y = df['delta_pos_y'].values
+    groundtruth_delta_z = df['delta_pos_z'].values
 
     
     #  Names of the columns you dropped (ground truth)
@@ -313,27 +317,41 @@ def infer_actions():
         df[col] = Y_predictions[:, i]
     
     # --- 5. Optionally, save to a new CSV ---
-    DESTINATION_PATH = '/media/alejo/IL_data/04_IL_preprocessed/experiment_1_(pull)/phase_1_approach/'
+    DESTINATION_PATH = '/media/alejo/IL_data/04_IL_learning/experiment_1_(pull)/phase_1_predictions/'
     os.makedirs(DESTINATION_PATH, exist_ok=True)
-    output_path = os.path.join(DESTINATION_PATH, "trial_1_predictions.csv")
+    output_path = os.path.join(DESTINATION_PATH, 'trial_' + trial_number + '_predictions.csv')
     df.to_csv(output_path, index=False)
+
 
     # Create video to compare
     # Visualize Inhand Camera and Ground Truth Actions
-    images_folder = '/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_1/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw'
+    images_folder = '/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_' + trial_number + '/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw'
     csv_path = output_path
-    output_video_path = os.path.join(DESTINATION_PATH, "trial_1_predictions.mp4")
-    combine_inhand_camera_and_actions('trial_1', images_folder, csv_path, output_video_path)
+    output_video_path = os.path.join(DESTINATION_PATH, 'trial_' + trial_number + '_predictions.mp4')
+    combine_inhand_camera_and_actions('trial_' + trial_number, images_folder, csv_path, output_video_path)
 
     # Plot Ground Truth vs Predictions
-    plt.plot(groundtruth_delta_x, label='Ground Truth')
-    plt.plot(df["delta_pos_x"], label='Predictions')
+    fig = plt.figure()
+    plt.plot(df['timestamp_vector'], groundtruth_delta_x, label='Ground Truth')
+    plt.plot(df['timestamp_vector'],df["delta_pos_x"], label='Predictions')
+    plt.title('EEF linear velocity x-axis')
     plt.legend()
+
+    fig = plt.figure()
+    plt.plot(df['timestamp_vector'], groundtruth_delta_y, label='Ground Truth')
+    plt.plot(df['timestamp_vector'], df["delta_pos_y"], label='Predictions')
+    plt.title('EEF linear velocity y-axis')
+    plt.legend()
+
+    fig = plt.figure()
+    plt.plot(df['timestamp_vector'], groundtruth_delta_z, label='Ground Truth')
+    plt.plot(df['timestamp_vector'], df["delta_pos_z"], label='Predictions')
+    plt.title('EEF linear velocity z-axis')
+    plt.legend()
+
     plt.show()
 
-
-
-    
+   
 
 
 def main():
