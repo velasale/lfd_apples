@@ -13,8 +13,8 @@ import json
 
 from tqdm import tqdm
 
-# from rclpy.serialization import deserialize_message
-# from rosidl_runtime_py.utilities import get_message
+from rclpy.serialization import deserialize_message
+from rosidl_runtime_py.utilities import get_message
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D 
