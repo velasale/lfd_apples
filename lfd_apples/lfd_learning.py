@@ -5,6 +5,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 import pickle
+from sklearn.neural_network import MLPRegressor
+from sklearn.metrics import mean_squared_error, r2_score
 
 import pandas as pd
 import numpy as np
@@ -78,7 +80,7 @@ def prepare_data(all_data, n_input_cols):
 def main():
 
     # Load data
-    BASE_PATH = '/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_1_approach'
+    BASE_PATH = '/media/alejo/IL_data/04_IL_learning/experiment_1_(pull)/phase_1_approach'
     all_data = load_data(BASE_PATH)
     
     cols = all_data.shape[1]
@@ -90,15 +92,30 @@ def main():
     X_train_norm, Y_train, X_val_norm, Y_val, mean, std = prepare_data(all_data, input_cols)
 
 
-    # Classifier
-    # Initialize regressor
-    rf = RandomForestRegressor(
-        n_estimators=100,
-        warm_start=True,
-        n_jobs=-1,
-        verbose=2,
-        random_state=42
+    # # Classifier
+    # # Initialize regressor
+    # rf = RandomForestRegressor(
+    #     n_estimators=100,
+    #     warm_start=True,
+    #     n_jobs=-1,
+    #     verbose=2,
+    #     random_state=42
+    # )
+
+    # --- 2. Initialize MLP ---
+    mlp = MLPRegressor(
+        hidden_layer_sizes=(50, 50),  # two hidden layers with 50 neurons each
+        activation='relu',
+        solver='adam',
+        learning_rate='adaptive',
+        max_iter=1000,
+        early_stopping=True,
+        n_iter_no_change=50,
+        random_state=42,
+        verbose=True
     )
+
+    rf = mlp
   
 
     # --- 4. Train ---
