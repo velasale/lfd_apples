@@ -245,6 +245,60 @@ def count_apple_proxy_variations(json_files):
         print(f"Stiffness Scale {scale}: {count} ({pct:.1f}%)")
 
 
+def count_results(json_files):
+
+    # Open reference apple_proxy.json to get all possible variations
+    with open("lfd_apples/data/apple_proxy.json", "r") as ap_prox:
+        reference_data = json.load(ap_prox)
+    spurs_ref = reference_data.get("spurs", {})
+    apples_ref = reference_data.get("apples", {})
+
+    approach_success_counter = Counter()
+    grasp_success_counter = Counter()
+    pick_success_counter = Counter()
+    disposal_success_counter = Counter()
+
+    total_trials = 0
+
+    for json_path in tqdm(json_files, desc="Processing trials"):
+        try:
+            with open(json_path, "r") as f:
+                data = json.load(f)
+
+            approach = data.get("results").get("success_approach")
+            grasp = data.get("results").get("success_grasp")
+            pick = data.get("results").get("success_pick")
+            disposal = data.get("results").get("success_disposal")
+
+            approach_success_counter[approach] += 1 
+            grasp_success_counter[grasp] += 1 
+            pick_success_counter[pick] += 1 
+            disposal_success_counter[disposal] += 1 
+
+            total_trials += 1
+
+        except Exception as e:
+            print(f"Error reading {json_path}: {e}")
+
+
+    print("\n=== Trials Counts ===: ", total_trials)
+    for approach, count in sorted(approach_success_counter.items(), key=lambda x: int(x[0])):
+        pct = (count / total_trials) * 100 if total_trials > 0 else 0
+        print(f"Approach {approach}: {count} ({pct:.1f}%)")
+    print("\n====================")
+    for grasp, count in sorted(grasp_success_counter.items(), key=lambda x: x[0]):
+        pct = (count / total_trials) * 100 if total_trials > 0 else 0
+        print(f"Grasp {grasp}: {count} ({pct:.1f}%)")   
+    print("\n====================")
+    for pick, count in sorted(pick_success_counter.items(), key=lambda x: x[0]):
+        pct = (count / total_trials) * 100 if total_trials > 0 else 0
+        print(f"Pick {pick}: {count} ({pct:.1f}%)")
+    print("\n====================")
+    for disposal, count in sorted(disposal_success_counter.items(), key=lambda x: x[0]):
+        pct = (count / total_trials) * 100 if total_trials > 0 else 0
+        print(f"Disposal {disposal}: {count} ({pct:.1f}%)")
+
+
 def read_comments(json_files):
     # --------------------------------------
     # STEP 3 — read comments from JSON files
@@ -272,7 +326,6 @@ def read_comments(json_files):
 
 
 
-
 def main():
 
     # Path to your main directory
@@ -289,9 +342,10 @@ def main():
     # Combine both lists
     json_files = json_files_sd1 + json_files_sd2 + json_files_sd3
 
-    complete_json_file(json_files)
-    count_apple_proxy_variations(json_files)
+    # complete_json_file(json_files)
+    # count_apple_proxy_variations(json_files)
     # read_comments(json_files)
+    count_results(json_files)
 
 
 
