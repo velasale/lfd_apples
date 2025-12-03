@@ -7,15 +7,50 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-# from lfd_vision import extract_pooled_latent_vector
-# from ultralytics import YOLO
-# import cv2
+from lfd_vision import extract_pooled_latent_vector
+from ultralytics import YOLO
+import cv2
 
 from scipy.ndimage import gaussian_filter, median_filter, gaussian_filter1d
 
 from ros2bag2csv import plot_pressure
 from pathlib import Path
 
+
+# ====================== Handy functions =======================
+def rename_folder(SOURCE_PATH, start_index=100):
+    """ Rename trials"""
+
+    # Sort by time of creation
+    trials = sorted(
+        [trial for trial in os.listdir(SOURCE_PATH) if os.path.isdir(os.path.join(SOURCE_PATH, trial))],
+        key=lambda x: os.path.getctime(os.path.join(SOURCE_PATH, x))
+    )
+
+    for trial in trials:
+
+        subfolder_old_name = trial
+        subfolder_new_name = "trial_" + str(start_index)
+        print(subfolder_old_name, subfolder_new_name)
+
+        OLD_PATH = os.path.join(SOURCE_PATH, subfolder_old_name)
+        NEW_PATH = os.path.join(SOURCE_PATH, subfolder_new_name)
+
+        for item in os.listdir(os.path.join(SOURCE_PATH, trial)):
+            if item.endswith("json"):
+                metadata_old_name = item
+
+        # Rename metadata json file
+        metadata_new_name = "metadata_trial_" + str(start_index) + ".json"
+        METADATA_OLD_PATH = os.path.join(OLD_PATH, metadata_old_name)
+        METADATA_NEW_PATH = os.path.join(OLD_PATH, metadata_new_name)
+
+        # Rename file and subfolder
+        print('Be cautious about using this method')
+        # os.rename(METADATA_OLD_PATH, METADATA_NEW_PATH)
+        # os.rename(OLD_PATH, NEW_PATH)
+
+        start_index += 1
 
 
 def interpolate_to_reference_multi(df_values, df_ref, ts_col_values, ts_col_ref, method="linear"):
@@ -57,6 +92,7 @@ def parse_array_string(s):
     return None
 
 
+# ============ Topic-specific downsampling functions ===========
 def downsample_pressure_and_tof_data(df, raw_data_path, compare_plots=True):
     
     df_raw = pd.read_csv(raw_data_path)    
@@ -260,6 +296,7 @@ def get_timestamp_vector_from_images(image_folder_path):
     return timestamps
 
 
+# =================== Action Space derivation ===================
 def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_plots=True):
     """ Applies a gaussian filter, Derive actions based on end-effector pose changes over time, and downsamples. 
     Actions are computed as differences in position and orientation over time.
@@ -318,45 +355,7 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_
     return df_downsampled
 
 
-def estimate_robot_ee_pose():
-    pass
-
-
-def rename_folder(SOURCE_PATH, start_index=100):
-    """ Rename trials"""
-
-    # Sort by time of creation
-    trials = sorted(
-        [trial for trial in os.listdir(SOURCE_PATH) if os.path.isdir(os.path.join(SOURCE_PATH, trial))],
-        key=lambda x: os.path.getctime(os.path.join(SOURCE_PATH, x))
-    )
-
-    for trial in trials:
-
-        subfolder_old_name = trial
-        subfolder_new_name = "trial_" + str(start_index)
-        print(subfolder_old_name, subfolder_new_name)
-
-        OLD_PATH = os.path.join(SOURCE_PATH, subfolder_old_name)
-        NEW_PATH = os.path.join(SOURCE_PATH, subfolder_new_name)
-
-        for item in os.listdir(os.path.join(SOURCE_PATH, trial)):
-            if item.endswith("json"):
-                metadata_old_name = item
-
-        # Rename metadata json file
-        metadata_new_name = "metadata_trial_" + str(start_index) + ".json"
-        METADATA_OLD_PATH = os.path.join(OLD_PATH, metadata_old_name)
-        METADATA_NEW_PATH = os.path.join(OLD_PATH, metadata_new_name)
-
-        # Rename file and subfolder
-        print('Be cautious about using this method')
-        # os.rename(METADATA_OLD_PATH, METADATA_NEW_PATH)
-        # os.rename(OLD_PATH, NEW_PATH)
-
-        start_index += 1
-
-
+# =============== Crop functions for each Phase =================
 def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
 
     tof_values = df['tof'].values
@@ -403,8 +402,7 @@ def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
     return idx_phase_1_end
 
 
-# --- Main stages of preprocessing ---  
-
+# ================ Main stages of data preprocessing ============
 def stage_1_align_and_downsample():
 
     # ---------- Step 1: Load raw data ----------
@@ -668,11 +666,13 @@ def stage_3_fix_hw_issues():
           f'Trials with faulty scC data: {faulty_trials_scC}\n')
 
 
+
+
 if __name__ == '__main__':
 
-    # stage_1_align_and_downsample()
+    stage_1_align_and_downsample()
 
-    stage_2_crop_data_to_task_phases()
+    # stage_2_crop_data_to_task_phases()
 
       
     # SOURCE_PATH = '/media/alejo/New Volume/01_IL_bagfiles/experiment_4'
