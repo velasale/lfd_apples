@@ -63,7 +63,17 @@
             "stem-side magnet": "medium",
             "branch-side magnet": "strong",
             "stiffness-scale": 4
+        },
+        "id_8":{
+            "material": "TPU",
+            "diameter": "6 mm",
+            "length": "20 mm",
+            "total length": "47 mm",
+            "stem-side magnet": "low",
+            "branch-side magnet": "strong",
+            "stiffness-scale": 3
         }
+
 
     },    
     
@@ -94,6 +104,13 @@
             "diameter": "80 mm",
             "height": "70 mm",
             "mass": "252 g",
+            "stem magnet": "low"
+        },
+        "id_5":{
+            "color": "red",
+            "diameter": "77 mm",
+            "height": "60 - 68 mm",
+            "mass": "254 g",
             "stem magnet": "low"
         }
     },
