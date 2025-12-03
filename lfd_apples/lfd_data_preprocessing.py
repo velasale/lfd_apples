@@ -524,7 +524,11 @@ def stage_2_crop_data_to_task_phases():
     inhand_cam_feature_cols = [f"f{i}" for i in range(1,128)]  # assuming 128 features
 
     # Columns to keep per phase
-    phase_1_approach_cols = tof_cols + inhand_cam_feature_cols + ee_pose_cols + joint_states_cols + action_cols
+    phase_1_approach_cols = tof_cols + \
+                            inhand_cam_feature_cols + \
+                            ee_pose_cols + action_cols
+                            # joint_states_cols + \
+                            # action_cols
     phase_2_contact_cols = tof_cols + air_pressure_cols + ee_pose_cols + joint_states_cols + wrench_cols + action_cols
     phase_3_pick_cols = ee_pose_cols + joint_states_cols + wrench_cols + action_cols
     phase_4_disposal_cols = tof_cols + air_pressure_cols + ee_pose_cols + joint_states_cols + wrench_cols + action_cols
@@ -599,8 +603,6 @@ def stage_2_crop_data_to_task_phases():
     print('\n----Trials with multiple contacts:----')
     for trial in trials_with_multiple_contacts:
         print(trial)
-
-
 
 
 def stage_3_fix_hw_issues():
