@@ -228,7 +228,7 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
         total_v_z = v_camera[2]
 
         # Rotation angle in degrees
-        angle_deg = 55
+        angle_deg = 90 #45      # 90
         angle_rad = np.radians(angle_deg)
 
         # Transform vector
@@ -246,8 +246,8 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
 
         draw_crosshair(img, cx, cy)
         draw_vector_arrow(img, (cx, cy), (cx + int(v_x_cam * scale), cy), (0, 0, 255))  # Vx
-        draw_vector_arrow(img, (cx, cy), (cx, cy + int(v_y_cam * scale)), (0, 255, 0))  # Vy
-        draw_vector_arrow(img, (cx, cy), (cx + int(v_x_cam * scale), cy + int(v_y_cam * scale)), (0, 255, 255))  # Resultant
+        draw_vector_arrow(img, (cx, cy), (cx, cy - int(v_y_cam * scale)), (0, 255, 0))  # Vy
+        draw_vector_arrow(img, (cx, cy), (cx + int(v_x_cam * scale), cy - int(v_y_cam * scale)), (0, 255, 255))  # Resultant
         # Center dot
         cv2.circle(img, (margin, margin), 3, (255, 255, 255), -1)
         draw_vector_arrow(img, (margin, margin), (margin + int(total_v_z * scale), margin), (255, 0, 0))  # Vz
@@ -378,6 +378,6 @@ def main():
 
 if __name__ == '__main__':
 
-    # main()
+    main()
 
-    infer_actions()
+    # infer_actions()
