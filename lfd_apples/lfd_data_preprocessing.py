@@ -407,13 +407,13 @@ def stage_1_align_and_downsample():
 
     # ---------- Step 1: Load raw data ----------
     # MAIN_DIR = os.path.join("D:")                                   # windows OS
-    MAIN_DIR = os.path.join('/media', 'alejo', 'New Volume')        # ubuntu OS
-    SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")
-    EXPERIMENT = "experiment_4"
-    # EXPERIMENT = "only_human_demos/with_palm_cam"   
+    MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')        # ubuntu OS
+    SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
+    # EXPERIMENT = "experiment_1_(pull)"
+    EXPERIMENT = "only_human_demos/with_palm_cam"   
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
 
-    demonstrator = "robot"  # "human" or "robot"
+    demonstrator = ""  # "human" or "robot"
     FIXED_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
     INHAND_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
     ARM_SUBDIR = os.path.join(demonstrator, "lfd_bag_main", "bag_csvs")
@@ -422,7 +422,6 @@ def stage_1_align_and_downsample():
     # Destination path
     MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')  
     DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_preprocessed")    
-    EXPERIMENT = "experiment_1_(pull)"    
     DESTINATION_PATH = os.path.join(DESTINATION_DIR, EXPERIMENT)
         
     
@@ -434,7 +433,9 @@ def stage_1_align_and_downsample():
         key=lambda x: int(x.split("_")[-1])
         )
     
-    start_index = trials_sorted.index("trial_305")
+    # Type trial number in case you want to start from that one
+    start_index = trials_sorted.index("trial_10045")
+    # start_index = 0
     
 
     # ---------- Step 2: Loop through all trials ----------
@@ -524,13 +525,24 @@ def stage_2_crop_data_to_task_phases():
     # Columns to keep per phase
     phase_1_approach_cols = tof_cols + \
                             inhand_cam_feature_cols + \
-                            ee_pose_cols + action_cols
-                            # joint_states_cols + \
-                            # action_cols
-    phase_2_contact_cols = tof_cols + air_pressure_cols + ee_pose_cols + joint_states_cols + wrench_cols + action_cols
-    phase_3_pick_cols = ee_pose_cols + joint_states_cols + wrench_cols + action_cols
-    phase_4_disposal_cols = tof_cols + air_pressure_cols + ee_pose_cols + joint_states_cols + wrench_cols + action_cols
-
+                            ee_pose_cols + \
+                            action_cols
+                            
+    phase_2_contact_cols = tof_cols + \
+                           air_pressure_cols + \
+                           ee_pose_cols + \
+                           wrench_cols + \
+                           action_cols
+    
+    phase_3_pick_cols = ee_pose_cols + \
+                        wrench_cols + \
+                        action_cols
+    
+    phase_4_disposal_cols = tof_cols + \
+                            air_pressure_cols + \
+                            ee_pose_cols + \
+                            wrench_cols + \
+                            action_cols
 
     # --- Step 2: Define Data Source and Destination paths ----
     if platform.system() == "Windows":
@@ -673,7 +685,6 @@ if __name__ == '__main__':
     stage_1_align_and_downsample()
 
     # stage_2_crop_data_to_task_phases()
-
       
-    # SOURCE_PATH = '/media/alejo/New Volume/01_IL_bagfiles/experiment_4'
-    # rename_folder(SOURCE_PATH, 237)
+    # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
+    # rename_folder(SOURCE_PATH, 10000)

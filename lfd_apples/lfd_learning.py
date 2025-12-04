@@ -77,6 +77,14 @@ def prepare_data(all_data, n_input_cols):
     return X_train_norm, Y_train, X_val_norm, Y_val, mean, std
 
 
+def short_time_memory(all_data, n_iput_cols):
+
+    data = all_data.copy()
+
+    short_time_memory_data = data
+
+    return short_time_memory_data
+
 
 def main():
 
@@ -85,12 +93,15 @@ def main():
     all_data = load_data(BASE_PATH)
     
     cols = all_data.shape[1]
-    output_cols = 7
+    output_cols = 7             # These are the action columns
     input_cols = cols - output_cols
 
-    # Normalized data
-    n_input_cols = 10  # number of feature columns
-    X_train_norm, Y_train, X_val_norm, Y_val, mean, std = prepare_data(all_data, input_cols)
+    # Play with the number of time-stamps (t), (t-1), (t-2), ... per data input
+    short_time_memory_data = short_time_memory(all_data, input_cols)
+
+    # Normalize data
+    X_train_norm, Y_train, X_val_norm, Y_val, mean, std = prepare_data(short_time_memory_data, input_cols)
+  
 
 
     # Classifier
