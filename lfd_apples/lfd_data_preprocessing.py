@@ -479,7 +479,13 @@ def stage_1_align_and_downsample():
         df_dfs_6 = derive_actions_from_ee_pose(df, raw_ee_pose_path, compare_plots)
         
         # Combine all downsampled data (STATES AND ACTIONS) into a single DataFrame
-        df_ds_all = [df_ds_1, df_ds_2, df_ds_3, df_ds_4, df_ds_5, df_dfs_6]
+        df_ds_all = [df_ds_1, 
+                     df_ds_2, 
+                     df_ds_3,
+                     df_ds_4,
+                     df_ds_5,
+                     df_dfs_6]
+        
         dfs_trimmed = [df_ds_all[0]] + [df.iloc[:, 1:] for df in df_ds_all[1:]]  
         combined_df = pd.concat(dfs_trimmed, axis=1)
 
