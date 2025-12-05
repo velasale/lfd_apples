@@ -556,10 +556,11 @@ def stage_2_crop_data_to_task_phases():
         DESTINATION_PATH = Path(r"D:\03_IL_preprocessed\experiment_1_(pull)")
     else:
         SOURCE_PATH = Path("/media/alejo/IL_data/02_IL_preprocessed/experiment_1_(pull)")
-        DESTINATION_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)")
+        DESTINATION_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)")      
 
     trials = [f for f in os.listdir(SOURCE_PATH)
-             if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]
+             if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
+    
 
     os.makedirs(DESTINATION_PATH, exist_ok=True)
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick', 'phase_4_disposal']
@@ -611,6 +612,45 @@ def stage_2_crop_data_to_task_phases():
         # df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
         # df_phase_3.to_csv(os.path.join(DESTINATION_PATH, 'phase_3_pick', f"{base_filename}_(phase_3_pick).csv"), index=False)
         # df_phase_4.to_csv(os.path.join(DESTINATION_PATH, 'phase_4_disposal', f"{base_filename}_(phase_4_disposal).csv"), index=False)
+
+
+    # ========= ONLY HUMAN DEMOS: USEFUL FOR APPROACH PHASE ==========
+    # Reason: Approach phase deosn't need the wrench topics
+
+    if platform.system() == "Windows":
+        SOURCE_PATH_ONLY_APPROACH = Path(r"D:\02_IL_preprocessed\only_human_demos/with_palm_cam")
+    else:
+        SOURCE_PATH_ONLY_APPROACH = Path("/media/alejo/IL_data/02_IL_preprocessed/only_human_demos/with_palm_cam")
+
+    only_human_trials = [f for f in os.listdir(SOURCE_PATH_ONLY_APPROACH) 
+                         if os.path.isfile(os.path.join(SOURCE_PATH_ONLY_APPROACH, f)) and f.endswith(".csv")]   
+    
+    for trial in only_human_trials:
+
+        print(f'\nONLY HUMAN TRIALS - Cropping {trial} into approach phase...')
+
+        df = pd.read_csv(os.path.join(SOURCE_PATH_ONLY_APPROACH, trial))        
+                
+        # ------------------------ First: Define cropping indices --------------------------
+        # End of phase 1: defined by tof < 5cm (contact)        
+        idx_phase_1_end = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
+        if idx_phase_1_end is None:
+            trials_without_contact.append(trial)
+            continue  # Skip cropping for this trial
+        elif idx_phase_1_end == "Multiple":
+            trials_with_multiple_contacts.append(trial)
+            continue
+               
+
+        # ------------------------- Second: Crop data for each phase -----------------------
+        df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]
+
+        # Save cropped data to CSV files
+        base_filename = os.path.splitext(trial)[0]
+        df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
+
+
+
 
     print('\n----Trials without contact:----')
     for trial in trials_without_contact:
@@ -688,9 +728,9 @@ def stage_3_fix_hw_issues():
 
 if __name__ == '__main__':
 
-    stage_1_align_and_downsample()
+    # stage_1_align_and_downsample()
 
-    # stage_2_crop_data_to_task_phases()
+    stage_2_crop_data_to_task_phases()
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
