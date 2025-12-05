@@ -15,6 +15,8 @@ from scipy.ndimage import gaussian_filter, median_filter, gaussian_filter1d
 
 from ros2bag2csv import plot_pressure
 from pathlib import Path
+import yaml
+from pathlib import Path
 
 
 # ====================== Handy functions =======================
@@ -90,6 +92,27 @@ def parse_array_string(s):
         inner = "[" + match.group(1) + "]"
         return ast.literal_eval(inner)
     return None
+
+
+def get_phase_columns(phase_name):
+
+    data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+
+    with open(data_columns_path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    
+    # In hand Camera Feature count
+    out = {}
+    for key, val in cfg.items():
+        if isinstance(val, dict) and "prefix" in val:
+            out[key] = [f"{val['prefix']}{i}" for i in range(1, val["count"] + 1)]
+        else:
+            out[key] = val
+    
+
+    groups = cfg["phases"][phase_name]
+    return [col for group in groups for col in out[group]]
 
 
 # ============ Topic-specific downsampling functions ===========
@@ -512,43 +535,8 @@ def stage_1_align_and_downsample():
 
 def stage_2_crop_data_to_task_phases():
 
-    # --- Step 1: Define the columns for each harvesting phase ---
-    # Action space columns
-    action_cols = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z', 'delta_ori_w']
-
-    # State space columns
-    air_pressure_cols = ['scA', 'scB', 'scC']
-    tof_cols = ['tof']
-    wrench_cols = ['_wrench._force._x', '_wrench._force._y', '_wrench._force._z',
-                   '_wrench._torque._x', '_wrench._torque._y', '_wrench._torque._z']
-    ee_pose_cols = ['_pose._position._x', '_pose._position._y', '_pose._position._z',
-                    '_pose._orientation._x', '_pose._orientation._y', '_pose._orientation._z', '_pose._orientation._w']
-    joint_states_cols = ['pos_joint_1', 'pos_joint_2', 'pos_joint_3', 'pos_joint_4', 'pos_joint_5', 'pos_joint_6', 'pos_joint_7',
-                         'vel_joint_1', 'vel_joint_2', 'vel_joint_3', 'vel_joint_4', 'vel_joint_5', 'vel_joint_6', 'vel_joint_7',
-                         'eff_joint_1', 'eff_joint_2', 'eff_joint_3', 'eff_joint_4', 'eff_joint_5', 'eff_joint_6', 'eff_joint_7']  
-    inhand_cam_feature_cols = [f"f{i}" for i in range(1,128)]  # assuming 128 features
-
-    # Columns to keep per phase
-    phase_1_approach_cols = tof_cols + \
-                            inhand_cam_feature_cols + \
-                            ee_pose_cols + \
-                            action_cols
-                            
-    phase_2_contact_cols = tof_cols + \
-                           air_pressure_cols + \
-                           ee_pose_cols + \
-                           wrench_cols + \
-                           action_cols
-    
-    phase_3_pick_cols = ee_pose_cols + \
-                        wrench_cols + \
-                        action_cols
-    
-    phase_4_disposal_cols = tof_cols + \
-                            air_pressure_cols + \
-                            ee_pose_cols + \
-                            wrench_cols + \
-                            action_cols
+    # --- Step 1: Define data columns for each phase ---
+    phase_1_approach_cols = get_phase_columns("phase_1_approach")
 
     # --- Step 2: Define Data Source and Destination paths ----
     if platform.system() == "Windows":

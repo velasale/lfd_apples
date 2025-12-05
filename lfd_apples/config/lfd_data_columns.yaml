@@ -1,0 +1,93 @@
+# Action and state space columns used in all harvesting phases
+
+action_cols:
+  - delta_pos_x
+  - delta_pos_y
+  - delta_pos_z
+  - delta_ori_x
+  - delta_ori_y
+  - delta_ori_z
+  - delta_ori_w
+
+air_pressure_cols:
+  - scA
+  - scB
+  - scC
+
+tof_cols:
+  - tof
+
+wrench_cols:
+  - _wrench._force._x
+  - _wrench._force._y
+  - _wrench._force._z
+  - _wrench._torque._x
+  - _wrench._torque._y
+  - _wrench._torque._z
+
+ee_pose_cols:
+  - _pose._position._x
+  - _pose._position._y
+  - _pose._position._z
+  - _pose._orientation._x
+  - _pose._orientation._y
+  - _pose._orientation._z
+  - _pose._orientation._w
+
+joint_states_cols:
+  pos:
+    - pos_joint_1
+    - pos_joint_2
+    - pos_joint_3
+    - pos_joint_4
+    - pos_joint_5
+    - pos_joint_6
+    - pos_joint_7
+  vel:
+    - vel_joint_1
+    - vel_joint_2
+    - vel_joint_3
+    - vel_joint_4
+    - vel_joint_5
+    - vel_joint_6
+    - vel_joint_7
+  eff:
+    - eff_joint_1
+    - eff_joint_2
+    - eff_joint_3
+    - eff_joint_4
+    - eff_joint_5
+    - eff_joint_6
+    - eff_joint_7
+
+inhand_cam_feature_cols:
+  prefix: "f"
+  count: 127
+
+
+
+phases:
+  phase_1_approach:
+    - tof_cols
+    - inhand_cam_feature_cols
+    - ee_pose_cols
+    - action_cols
+
+  phase_2_contact:
+    - tof_cols
+    - air_pressure_cols
+    - ee_pose_cols
+    - wrench_cols
+    - action_cols
+
+  phase_3_pick:
+    - ee_pose_cols
+    - wrench_cols
+    - action_cols
+
+  phase_4_disposal:
+    - tof_cols
+    - air_pressure_cols
+    - ee_pose_cols
+    - wrench_cols
+    - action_cols
