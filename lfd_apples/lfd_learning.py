@@ -77,19 +77,11 @@ def prepare_data(all_data, n_input_cols):
     return X_train_norm, Y_train, X_val_norm, Y_val, mean, std
 
 
-def short_time_memory(all_data, n_iput_cols):
-
-    data = all_data.copy()
-
-    short_time_memory_data = data
-
-    return short_time_memory_data
-
 
 def main():
 
     # Load data
-    BASE_PATH = '/media/alejo/IL_data/04_IL_learning/experiment_1_(pull)/phase_1_approach'
+    BASE_PATH = '/media/alejo/IL_data/04_IL_preprocessed_memory/experiment_1_(pull)/phase_1_approach/0_timesteps'
     all_data = load_data(BASE_PATH)
     
     cols = all_data.shape[1]
@@ -97,10 +89,10 @@ def main():
     input_cols = cols - output_cols
 
     # Play with the number of time-stamps (t), (t-1), (t-2), ... per data input
-    short_time_memory_data = short_time_memory(all_data, input_cols)
+    # short_time_memory_data = short_time_memory(all_data, input_cols)
 
     # Normalize data
-    X_train_norm, Y_train, X_val_norm, Y_val, mean, std = prepare_data(short_time_memory_data, input_cols)
+    X_train_norm, Y_train, X_val_norm, Y_val, mean, std = prepare_data(all_data, input_cols)
   
 
 
