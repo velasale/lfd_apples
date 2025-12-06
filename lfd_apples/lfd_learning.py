@@ -81,7 +81,7 @@ def prepare_data(all_data, n_input_cols):
 def main():
 
     # Load data
-    BASE_PATH = '/media/alejo/IL_data/04_IL_preprocessed_memory/experiment_1_(pull)/phase_1_approach/0_timesteps'
+    BASE_PATH = '/media/alejo/IL_data/04_IL_preprocessed_memory/experiment_1_(pull)/phase_1_approach/1_timesteps'
     all_data = load_data(BASE_PATH)
     
     cols = all_data.shape[1]
@@ -99,7 +99,7 @@ def main():
     # Classifier
     # Initialize regressor
     rf = RandomForestRegressor(
-        n_estimators=100,
+        n_estimators=50,
         warm_start=True,
         n_jobs=-1,
         verbose=2,
@@ -141,7 +141,24 @@ def main():
     # plt.grid(True)
     # plt.show()
 
-    print(rf.feature_importances_)
+    # Review Feature Importance
+    # Create DataFrame with feature importances
+
+    df = pd.read_csv(os.path.join(BASE_PATH, 'trial_1_downsampled_aligned_data_(phase_1_approach)_(phase_1_approach)_(1_timesteps).csv'))
+    df = df.iloc[:, :-7]        # simply drop action columns
+    df = df.iloc[:, 1:]         # drop timevector column
+
+    feat_df = pd.DataFrame({
+        "feature": df.columns,                # column names from your data
+        "importance": rf.feature_importances_
+    })
+
+    # Sort by importance descending
+    feat_df = feat_df.sort_values(by="importance", ascending=False)
+
+    # Show top 10
+    top = feat_df.head(20)
+    print("\n\nTop 10 Features:\n", top, '\n\n')
 
     
     with open("random_forest_model.pkl", "wb") as f:
