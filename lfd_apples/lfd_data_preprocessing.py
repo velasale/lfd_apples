@@ -712,7 +712,8 @@ def stage_3_fix_hw_issues():
 
 def stage_4_short_time_memory(n_time_steps=0):
     """
-    Generates a Dataframe with short-term memory given the n_tim_steps
+    Generates a Dataframe with short-term memory given n_time_steps
+    (e.g. t-2, t-1, t)
     """
 
     # Data Source and Destination folders
@@ -745,7 +746,7 @@ def stage_4_short_time_memory(n_time_steps=0):
             df_time_step_ith = df.iloc[start_index: end_index]
             df_time_step_ith = df_time_step_ith.reset_index(drop=True)
 
-            # Rename columns of data frame with time step ith
+            # Rename columns of ith timestep dataframe
             if time_step > 0:
                 df_time_step_ith.columns = [col + f"_(t_{time_step})" for col in df_time_step_ith.columns]           
 
@@ -753,22 +754,14 @@ def stage_4_short_time_memory(n_time_steps=0):
             df_combined = pd.concat([df_time_step_ith, df_combined], axis=1)
             if time_step > 0:
                 df_combined = df_combined.drop(f"timestamp_vector_(t_{time_step})", axis=1)
-
         
         df_combined = df_combined[["timestamp_vector"] + [c for c in df_combined.columns if c != "timestamp_vector"]]
-
 
         # Save cropped data to CSV files
         base_filename = os.path.splitext(trial)[0]
         df_combined.to_csv(os.path.join(DESTINATION_PATH, f"{base_filename}_(phase_1_approach)_({n_time_steps}_timesteps).csv"), index=False)
 
-        
-        print(trial)
-
-
-
     
-
 if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
