@@ -399,7 +399,7 @@ def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
 
     if len(transition_indices) > 1:
 
-        return "Multiple"       # TODO remove this line
+        # return "Multiple"       # TODO remove this line
 
         plot_pressure(df, time_vector='timestamp_vector')
         print(f'Multiple contact points detected in {trial}, needs attention.')        
@@ -414,8 +414,6 @@ def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
         
         chosen_idx = int(user_input)
         idx_phase_1_end = transition_indices[chosen_idx]
-
-
     
                   
     if len(transition_indices) == 1:
@@ -712,13 +710,72 @@ def stage_3_fix_hw_issues():
           f'Trials with faulty scC data: {faulty_trials_scC}\n')
 
 
+def stage_4_short_time_memory(n_time_steps=0):
+    """
+    Generates a Dataframe with short-term memory given the n_tim_steps
+    """
 
+    # Data Source and Destination folders
+    if platform.system() == "Windows":
+        SOURCE_PATH = Path(r"D:\03_IL_preprocessed/experiment_1_(pull)/phase_1_approach")
+        DESTINATION_PATH = Path(r"D:\04_IL_preprocessed/experiment_1_(pull)/phase_1_approach")
+    else:
+        SOURCE_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_1_approach")
+        DESTINATION_PATH = Path("/media/alejo/IL_data/04_IL_preprocessed_memory/experiment_1_(pull)/phase_1_approach")         
+
+    trials = [f for f in os.listdir(SOURCE_PATH)
+             if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
+    
+    DESTINATION_PATH = os.path.join(DESTINATION_PATH, f"{n_time_steps}_timesteps")
+    os.makedirs(DESTINATION_PATH, exist_ok=True) 
+
+    # Data Destination
+    for trial in trials:
+
+        print(f'\n Adjusting {trial} with time steps...')
+        df = pd.read_csv(os.path.join(SOURCE_PATH, trial)) 
+        total_rows = df.shape[0]
+        
+        df_combined = pd.DataFrame()
+
+        for time_step in range(n_time_steps + 1):
+
+            start_index = n_time_steps - time_step 
+            end_index = total_rows - time_step
+            df_time_step_ith = df.iloc[start_index: end_index]
+            df_time_step_ith = df_time_step_ith.reset_index(drop=True)
+
+            # Rename columns of data frame with time step ith
+            if time_step > 0:
+                df_time_step_ith.columns = [col + f"_(t_{time_step})" for col in df_time_step_ith.columns]           
+
+            # Combine dataframes            
+            df_combined = pd.concat([df_time_step_ith, df_combined], axis=1)
+            if time_step > 0:
+                df_combined = df_combined.drop(f"timestamp_vector_(t_{time_step})", axis=1)
+
+        
+        df_combined = df_combined[["timestamp_vector"] + [c for c in df_combined.columns if c != "timestamp_vector"]]
+
+
+        # Save cropped data to CSV files
+        base_filename = os.path.splitext(trial)[0]
+        df_combined.to_csv(os.path.join(DESTINATION_PATH, f"{base_filename}_(phase_1_approach)_({n_time_steps}_timesteps).csv"), index=False)
+
+        
+        print(trial)
+
+
+
+    
 
 if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
 
-    stage_2_crop_data_to_task_phases()
+    # stage_2_crop_data_to_task_phases()
+
+    stage_4_short_time_memory()
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
