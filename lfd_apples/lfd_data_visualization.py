@@ -8,6 +8,7 @@ import platform
 from scipy.spatial.transform import Rotation as R
 import pickle
 import matplotlib.pyplot as plt
+import random
 
 def get_paths(trial_num="trial_1"):
     # Detect OS and set IL_data base directory
@@ -276,27 +277,26 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
 
 
 def infer_actions():
-
-    # Get the current script directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(script_dir, 'data', 'random_forest_model.pkl')
-
-    # Load model
-    with open(model_path, "rb") as f:
+    
+    # --- Load model ---
+    model_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/phase_1_approach/2_timesteps'
+    model_name = 'mlp_experiment_1_(pull)_phase_1_approach_2_timesteps.pkl'
+    with open(os.path.join(model_path, model_name), "rb") as f:
         rf_loaded = pickle.load(f)
 
-    # Load inputs   62-113
-    trial_number = '92' 
-
-    dir = '/media/alejo/IL_data/04_IL_learning/experiment_1_(pull)/phase_1_validation/'
-    trial = 'trial_' + trial_number + '_downsampled_aligned_data_(phase_1_approach).csv'
-    filepath = os.path.join(dir, trial)
-    df = pd.read_csv(filepath)
+    # --- Pick randomly one trial from the test_trials list ---
+    test_trials_list_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/phase_1_approach/2_timesteps/test_trials.csv'
+    df = pd.read_csv(test_trials_list_path)  # CSV with one column containing file paths
+    # Assuming the column is named 'file_path'
+    file_paths = df['trial_id'].tolist()
+    # Pick one randomly
+    random_file = random.choice(file_paths)
+    df = pd.read_csv(random_file)
 
     groundtruth_delta_x = df['delta_pos_x'].values
     groundtruth_delta_y = df['delta_pos_y'].values
     groundtruth_delta_z = df['delta_pos_z'].values
-
+    
     
     #  Names of the columns you dropped (ground truth)
     output_cols = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z', 'delta_ori_w']
@@ -305,8 +305,8 @@ def infer_actions():
     arr = df_just_inputs.to_numpy()
 
     # --- 2. Load normalization stats (mean/std) if you saved them ---
-    mean = np.load(os.path.join(script_dir, "data", "mean.npy"))
-    std = np.load(os.path.join(script_dir, "data", "std.npy"))
+    mean = np.load(os.path.join(model_path, "mean_experiment_1_(pull)_phase_1_approach_2_timesteps.npy"))
+    std = np.load(os.path.join(model_path, "std_experiment_1_(pull)_phase_1_approach_2_timesteps.npy"))
     X_new_norm = (arr - mean) / std
 
     # Infere output
@@ -314,21 +314,15 @@ def infer_actions():
 
     # --- 4. Assign predictions back to original dataframe ---
     for i, col in enumerate(output_cols):
-        df[col] = Y_predictions[:, i]
-    
-    # --- 5. Optionally, save to a new CSV ---
-    DESTINATION_PATH = '/media/alejo/IL_data/04_IL_learning/experiment_1_(pull)/phase_1_predictions/'
-    os.makedirs(DESTINATION_PATH, exist_ok=True)
-    output_path = os.path.join(DESTINATION_PATH, 'trial_' + trial_number + '_predictions.csv')
-    df.to_csv(output_path, index=False)
-
+        df[col] = Y_predictions[:, i]       
 
     # Create video to compare
     # Visualize Inhand Camera and Ground Truth Actions
-    images_folder = '/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_' + trial_number + '/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw'
-    csv_path = output_path
-    output_video_path = os.path.join(DESTINATION_PATH, 'trial_' + trial_number + '_predictions.mp4')
-    combine_inhand_camera_and_actions('trial_' + trial_number, images_folder, csv_path, output_video_path)
+
+    # images_folder = '/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_' + trial_number + '/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw'
+    # csv_path = output_path
+    # output_video_path = os.path.join(DESTINATION_PATH, 'trial_' + trial_number + '_predictions.mp4')
+    # combine_inhand_camera_and_actions('trial_' + trial_number, images_folder, csv_path, output_video_path)
 
     fig, axs = plt.subplots(3, 1, figsize=(6, 8), sharex=True)
 
@@ -354,10 +348,9 @@ def infer_actions():
     axs[2].grid(True)
 
     plt.xlabel("Timestamp")
+    plt.suptitle(random_file.split('timesteps/')[1])
     plt.tight_layout()
     plt.show()
-
-   
 
 
 def main():
@@ -378,6 +371,6 @@ def main():
 
 if __name__ == '__main__':
 
-    main()
+    # main()
 
-    # infer_actions()
+    infer_actions()

@@ -235,7 +235,7 @@ def plot_3dpose(df, engagement_time=None, disposal_time=None):
     ax.legend()    
     
 
-def plot_wrench(df):
+def plot_wrench(df, time_vector='elapsed_time'):
     """Plot forces and torques from a DataFrame containing a geometry_msgs/Wrench message."""
     # Position unfiltered signals
     fx = np.array(df['_wrench._force._x'].to_list(), dtype=float)
@@ -246,7 +246,7 @@ def plot_wrench(df):
     tz = np.array(df['_wrench._torque._z'].to_list(), dtype=float)      
 
     wrench = [fx, fy, fz, tx, ty, tz]
-    t = np.array(df["elapsed_time"].to_list(), dtype=float)
+    t = np.array(df[time_vector].to_list(), dtype=float)
 
     # Apply median filter to smooth the signals
     wrench_filtered = [gaussian_filter(w, 100) for w in wrench]

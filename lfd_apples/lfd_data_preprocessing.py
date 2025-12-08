@@ -13,7 +13,7 @@ import cv2
 
 from scipy.ndimage import gaussian_filter, median_filter, gaussian_filter1d
 
-from ros2bag2csv import plot_pressure
+from ros2bag2csv import plot_pressure, plot_wrench
 from pathlib import Path
 import yaml
 from pathlib import Path
@@ -423,6 +423,79 @@ def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
     return idx_phase_1_end
 
 
+def find_end_of_phase_2_contact(df, trial, air_pressure_threshold=600, n_cups=2):
+
+    scA_values = df['scA'].values
+    scB_values = df['scB'].values
+    scC_values = df['scC'].values
+
+    scA_filtered = gaussian_filter(scA_values, 3)
+    scB_filtered = gaussian_filter(scB_values, 3)
+    scC_filtered = gaussian_filter(scC_values, 3)
+
+    mask_A = scA_filtered < air_pressure_threshold
+    mask_B = scB_filtered < air_pressure_threshold
+    mask_C = scC_filtered < air_pressure_threshold
+
+    # Count how many suction cups are below threshold at each time step
+    num_below = mask_A.astype(int) + mask_B.astype(int) + mask_C.astype(int)
+
+    # Indices where at least 2 cups are below threshold
+    indices = np.where(num_below >= 2)[0]  
+
+    if len(indices) == 0:
+        plot_pressure(df, time_vector='timestamp_vector')        
+        print(f'No engagement detected in {trial}, skipping cropping.')       
+
+        plt.show()        
+        return None
+
+    idx_phase_2_end = indices[0]
+
+    # plot_pressure(df, time_vector='timestamp_vector')
+    # print(f'Index at which at least two suction cups engage in {trial}.')        
+    # time_phase_2_end = df['timestamp_vector'].values[idx_phase_2_end]  
+    # plt.axvline(x=time_phase_2_end, color='red', linestyle='--', label='Phase 2 End')        
+    
+
+    return idx_phase_2_end
+
+
+def find_end_of_phase_3_contact(df, trial, total_force_threshold=20):
+    
+    fx = df['_wrench._force._x'].values
+    fy = df['_wrench._force._y'].values
+    fz = df['_wrench._force._z'].values
+    tx = df['_wrench._torque._x'].values
+    ty = df['_wrench._torque._y'].values
+    tz = df['_wrench._torque._z'].values
+
+    wrench = [fx, fy, fz, tx, ty, tz]
+    t = np.array(df['timestamp_vector'].to_list(), dtype=float)
+
+    # Apply median filter to smooth the signals
+    wrench_filtered = [gaussian_filter(w, 3) for w in wrench]
+    
+    # Net Forces
+    net_force = np.sqrt(wrench_filtered[0]**2 + wrench_filtered[1]**2 + wrench_filtered[2]**2)
+
+    max_force_idx = np.argmax(net_force)
+    time_phase_3_end = df['timestamp_vector'].values[max_force_idx]  
+       
+    # fig = plt.figure()
+    # plt.plot(t, wrench_filtered[0], label='fx')
+    # plt.plot(t, wrench_filtered[1], label='fy')
+    # plt.plot(t, wrench_filtered[2], label='fz')
+    # plt.axvline(x=time_phase_3_end, color='red', linestyle='--', label='Phase 3 End')        
+    # plt.plot(t, net_force, label='net')
+    # plt.legend()
+    # plt.show()
+
+    return max_force_idx
+
+
+
+
 # ================ Main stages of data preprocessing ============
 def stage_1_align_and_downsample():
 
@@ -535,6 +608,8 @@ def stage_2_crop_data_to_task_phases():
 
     # --- Step 1: Define data columns for each phase ---
     phase_1_approach_cols = get_phase_columns("phase_1_approach")
+    phase_2_contact_cols = get_phase_columns("phase_2_contact")
+    phase_3_pick_cols = get_phase_columns("phase_3_pick")
 
     # --- Step 2: Define Data Source and Destination paths ----
     if platform.system() == "Windows":
@@ -557,12 +632,16 @@ def stage_2_crop_data_to_task_phases():
     # --- Step 3: Loop through all trials ---
     trials_without_contact = []
     trials_with_multiple_contacts = []
+
+    trials_without_engagement = []
+
     for trial in (trials):
         print(f'\nCropping {trial} into task phases...')
 
         df = pd.read_csv(os.path.join(SOURCE_PATH, trial))        
                 
         # ------------------------ First: Define cropping indices --------------------------
+
         # End of phase 1: defined by tof < 5cm (contact)        
         idx_phase_1_end = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
         if idx_phase_1_end is None:
@@ -572,31 +651,59 @@ def stage_2_crop_data_to_task_phases():
             trials_with_multiple_contacts.append(trial)
             continue
         
+        idx_phase_2_start = idx_phase_1_end
+
         phase_1_time = 7.0  # in seconds
         idx_phase_1_start = idx_phase_1_end - int(phase_1_time * 30)  # assuming 30 Hz
         phase_1_extra_time_end = 2.0
         idx_phase_1_end += int(phase_1_extra_time_end * 30)
 
-        # End of phase 2: defined by at least two suction cups engages
+        # End of phase 2: defined by at least two suction cups engaged
+        idx_phase_2_end = find_end_of_phase_2_contact(df, trial, air_pressure_threshold=600, n_cups=2)
+        if idx_phase_2_end is None:
+            trials_without_engagement.append(trial)
+            continue  # Skip cropping for this trial
 
-        n_total = len(df)
-        idx_phase_2_end = int(0.5 * n_total)
-        idx_phase_3_end = int(0.75 * n_total)
+        idx_phase_3_start = idx_phase_2_end
+
+        phase_2_extra_time_end = 2.0
+        idx_phase_2_end += int(phase_2_extra_time_end * 30)
+
+        # End of phase 3 defined by ...
+        idx_phase_3_end = find_end_of_phase_3_contact(df, trial, total_force_threshold=20)
+        phase_3_extra_time_end = 3.0
+        idx_phase_3_end += int(phase_3_extra_time_end * 30)
+
 
         # ------------------------- Second: Crop data for each phase -----------------------
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]
         # plt.plot(df_phase_1['timestamp_vector'],df_phase_1['tof'])        
         # plt.show()
 
-        # df_phase_2 = df.iloc[idx_phase_1_end:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
-        # df_phase_3 = df.iloc[idx_phase_2_end:idx_phase_3_end][['timestamp_vector'] + phase_3_pick_cols]
+        df_phase_2 = df.iloc[idx_phase_2_start:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
+        # fig = plt.figure()
+        # plt.plot(df_phase_2['timestamp_vector'],df_phase_2['scA'])        
+        # plt.plot(df_phase_2['timestamp_vector'],df_phase_2['scB'])  
+        # plt.plot(df_phase_2['timestamp_vector'],df_phase_2['scC'])  
+
+        # plt.show()
+
+        df_phase_3 = df.iloc[idx_phase_3_start:idx_phase_3_end][['timestamp_vector'] + phase_3_pick_cols]
+        # fig = plt.figure()
+        # plt.plot(df_phase_3['timestamp_vector'],df_phase_3['_wrench._force._x'])        
+        # plt.plot(df_phase_3['timestamp_vector'],df_phase_3['_wrench._force._y'])  
+        # plt.plot(df_phase_3['timestamp_vector'],df_phase_3['_wrench._force._z'])  
+        # plt.show()
+
+
+
         # df_phase_4 = df.iloc[idx_phase_3_end:][['timestamp_vector'] + phase_4_disposal_cols]
 
         # Save cropped data to CSV files
         base_filename = os.path.splitext(trial)[0]
-        df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
+        # df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
         # df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
-        # df_phase_3.to_csv(os.path.join(DESTINATION_PATH, 'phase_3_pick', f"{base_filename}_(phase_3_pick).csv"), index=False)
+        df_phase_3.to_csv(os.path.join(DESTINATION_PATH, 'phase_3_pick', f"{base_filename}_(phase_3_pick).csv"), index=False)
         # df_phase_4.to_csv(os.path.join(DESTINATION_PATH, 'phase_4_disposal', f"{base_filename}_(phase_4_disposal).csv"), index=False)
 
 
@@ -633,9 +740,7 @@ def stage_2_crop_data_to_task_phases():
 
         # Save cropped data to CSV files
         base_filename = os.path.splitext(trial)[0]
-        df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
-
-
+        # df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
 
 
     print('\n----Trials without contact:----')
@@ -644,6 +749,10 @@ def stage_2_crop_data_to_task_phases():
 
     print('\n----Trials with multiple contacts:----')
     for trial in trials_with_multiple_contacts:
+        print(trial)
+
+    print('\n----Trials without suction cups engagement:----')
+    for trial in trials_without_engagement:
         print(trial)
 
 
@@ -710,7 +819,7 @@ def stage_3_fix_hw_issues():
           f'Trials with faulty scC data: {faulty_trials_scC}\n')
 
 
-def stage_4_short_time_memory(n_time_steps=0):
+def stage_4_short_time_memory(n_time_steps=3):
     """
     Generates a Dataframe with short-term memory given n_time_steps
     (e.g. t-2, t-1, t)
@@ -718,11 +827,11 @@ def stage_4_short_time_memory(n_time_steps=0):
 
     # Data Source and Destination folders
     if platform.system() == "Windows":
-        SOURCE_PATH = Path(r"D:\03_IL_preprocessed/experiment_1_(pull)/phase_1_approach")
-        DESTINATION_PATH = Path(r"D:\04_IL_preprocessed/experiment_1_(pull)/phase_1_approach")
+        SOURCE_PATH = Path(r"D:\03_IL_preprocessed/experiment_1_(pull)/phase_3_pick")
+        DESTINATION_PATH = Path(r"D:\04_IL_preprocessed/experiment_1_(pull)/phase_3_pick")
     else:
-        SOURCE_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_1_approach")
-        DESTINATION_PATH = Path("/media/alejo/IL_data/04_IL_preprocessed_memory/experiment_1_(pull)/phase_1_approach")         
+        SOURCE_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_3_pick")
+        DESTINATION_PATH = Path("/media/alejo/IL_data/04_IL_preprocessed_memory/experiment_1_(pull)/phase_3_pick")         
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
@@ -759,7 +868,7 @@ def stage_4_short_time_memory(n_time_steps=0):
 
         # Save cropped data to CSV files
         base_filename = os.path.splitext(trial)[0]
-        df_combined.to_csv(os.path.join(DESTINATION_PATH, f"{base_filename}_(phase_1_approach)_({n_time_steps}_timesteps).csv"), index=False)
+        df_combined.to_csv(os.path.join(DESTINATION_PATH, f"{base_filename}_({n_time_steps}_timesteps).csv"), index=False)
 
     
 if __name__ == '__main__':
