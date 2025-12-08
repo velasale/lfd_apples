@@ -121,9 +121,9 @@ def prepare_data_approach2(train_trials_list, test_trials_list, n_input_cols):
 def main():
 
     # Load Data
-    BASE_DIRECTORY = '/media/alejo/IL_data/04_IL_preprocessed_memory'
+    BASE_DIRECTORY = '/media/alejo/IL_data/04_IL_preprocessed_(memory)'
     experiment = 'experiment_1_(pull)'
-    phase = 'phase_2_contact'
+    phase = 'phase_3_pick'
     time_steps = '2_timesteps'              # Number of timesteps considered as input data
 
     suffix = '_' + experiment + '_' + phase + '_' + time_steps       
@@ -173,7 +173,7 @@ def main():
 
         # --- Review Feature Importance ---
         # Create DataFrame with feature importances
-        filename = 'trial_1_downsampled_aligned_data_(phase_2_contact)_(' + time_steps + ').csv'
+        filename = 'trial_1_downsampled_aligned_data_(phase_3_pick)_(' + time_steps + ').csv'
         df = pd.read_csv(os.path.join(BASE_PATH, filename))
         df = df.iloc[:, :-7]        # simply drop action columns
         df = df.iloc[:, 1:]         # drop timevector column

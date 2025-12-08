@@ -495,7 +495,6 @@ def find_end_of_phase_3_contact(df, trial, total_force_threshold=20):
 
 
 
-
 # ================ Main stages of data preprocessing ============
 def stage_1_align_and_downsample():
 
@@ -613,11 +612,11 @@ def stage_2_crop_data_to_task_phases():
 
     # --- Step 2: Define Data Source and Destination paths ----
     if platform.system() == "Windows":
-        SOURCE_PATH = Path(r"D:\02_IL_preprocessed\experiment_1_(pull)")
-        DESTINATION_PATH = Path(r"D:\03_IL_preprocessed\experiment_1_(pull)")
+        SOURCE_PATH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\experiment_1_(pull)")
+        DESTINATION_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)\experiment_1_(pull)")
     else:
-        SOURCE_PATH = Path("/media/alejo/IL_data/02_IL_preprocessed/experiment_1_(pull)")
-        DESTINATION_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)")      
+        SOURCE_PATH = Path("/media/alejo/IL_data/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)")
+        DESTINATION_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)")      
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
@@ -678,24 +677,20 @@ def stage_2_crop_data_to_task_phases():
         # ------------------------- Second: Crop data for each phase -----------------------
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]
         # plt.plot(df_phase_1['timestamp_vector'],df_phase_1['tof'])        
-        # plt.show()
-
+        
         df_phase_2 = df.iloc[idx_phase_2_start:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
         # fig = plt.figure()
         # plt.plot(df_phase_2['timestamp_vector'],df_phase_2['scA'])        
         # plt.plot(df_phase_2['timestamp_vector'],df_phase_2['scB'])  
-        # plt.plot(df_phase_2['timestamp_vector'],df_phase_2['scC'])  
-
-        # plt.show()
+        # plt.plot(df_phase_2['timestamp_vector'],df_phase_2['scC'])         
 
         df_phase_3 = df.iloc[idx_phase_3_start:idx_phase_3_end][['timestamp_vector'] + phase_3_pick_cols]
         # fig = plt.figure()
         # plt.plot(df_phase_3['timestamp_vector'],df_phase_3['_wrench._force._x'])        
         # plt.plot(df_phase_3['timestamp_vector'],df_phase_3['_wrench._force._y'])  
         # plt.plot(df_phase_3['timestamp_vector'],df_phase_3['_wrench._force._z'])  
+
         # plt.show()
-
-
 
         # df_phase_4 = df.iloc[idx_phase_3_end:][['timestamp_vector'] + phase_4_disposal_cols]
 
@@ -711,9 +706,9 @@ def stage_2_crop_data_to_task_phases():
     # Reason: Approach phase deosn't need the wrench topics
 
     if platform.system() == "Windows":
-        SOURCE_PATH_ONLY_APPROACH = Path(r"D:\02_IL_preprocessed\only_human_demos/with_palm_cam")
+        SOURCE_PATH_ONLY_APPROACH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\only_human_demos/with_palm_cam")
     else:
-        SOURCE_PATH_ONLY_APPROACH = Path("/media/alejo/IL_data/02_IL_preprocessed/only_human_demos/with_palm_cam")
+        SOURCE_PATH_ONLY_APPROACH = Path("/media/alejo/IL_data/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam")
 
     only_human_trials = [f for f in os.listdir(SOURCE_PATH_ONLY_APPROACH) 
                          if os.path.isfile(os.path.join(SOURCE_PATH_ONLY_APPROACH, f)) and f.endswith(".csv")]   
@@ -827,11 +822,11 @@ def stage_4_short_time_memory(n_time_steps=3):
 
     # Data Source and Destination folders
     if platform.system() == "Windows":
-        SOURCE_PATH = Path(r"D:\03_IL_preprocessed/experiment_1_(pull)/phase_3_pick")
-        DESTINATION_PATH = Path(r"D:\04_IL_preprocessed/experiment_1_(pull)/phase_3_pick")
+        SOURCE_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_3_pick")
+        DESTINATION_PATH = Path(r"D:\04_IL_preprocessed_(memory)/experiment_1_(pull)/phase_3_pick")
     else:
-        SOURCE_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_3_pick")
-        DESTINATION_PATH = Path("/media/alejo/IL_data/04_IL_preprocessed_memory/experiment_1_(pull)/phase_3_pick")         
+        SOURCE_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_3_pick")
+        DESTINATION_PATH = Path("/media/alejo/IL_data/04_IL_preprocessed_(memory)/experiment_1_(pull)/phase_3_pick")         
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
