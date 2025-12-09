@@ -21,7 +21,7 @@ from std_srvs.srv import SetBool
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-from lfd_vision import extract_pooled_latent_vector
+from lfd_apples.lfd_vision import extract_pooled_latent_vector
 from ultralytics import YOLO
 import cv2
 
