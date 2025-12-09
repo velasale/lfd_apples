@@ -370,8 +370,7 @@ class MoveToHomeAndFreedrive(Node):
         # Update sensors average since last action
         # to be done
 
-
-    def self_camera_callback(self, msg: Image):
+    def palm_camera_callback(self, msg: Image):
 
         self.raw_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
@@ -383,7 +382,6 @@ class MoveToHomeAndFreedrive(Node):
         )
 
         self.latent_image = pooled_vector.tolist()
-
 
     def eef_pose_callback(self, msg: PoseStamped):
 

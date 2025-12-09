@@ -3,7 +3,7 @@ from PIL import Image
 import torchvision.transforms as T
 import numpy as np
 from tqdm import tqdm
-from transformers import AutoImageProcessor, AutoModel
+# from transformers import AutoImageProcessor, AutoModel
 from ultralytics import YOLO
 import cv2
 import os
