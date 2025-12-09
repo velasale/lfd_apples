@@ -16,10 +16,34 @@ from lfd_apples.listen_franka import main as listen_main
 from lfd_apples.listen_franka import start_recording_bagfile, stop_recording_bagfile, save_metadata, find_next_trial_number 
 from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array
 
+from std_msgs.msg import Int16MultiArray
+from std_srvs.srv import SetBool
+from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+from lfd_vision import extract_pooled_latent_vector
+from ultralytics import YOLO
+import cv2
+
 
 class MoveToHomeAndFreedrive(Node):
+
     def __init__(self):
         super().__init__('move_to_home_and_freedrive')
+
+        # Subscribers
+        self.distance_sub = self.create_subscription(
+            Int16MultiArray, 'microROS/sensor_data', self.gripper_sensors_callback, 10)
+        self.eef_pose_sub = self.create_subscription(
+            PoseStamped, '/franka_robot_state_broadcaster/current_pose', self.eef_pose_callback, 10)
+        self.palm_camera_sub = self.create_subscription(
+            Image, 'gripper/rgb_palm_camera/image_raw', self.palm_camera_callback, 10)        
+
+        
+        # Load learned model
+        self.model = 0
+        self.model_mean = 0
+        self.model_std = 0
 
         # Action client for joint trajectory
         self.action_client = ActionClient(
@@ -41,8 +65,8 @@ class MoveToHomeAndFreedrive(Node):
         self.load_client.wait_for_service()
 
         self.joint_names = [f"fr3_joint{i+1}" for i in range(7)]
-        self.trajectory_points = []
-        
+        self.trajectory_points = []       
+
         # Home position with eef pose starting on - x
         self.home_positions = [0.6414350870607822,
                                -1.5320604540253377,
@@ -60,9 +84,27 @@ class MoveToHomeAndFreedrive(Node):
         #                        0.9734971523284912,
         #                        2.7978947162628174,
         #                        -2.0960772037506104]
-        
-           
 
+        # Flags
+        self.approach_accomplished = False
+        self.contact_accomplished = False
+        self.pick_accomplished = False
+        self.data_ready = False
+
+        # Image
+        self.bridge = CvBridge()
+        self.raw_image = None
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        pt_path = os.path.join(script_dir, "resources", "best_segmentation.pt")
+        self.yolo_model = YOLO(pt_path)
+        self.yolo_latent_layer = 12
+
+        # State Space Vectors
+        self.t_2_data = []
+        self.t_1_data = []
+        self.t_data = []
+     
+                
     def move_to_home(self):
         self.get_logger().info('Waiting for action server...')
         if not self.action_client.wait_for_server(timeout_sec=5.0):
@@ -284,7 +326,78 @@ class MoveToHomeAndFreedrive(Node):
         rclpy.spin_until_future_complete(self, result_future)
         result = result_future.result().result
         self.get_logger().info(f"Trajectory execution finished: {result}")
-       
+
+    def run_lfd_model(self, n_timesteps=2):       
+               
+        if not self.pick_accomplished:
+
+            # --- Step 1: Organize data ---
+            # Phase_1 approach data stream
+            
+            self.t_2_data = self.t_1_data            
+            self.t_1_data = self.t_data            
+            self.t_data = [self.tof, self.latent_image]
+
+            # filter new_data
+            
+            # Combine data, from past steps            
+            self.X = self.t_2_data + self.t_1_data + self.t_data
+            # Normalize data
+
+
+            # --- Step 2: Feed model with data ---
+            # Y_pred = self.model.predict(X_test_norm)
+
+            # Send actions to the arm            
+
+            # Loop
+
+            return False
+        
+        elif self.pick_accomplished:
+            return True
+
+
+    # === Sensor Topics Callback ====
+    def gripper_sensors_callback(self, msg: Int16MultiArray):
+
+        # get current msg
+        self.scA = msg.data[0]
+        self.scB = msg.data[1]
+        self.scC = msg.data[2]
+        self.tof = msg.data[3]
+
+        # Update sensors average since last action
+        # to be done
+
+
+    def self_camera_callback(self, msg: Image):
+
+        self.raw_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+
+        # Get latent space features
+        pooled_vector, feat_map = extract_pooled_latent_vector(
+            self.raw_image,
+            self.yolo_model,
+            layer_index=self.yolo_latent_layer
+        )
+
+        self.latent_image = pooled_vector.tolist()
+
+
+    def eef_pose_callback(self, msg: PoseStamped):
+
+        # get pose
+        eef_pos_x = msg.pose.position.x
+        eef_pos_y = msg.pose.position.y
+        eef_pos_z = msg.pose.position.z
+        eef_ori_x = msg.pose.orientation.x
+        eef_ori_y = msg.pose.orientation.y
+        eef_ori_z = msg.pose.orientation.z
+        eef_ori_w = msg.pose.orientation.w
+
+        # Update sensors average since last action
+    
 
 def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
 
@@ -311,19 +424,18 @@ def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
 
 
 def main():
+
     rclpy.init()
 
-    node = MoveToHomeAndFreedrive()
+    node = MoveToHomeAndFreedrive()    
 
-    # BAG_MAIN_DIR = "/media/alejo/Pruning25/01_IL_bagfiles"
-    # BAG_MAIN_DIR = "/media/alejo/IL_data/01_IL_bagfiles"
-    BAG_MAIN_DIR = "/media/alejo/New Volume/01_IL_bagfiles"
+    BAG_MAIN_DIR = "/media/alejo/New Volume/06_IL_implementation/bagfiles"
     EXPERIMENT = "experiment_1_(pull)"
     BAG_FILEPATH = os.path.join(BAG_MAIN_DIR, EXPERIMENT)
     os.makedirs(BAG_FILEPATH, exist_ok=True)
     
     batch_size = 10
-    node.get_logger().info(f"Starting human demonstration session of {batch_size} demos.")
+    node.get_logger().info(f"Starting lfd implementation with robot session of {batch_size} demos.")
 
     for demo in range(batch_size):
 
@@ -333,40 +445,10 @@ def main():
         # ------------ Step 0: Initial configuration ----------------
         TRIAL = find_next_trial_number(BAG_FILEPATH, prefix="trial_")
         os.makedirs(os.path.join(BAG_FILEPATH, TRIAL), exist_ok=True)
-        HUMAN_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'human')
-        ROBOT_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'robot')        
-
-        node.get_logger().info("Moving to home position...")
-        while not node.move_to_home():
-            pass
-
-        # --------------- Step 1: Human Demonstration --------------        
-        # Set relaxed collision thresholds
-        input("\n\033[1;32m1 - Place apple on the proxy. Press ENTER when done.\033[0m\n")
-        save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))
-        # Enable freedrive mode and record demonstration                
-        node.swap_controller(node.arm_controller, node.gravity_controller)
-        time.sleep(1.0)        
-        # Start recording                
-        node.get_logger().info("Human Demo. Free-drive mode enabled, you can start the demo.")    
-
-        # Human demonstration
-        input("\n\033[1;32m2 - Press ENTER to start and recording an apple-pick demonstration.\033[0m\n")
-        human_rosbag_list = start_recording_bagfile(HUMAN_BAG_FILEPATH, inhand_camera_bag=False)                
-
-        # Stop recording
-        time.sleep(3.0)       
-        input("\n\033[1;32m - Press ENTER when you are done.\033[0m\n")
-        stop_recording_bagfile(human_rosbag_list)    
-
-        # Check data
-        node.get_logger().info("Check HUMAN demo data")    
-        check_data_plots(HUMAN_BAG_FILEPATH, TRIAL, inhand_camera_bag=False)
-
-        node.get_logger().info(f"Human demonstration {demo+1}/10 done. Now swapping controllers.")
-        node.swap_controller(node.gravity_controller, node.arm_controller)
+        # HUMAN_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'human')
+        ROBOT_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL)               
         
-        # ---------------- Step 2: Robot demonstration ------------------
+        # ------------ Step 1: LFD implementation with Robot --------
         node.get_logger().info("Moving to home position...")
         while not node.move_to_home():
             pass
@@ -375,11 +457,10 @@ def main():
         input("\n\033[1;32m3 - Place apple on the proxy. Press ENTER when done.\033[0m\n")
         robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
 
-        # Robot demonstration
-        joints_csv = HUMAN_BAG_FILEPATH + '/lfd_bag_main/bag_csvs/joint_states.csv'        
-        time.sleep(1.5)  
+        # lfd robot implementation        
         input("\n\033[1;32m4 - Press Enter to start ROBOT demonstration.\033[0m\n")        
-        node.replay_joints(joints_csv)        
+        while not node.run_lfd_model():
+            pass
 
         # Stop recording
         stop_recording_bagfile(robot_rosbag_list)
@@ -387,7 +468,7 @@ def main():
         # Check data
         node.get_logger().info("Check ROBOT demo data")         
         check_data_plots(ROBOT_BAG_FILEPATH, TRIAL)
-        node.get_logger().info(f"Robot demonstration {demo+1}/10 done.")
+        node.get_logger().info(f"Robot lfd implementation {demo+1}/10 done.")
     
     node.destroy_node()
     rclpy.shutdown()

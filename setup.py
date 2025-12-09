@@ -32,6 +32,7 @@ setup(
             'lfd_replay = lfd_apples.lfd_replay:main',     
             'lfd_inhand_camera = lfd_apples.lfd_inhand_camera:main',
             'lfd_data_collection = lfd_apples.lfd_data_collection:main',
+            'lfd_implementation = lfd_apples.lfd_implementation:main',
             'franka_recover = lfd_apples.franka_recover:main',
         ],
     },
