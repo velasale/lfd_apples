@@ -18,43 +18,44 @@ from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array
 
 from std_msgs.msg import Int16MultiArray
 from std_srvs.srv import SetBool
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, TwistStamped, Twist
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 from lfd_apples.lfd_vision import extract_pooled_latent_vector
 from ultralytics import YOLO
 import cv2
+import pickle
+import numpy as np
 
 
-class MoveToHomeAndFreedrive(Node):
+class LFDController(Node):
 
     def __init__(self):
         super().__init__('move_to_home_and_freedrive')
 
-        # Subscribers
+        # Topic Subscribers
         self.distance_sub = self.create_subscription(
             Int16MultiArray, 'microROS/sensor_data', self.gripper_sensors_callback, 10)
         self.eef_pose_sub = self.create_subscription(
             PoseStamped, '/franka_robot_state_broadcaster/current_pose', self.eef_pose_callback, 10)
         self.palm_camera_sub = self.create_subscription(
             Image, 'gripper/rgb_palm_camera/image_raw', self.palm_camera_callback, 10)        
-
         
-        # Load learned model
-        self.model = 0
-        self.model_mean = 0
-        self.model_std = 0
-
-        # Action client for joint trajectory
+        # Topic Publishers
+        self.vel_pub = self.create_publisher(
+            TwistStamped, '/franka_cartesian_velocity_controller/command', 10)
+        
+        # Action Client
         self.action_client = ActionClient(
             self,
             FollowJointTrajectory,
-            '/fr3_arm_controller/follow_joint_trajectory'
+            'fr3_arm_controller/follow_joint_trajectory'
         )
-
+        
         # Controller names
         self.arm_controller = 'fr3_arm_controller'
         self.gravity_controller = 'gravity_compensation_example_controller'
+        self.eef_velocity_controller = 'franka_cartesian_velocity_controller'
 
         # Switch controller client
         self.switch_client = self.create_client(SwitchController, '/controller_manager/switch_controller')
@@ -85,13 +86,22 @@ class MoveToHomeAndFreedrive(Node):
         #                        2.7978947162628174,
         #                        -2.0960772037506104]
 
+        self.disposal_joints_positions = []
+
         # Flags
         self.approach_accomplished = False
         self.contact_accomplished = False
         self.pick_accomplished = False
         self.data_ready = False
+        self.running_lfd_approach = False
+        self.running_lfd_contact = False
+        self.running_lfd_pick = False
 
-        # Image
+        # Thresholds
+        self.tof_threshold = 50                 # units in mm
+        self.air_pressure_threshold = 600       # units in hPa
+
+        # Computer Vision
         self.bridge = CvBridge()
         self.raw_image = None
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -103,6 +113,19 @@ class MoveToHomeAndFreedrive(Node):
         self.t_2_data = []
         self.t_1_data = []
         self.t_data = []
+
+        # Load learned model
+        phase = 'phase_3_pick'
+        model = 'mlp'
+        timesteps = '2_timesteps'        
+        model_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/' + phase + '/' + timesteps
+        model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.pkl'
+        with open(os.path.join(model_path, model_name), "rb") as f:
+            self.lfd_model = pickle.load(f)
+        self.lfd_mean = np.load(os.path.join(model_path, 'mean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+        self.lfd_std = np.load(os.path.join(model_path, 'std_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+    
+        # 
      
                 
     def move_to_home(self):
@@ -327,75 +350,125 @@ class MoveToHomeAndFreedrive(Node):
         result = result_future.result().result
         self.get_logger().info(f"Trajectory execution finished: {result}")
 
-    def run_lfd_model(self, n_timesteps=2):       
-               
-        if not self.pick_accomplished:
+    def run_lfd_approach(self, n_timesteps=2):       
 
-            # --- Step 1: Organize data ---
-            # Phase_1 approach data stream
-            
-            self.t_2_data = self.t_1_data            
-            self.t_1_data = self.t_data            
-            self.t_data = [self.tof, self.latent_image]
+        self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
+        self.running_lfd_approach = True
 
-            # filter new_data
-            
-            # Combine data, from past steps            
-            self.X = self.t_2_data + self.t_1_data + self.t_data
-            # Normalize data
+        while rclpy.ok() and self.running_lfd_approach:
 
-
-            # --- Step 2: Feed model with data ---
-            # Y_pred = self.model.predict(X_test_norm)
-
-            # Send actions to the arm            
-
-            # Loop
-
-            return False
+            rclpy.spin_once(self,timeout_sec=0.0)
+            time.sleep(0.001)
         
-        elif self.pick_accomplished:
-            return True
+        self.send_stop_message()
+
+        self.running_lfd_approach = False
+
+    def send_stop_message(self):
+        """
+        # Ensure a final zero-twist is sent to stop motion
+        
+        :param self: Description
+        """
+
+        stop_msg = TwistStamped()           
+        stop_msg.header.stamp = self.get_clock().now().to_msg()
+        stop_msg.twist.linear.x = 0.0
+        stop_msg.twist.linear.y = 0.0
+        stop_msg.twist.linear.z = 0.0
+        stop_msg.twist.angular.x = 0.0
+        stop_msg.twist.angular.y = 0.0
+        stop_msg.twist.angular.z = 0.0
+
+        try:
+            self.vel_pub.publish(stop_msg)
+            self.get_logger().info(f"stop message sent")
+        except Exception:
+            self.get_logger().info(f"stop message FAILED to be sent")
+            pass
 
 
     # === Sensor Topics Callback ====
     def gripper_sensors_callback(self, msg: Int16MultiArray):
 
         # get current msg
-        self.scA = msg.data[0]
-        self.scB = msg.data[1]
-        self.scC = msg.data[2]
-        self.tof = msg.data[3]
+        self.scA = float(msg.data[0])
+        self.scB = float(msg.data[1])
+        self.scC = float(msg.data[2])
+        self.tof = float(msg.data[3])
 
         # Update sensors average since last action
-        # to be done
+        if self.running_lfd_approach and (self.tof < self.tof_threshold):
+            self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.tof_threshold}")
+            self.running_lfd_approach = False
+            self.send_stop_message()
+
+
 
     def palm_camera_callback(self, msg: Image):
+        """
+        We'll use this callback to publish the twist commands
+        
+        :param self: Description
+        :param msg: Description
+        :type msg: Image
+        """
 
-        self.raw_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        if self.running_lfd_approach:
 
-        # Get latent space features
-        pooled_vector, feat_map = extract_pooled_latent_vector(
-            self.raw_image,
-            self.yolo_model,
-            layer_index=self.yolo_latent_layer
-        )
+            # # --- Process Image ---
+            # self.raw_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            # # Get latent space features
+            # pooled_vector, feat_map = extract_pooled_latent_vector(
+            #     self.raw_image,
+            #     self.yolo_model,
+            #     layer_index=self.yolo_latent_layer
+            # )
+            # self.latent_image = pooled_vector.tolist()
+            # # --- Combine data ---
+            # self.t_data = [self.tof, self.latent_image]       
+            # # Normalize data
+            # self.t_data_norm = (self.t_data - self.lfd_mean) / self.lfd_std
+            
+            # # --- Use previous time-step states ---
+            # # Update states from previous time steps       
+            # self.t_2_data = self.t_1_data            
+            # self.t_1_data = self.t_data                        
+            # # Combine data, from past steps            
+            # self.X = self.t_2_data + self.t_1_data + self.t_data_norm
+            
+            # # --- Predict Actions ---
+            # self.Y = self.lfd_model.predict(self.X)
 
-        self.latent_image = pooled_vector.tolist()
+            # Send actions (twist)        
+            cmd = TwistStamped()
+            cmd.header.stamp = self.get_clock().now().to_msg()
+            cmd.linear.x = 0.0 #self.Y[0]
+            cmd.linear.y = 0.0 #self.Y[1]
+            cmd.linear.z = 0.001 #self.Y[2]
+            cmd.angular.x = 0.0 #   self.Y[3]
+            cmd.angular.y = 0.0 #   self.Y[4]
+            cmd.angular.z = 0.0 #   self.Y[5]
+            self.vel_pub.publish(cmd)
+
+            # Add actions to State Space to pass them to the next time steps
+            self.t_data = [self.tof, self.latent_image, self.Y]        
 
     def eef_pose_callback(self, msg: PoseStamped):
 
         # get pose
-        eef_pos_x = msg.pose.position.x
-        eef_pos_y = msg.pose.position.y
-        eef_pos_z = msg.pose.position.z
-        eef_ori_x = msg.pose.orientation.x
-        eef_ori_y = msg.pose.orientation.y
-        eef_ori_z = msg.pose.orientation.z
-        eef_ori_w = msg.pose.orientation.w
+        self.eef_pos_x = msg.pose.position.x
+        self.eef_pos_y = msg.pose.position.y
+        self.eef_pos_z = msg.pose.position.z
+        self.eef_ori_x = msg.pose.orientation.x
+        self.eef_ori_y = msg.pose.orientation.y
+        self.eef_ori_z = msg.pose.orientation.z
+        self.eef_ori_w = msg.pose.orientation.w
 
         # Update sensors average since last action
     
+
+
 
 def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
 
@@ -425,7 +498,7 @@ def main():
 
     rclpy.init()
 
-    node = MoveToHomeAndFreedrive()    
+    node = LFDController()    
 
     BAG_MAIN_DIR = "/media/alejo/New Volume/06_IL_implementation/bagfiles"
     EXPERIMENT = "experiment_1_(pull)"
@@ -450,6 +523,10 @@ def main():
         node.get_logger().info("Moving to home position...")
         while not node.move_to_home():
             pass
+        # Enable cartesian velocity controller
+        node.get_logger().info("Switching to Cartesian velocity controller...")
+        node.swap_controller(node.arm_controller, node.eef_velocity_controller)
+
 
         # Start recording
         input("\n\033[1;32m3 - Place apple on the proxy. Press ENTER when done.\033[0m\n")
@@ -457,8 +534,14 @@ def main():
 
         # lfd robot implementation        
         input("\n\033[1;32m4 - Press Enter to start ROBOT demonstration.\033[0m\n")        
-        while not node.run_lfd_model():
-            pass
+        node.run_lfd_approach()
+        
+
+        
+        # Dispose apple
+        node.swap_controller(node.eef_velocity_controller, node.arm_controller)
+        
+
 
         # Stop recording
         stop_recording_bagfile(robot_rosbag_list)
