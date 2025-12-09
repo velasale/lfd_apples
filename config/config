@@ -1,0 +1,135 @@
+[global_config]
+  suppress_multiple_term_dialog = True
+[keybindings]
+[profiles]
+  [[default]]
+    cursor_color = "#aaaaaa"
+  [[lfd_trials]]
+    cursor_color = "#aaaaaa"
+    login_shell = True
+[layouts]
+  [[default]]
+    [[[window1]]]
+      type = Window
+      parent = ""
+    [[[child1]]]
+      type = Terminal
+      parent = window0
+      profile = New Profile
+  [[lfd_trials]]
+    [[[child0]]]
+      type = Window
+      parent = ""
+      order = 0
+      position = 1994:106
+      maximised = False
+      fullscreen = False
+      size = 1760, 1051
+      title = alejo@alejo: ~
+      last_active_term = 71448ad4-2a08-4bd4-8abd-047ca8a3536c
+      last_active_window = True
+    [[[child1]]]
+      type = VPaned
+      parent = child0
+      order = 0
+      position = 206
+      ratio = 0.19694072657743786
+    [[[child2]]]
+      type = HPaned
+      parent = child1
+      order = 0
+      position = 1501
+      ratio = 0.8552706552706553
+    [[[terminal3]]]
+      type = Terminal
+      parent = child2
+      order = 0
+      profile = default
+      uuid = 437766da-87bd-4352-9f63-d4d397414269
+      command = 'bash -ic "gripper; exec bash"'
+    [[[terminal4]]]
+      type = Terminal
+      parent = child2
+      order = 1
+      profile = default
+      uuid = 67113b5b-74d0-4fbb-96e5-766f9f0cec38
+      command = 'bash -ic "sensors; exec bash"'
+    [[[child5]]]
+      type = VPaned
+      parent = child1
+      order = 1
+      position = 360
+      ratio = 0.4311377245508982
+    [[[terminal6]]]
+      type = Terminal
+      parent = child5
+      order = 0
+      profile = default
+      uuid = 71448ad4-2a08-4bd4-8abd-047ca8a3536c
+      command = 'bash -ic "arm; exec bash"'
+    [[[terminal7]]]
+      type = Terminal
+      parent = child5
+      order = 1
+      profile = default
+      uuid = 4eec03ae-3df4-427b-9a5e-a68fe14417fc
+      command = 'bash -ic "human_demo; exec bash"'
+  [[lfd_implement]]
+    [[[child0]]]
+      type = Window
+      parent = ""
+      order = 0
+      position = 2060:62
+      maximised = False
+      fullscreen = False
+      size = 1760, 1051
+      title = alejo@alejo: ~
+      last_active_term = 71448ad4-2a08-4bd4-8abd-047ca8a3536c
+      last_active_window = True
+    [[[child1]]]
+      type = VPaned
+      parent = child0
+      order = 0
+      position = 206
+      ratio = 0.19694072657743786
+    [[[child2]]]
+      type = HPaned
+      parent = child1
+      order = 0
+      position = 1501
+      ratio = 0.8552706552706553
+    [[[terminal3]]]
+      type = Terminal
+      parent = child2
+      order = 0
+      profile = default
+      uuid = 437766da-87bd-4352-9f63-d4d397414269
+      command = 'bash -ic "gripper; exec bash"'
+    [[[terminal4]]]
+      type = Terminal
+      parent = child2
+      order = 1
+      profile = default
+      uuid = 67113b5b-74d0-4fbb-96e5-766f9f0cec38
+      command = 'bash -ic "sensors; exec bash"'
+    [[[child5]]]
+      type = VPaned
+      parent = child1
+      order = 1
+      position = 360
+      ratio = 0.4311377245508982
+    [[[terminal6]]]
+      type = Terminal
+      parent = child5
+      order = 0
+      profile = default
+      uuid = 71448ad4-2a08-4bd4-8abd-047ca8a3536c
+      command = 'bash -ic "arm; exec bash"'
+    [[[terminal7]]]
+      type = Terminal
+      parent = child5
+      order = 1
+      profile = default
+      uuid = 4eec03ae-3df4-427b-9a5e-a68fe14417fc
+      command = 'bash -ic "robot; exec bash"'
+[plugins]

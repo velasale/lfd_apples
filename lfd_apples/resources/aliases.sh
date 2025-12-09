@@ -12,6 +12,6 @@ alias gripper='ros2 launch lfd_apples lfd_gripper.launch.py palm_camera_device_n
 alias sensors='ros2 topic echo /microROS/sensor_data'
 alias lfd_layout='terminator -l lfd_trials'
 
-alias robot='taskset -c 5-8 ros2 run lfd_apples lfd_implementaiton'
-alias lfd_implementation_layout='termination -l lfd_implement'
+alias robot='taskset -c 5-8 ros2 run lfd_apples lfd_implementation'
+alias lfd_implementation_layout='terminator -l lfd_implement'
 alias reset_arm='ros2 run lfd_apples franka_recover'
