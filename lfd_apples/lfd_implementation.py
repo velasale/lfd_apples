@@ -43,8 +43,12 @@ class LFDController(Node):
         
         # Topic Publishers
         self.vel_pub = self.create_publisher(
-            TwistStamped, '/franka_cartesian_velocity_controller/command', 10)
+            TwistStamped, '/cartesian_velocity_controller/command', 10)
         
+        # franka_cartesian_velocity_example_controller:
+        # type: franka_example_controllers/CartesianVelocityExampleController
+        
+
         # Action Client
         self.action_client = ActionClient(
             self,
@@ -55,7 +59,7 @@ class LFDController(Node):
         # Controller names
         self.arm_controller = 'fr3_arm_controller'
         self.gravity_controller = 'gravity_compensation_example_controller'
-        self.eef_velocity_controller = 'franka_cartesian_velocity_controller'
+        self.eef_velocity_controller = 'cartesian_velocity_controller'
 
         # Switch controller client
         self.switch_client = self.create_client(SwitchController, '/controller_manager/switch_controller')
@@ -118,14 +122,13 @@ class LFDController(Node):
         phase = 'phase_3_pick'
         model = 'mlp'
         timesteps = '2_timesteps'        
-        model_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/' + phase + '/' + timesteps
-        model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.pkl'
-        with open(os.path.join(model_path, model_name), "rb") as f:
-            self.lfd_model = pickle.load(f)
-        self.lfd_mean = np.load(os.path.join(model_path, 'mean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-        self.lfd_std = np.load(os.path.join(model_path, 'std_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-    
-        # 
+        # model_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/' + phase + '/' + timesteps
+        # model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.pkl'
+        # with open(os.path.join(model_path, model_name), "rb") as f:
+        #     self.lfd_model = pickle.load(f)
+        # self.lfd_mean = np.load(os.path.join(model_path, 'mean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+        # self.lfd_std = np.load(os.path.join(model_path, 'std_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
+        
      
                 
     def move_to_home(self):
@@ -355,7 +358,7 @@ class LFDController(Node):
         self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
         self.running_lfd_approach = True
 
-        while rclpy.ok() and self.running_lfd_approach:
+        while rclpy.ok(): # and self.running_lfd_approach:
 
             rclpy.spin_once(self,timeout_sec=0.0)
             time.sleep(0.001)
@@ -400,10 +403,8 @@ class LFDController(Node):
         # Update sensors average since last action
         if self.running_lfd_approach and (self.tof < self.tof_threshold):
             self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.tof_threshold}")
-            self.running_lfd_approach = False
+            # self.running_lfd_approach = False
             self.send_stop_message()
-
-
 
     def palm_camera_callback(self, msg: Image):
         """
@@ -443,16 +444,18 @@ class LFDController(Node):
             # Send actions (twist)        
             cmd = TwistStamped()
             cmd.header.stamp = self.get_clock().now().to_msg()
-            cmd.linear.x = 0.0 #self.Y[0]
-            cmd.linear.y = 0.0 #self.Y[1]
-            cmd.linear.z = 0.001 #self.Y[2]
-            cmd.angular.x = 0.0 #   self.Y[3]
-            cmd.angular.y = 0.0 #   self.Y[4]
-            cmd.angular.z = 0.0 #   self.Y[5]
+            cmd.twist.linear.x = 0.0 #self.Y[0]
+            cmd.twist.linear.y = 0.001 #self.Y[1]
+            cmd.twist.linear.z = 0.0 #self.Y[2]
+            cmd.twist.angular.x = 0.0 #   self.Y[3]
+            cmd.twist.angular.y = 0.0 #   self.Y[4]
+            cmd.twist.angular.z = 0.0 #   self.Y[5]
             self.vel_pub.publish(cmd)
 
+            self.get_logger().info(f"pal camera callback sending topic")
+
             # Add actions to State Space to pass them to the next time steps
-            self.t_data = [self.tof, self.latent_image, self.Y]        
+            # self.t_data = [self.tof, self.latent_image, self.Y]        
 
     def eef_pose_callback(self, msg: PoseStamped):
 
@@ -506,11 +509,11 @@ def main():
     os.makedirs(BAG_FILEPATH, exist_ok=True)
     
     batch_size = 10
-    node.get_logger().info(f"Starting lfd implementation with robot session of {batch_size} demos.")
+    node.get_logger().info(f"Starting lfd implementation with robot, session of {batch_size} demos.")
 
     for demo in range(batch_size):
 
-        node.get_logger().info("\033[1;32m ---------- Press Enter to start demonstration {}/10 ----------\033[0m".format(demo+1))
+        node.get_logger().info("\033[1;32m ---------- Press Enter to start lfd implementation trial {}/10 ----------\033[0m".format(demo+1))
         input()  # Wait for user to press Enter
       
         # ------------ Step 0: Initial configuration ----------------
@@ -527,20 +530,17 @@ def main():
         node.get_logger().info("Switching to Cartesian velocity controller...")
         node.swap_controller(node.arm_controller, node.eef_velocity_controller)
 
-
         # Start recording
         input("\n\033[1;32m3 - Place apple on the proxy. Press ENTER when done.\033[0m\n")
         robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
 
         # lfd robot implementation        
-        input("\n\033[1;32m4 - Press Enter to start ROBOT demonstration.\033[0m\n")        
-        node.run_lfd_approach()
-        
+        input("\n\033[1;32m4 - Press Enter to start ROBOT lfd implementation.\033[0m\n")        
+        node.run_lfd_approach()      
 
         
         # Dispose apple
-        node.swap_controller(node.eef_velocity_controller, node.arm_controller)
-        
+        node.swap_controller(node.eef_velocity_controller, node.arm_controller)        
 
 
         # Stop recording
