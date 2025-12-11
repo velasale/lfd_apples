@@ -662,7 +662,7 @@ def stage_2_crop_data_to_task_phases():
         idx_phase_2_start = idx_phase_1_end
 
         phase_1_time = 7.0  # in seconds
-        idx_phase_1_start = max[0, (idx_phase_1_end - int(phase_1_time * 30))]  # assuming 30 Hz
+        idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz
         phase_1_extra_time_end = 2.0
         idx_phase_1_end += int(phase_1_extra_time_end * 30)
 
@@ -731,7 +731,7 @@ def stage_2_crop_data_to_task_phases():
             continue
         
         phase_1_time = 7.0  # in seconds
-        idx_phase_1_start = max[0, (idx_phase_1_end - int(phase_1_time * 30))]  # assuming 30 Hz
+        idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz
         phase_1_extra_time_end = 2.0
         idx_phase_1_end += int(phase_1_extra_time_end * 30)
 
@@ -819,7 +819,7 @@ def stage_3_fix_hw_issues():
           f'Trials with faulty scC data: {faulty_trials_scC}\n')
 
 
-def stage_4_short_time_memory(n_time_steps=3, phase='phase_2_contact'):
+def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact'):
     """
     Generates a Dataframe with short-term memory given n_time_steps
     (e.g. t-2, t-1, t)
@@ -875,9 +875,16 @@ if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
 
-    stage_2_crop_data_to_task_phases()
+    # stage_2_crop_data_to_task_phases()
 
-    # stage_4_short_time_memory()
+    
+
+    steps = [0,1,2,3]
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
+    for step in steps:
+        for phase in phases:
+            stage_4_short_time_memory(n_time_steps=step, phase=phase)
+  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
