@@ -106,7 +106,7 @@ def get_phase_columns(phase_name):
     out = {}
     for key, val in cfg.items():
         if isinstance(val, dict) and "prefix" in val:
-            out[key] = [f"{val['prefix']}{i}" for i in range(1, val["count"] + 1)]
+            out[key] = [f"{val['prefix']}{i}" for i in range(val["count"])]
         else:
             out[key] = val
     
@@ -514,8 +514,7 @@ def stage_1_align_and_downsample():
 
     # Destination path
     MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')  
-    # DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_preprocessed")    
-    DESTINATION_DIR = os.path.join(MAIN_DIR, "99_checking_02_IL_preprocessed")   
+    DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_preprocessed")    
     DESTINATION_PATH = os.path.join(DESTINATION_DIR, EXPERIMENT)
         
     
@@ -528,7 +527,7 @@ def stage_1_align_and_downsample():
         )
     
     # Type trial number in case you want to start from that one
-    start_index = trials_sorted.index("trial_10045")
+    start_index = trials_sorted.index("trial_10000")
     # start_index = 0
     
 
@@ -646,10 +645,15 @@ def stage_2_crop_data_to_task_phases():
     for trial in (trials):
         print(f'\nCropping {trial} into task phases...')
 
+        trial_number = int(trial.split("_")[1].split("(")[0])
+        if trial_number >= 10000:
+            SOURCE_PATH = Path("/media/alejo/IL_data/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam")
+
         df = pd.read_csv(os.path.join(SOURCE_PATH, trial))        
                 
         # ------------------------ First: Define cropping indices --------------------------
 
+        # === PHASE 1: APPROACH PHASE ===
         # End of phase 1: defined by tof < 5cm (contact)        
         idx_phase_1_end = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
         if idx_phase_1_end is None:
@@ -666,8 +670,16 @@ def stage_2_crop_data_to_task_phases():
         phase_1_extra_time_end = 2.0
         idx_phase_1_end += int(phase_1_extra_time_end * 30)
 
+        # Crop data for phase 1
+        df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]        
+        base_filename = os.path.splitext(trial)[0]
+        df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
+
+
+        # === PHASE 2: CONTACT PHASE ===
         # End of phase 2: defined by at least two suction cups engaged
         idx_phase_2_end = find_end_of_phase_2_contact(df, trial, air_pressure_threshold=600, n_cups=2)
+
         if idx_phase_2_end is None:
             trials_without_engagement.append(trial)
             continue  # Skip cropping for this trial
@@ -676,38 +688,22 @@ def stage_2_crop_data_to_task_phases():
 
         phase_2_extra_time_end = 2.0
         idx_phase_2_end += int(phase_2_extra_time_end * 30)
+        # Crop data for phase 2
+        df_phase_2 = df.iloc[idx_phase_2_start:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
+        df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
 
-        # End of phase 3 defined by ...
+
+        # === PHASE 3: PICK PHASE ===
+        # End of phase 3 defined by Max net Force
         idx_phase_3_end = find_end_of_phase_3_contact(df, trial, total_force_threshold=20)
         phase_3_extra_time_end = 3.0
         idx_phase_3_end += int(phase_3_extra_time_end * 30)
 
-
-        # ------------------------- Second: Crop data for each phase -----------------------
-        df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]
-        # plt.plot(df_phase_1['timestamp_vector'],df_phase_1['tof'])        
-        
-        df_phase_2 = df.iloc[idx_phase_2_start:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
-        # fig = plt.figure()
-        # plt.plot(df_phase_2['timestamp_vector'],df_phase_2['scA'])        
-        # plt.plot(df_phase_2['timestamp_vector'],df_phase_2['scB'])  
-        # plt.plot(df_phase_2['timestamp_vector'],df_phase_2['scC'])         
-
+        # Crop data for phase 3
         df_phase_3 = df.iloc[idx_phase_3_start:idx_phase_3_end][['timestamp_vector'] + phase_3_pick_cols]
-        # fig = plt.figure()
-        # plt.plot(df_phase_3['timestamp_vector'],df_phase_3['_wrench._force._x'])        
-        # plt.plot(df_phase_3['timestamp_vector'],df_phase_3['_wrench._force._y'])  
-        # plt.plot(df_phase_3['timestamp_vector'],df_phase_3['_wrench._force._z'])  
-
-        # plt.show()
-
-        # df_phase_4 = df.iloc[idx_phase_3_end:][['timestamp_vector'] + phase_4_disposal_cols]
-
-        # Save cropped data to CSV files
-        base_filename = os.path.splitext(trial)[0]
-        # df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
-        # df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
         df_phase_3.to_csv(os.path.join(DESTINATION_PATH, 'phase_3_pick', f"{base_filename}_(phase_3_pick).csv"), index=False)
+
+        # === PHASE 4: DISPOSAL PHASE ===              
         # df_phase_4.to_csv(os.path.join(DESTINATION_PATH, 'phase_4_disposal', f"{base_filename}_(phase_4_disposal).csv"), index=False)
 
 
@@ -744,7 +740,7 @@ def stage_2_crop_data_to_task_phases():
 
         # Save cropped data to CSV files
         base_filename = os.path.splitext(trial)[0]
-        # df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
+        df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
 
 
     print('\n----Trials without contact:----')
@@ -823,7 +819,7 @@ def stage_3_fix_hw_issues():
           f'Trials with faulty scC data: {faulty_trials_scC}\n')
 
 
-def stage_4_short_time_memory(n_time_steps=3):
+def stage_4_short_time_memory(n_time_steps=3, phase='phase_2_contact'):
     """
     Generates a Dataframe with short-term memory given n_time_steps
     (e.g. t-2, t-1, t)
@@ -834,8 +830,8 @@ def stage_4_short_time_memory(n_time_steps=3):
         SOURCE_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_3_pick")
         DESTINATION_PATH = Path(r"D:\04_IL_preprocessed_(memory)/experiment_1_(pull)/phase_3_pick")
     else:
-        SOURCE_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_3_pick")
-        DESTINATION_PATH = Path("/media/alejo/IL_data/04_IL_preprocessed_(memory)/experiment_1_(pull)/phase_3_pick")         
+        SOURCE_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/" + phase)
+        DESTINATION_PATH = Path("/media/alejo/IL_data/04_IL_preprocessed_(memory)/experiment_1_(pull)/" + phase)         
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
@@ -877,9 +873,9 @@ def stage_4_short_time_memory(n_time_steps=3):
     
 if __name__ == '__main__':
 
-    stage_1_align_and_downsample()
+    # stage_1_align_and_downsample()
 
-    # stage_2_crop_data_to_task_phases()
+    stage_2_crop_data_to_task_phases()
 
     # stage_4_short_time_memory()
       
