@@ -8,6 +8,7 @@ import pickle
 from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 import matplotlib.pyplot as plt
+import joblib
 
 import pandas as pd
 import numpy as np
@@ -120,10 +121,11 @@ def prepare_data_approach2(train_trials_list, test_trials_list, n_input_cols):
 
 def main():
 
+    regressor = 'mlp'  # 'rf' or 'mlp'
     # Load Data
     BASE_DIRECTORY = '/media/alejo/IL_data/04_IL_preprocessed_(memory)'
     experiment = 'experiment_1_(pull)'
-    phase = 'phase_3_pick'
+    phase = 'phase_1_approach'
     time_steps = '2_timesteps'              # Number of timesteps considered as input data
 
     suffix = '_' + experiment + '_' + phase + '_' + time_steps       
@@ -147,14 +149,12 @@ def main():
 
     # Approach 2: Split data trial-wise
     train_trials, test_trials = train_test_split(
-        all_trials_paths, test_size=0.2, shuffle=True, random_state=42
+        all_trials_paths, test_size=0.10, shuffle=True, random_state=112
     )
     X_train_norm, Y_train, X_test_norm, Y_test, mean, std = prepare_data_approach2(train_trials, test_trials, input_cols)
     
 
     # Linear Regression
-    regressor = "rf"           # MLP or RF    
-
     if regressor == 'rf':
 
         # ==================== RANDOM FOREST REGRESSOR ======================
@@ -198,9 +198,9 @@ def main():
             activation='relu',
             solver='adam',
             learning_rate='adaptive',
-            max_iter=1500,
+            max_iter=1000,
             early_stopping=True,            # it automatically takes 10% of data for validation
-            n_iter_no_change=50,
+            n_iter_no_change=30,
             random_state=42,
             verbose=True
         )
@@ -233,13 +233,14 @@ def main():
     df_test=pd.DataFrame(test_trials, columns=['trial_id'])
     df_test.to_csv(os.path.join(DESTINATION_PATH, 'test_trials.csv'), index=False)
 
-    model_name = regressor + suffix + '.pkl'
+    model_name = regressor + suffix + '.joblib'
     mean_name = 'mean' + suffix + '.npy'
     std_name = 'std' + suffix + '.npy'
 
     
     with open(os.path.join(DESTINATION_PATH, model_name), "wb") as f:
-        pickle.dump(regressor_model, f)   
+        # pickle.dump(regressor_model, f)   
+        joblib.dump(regressor_model, f)
 
     np.save(os.path.join(DESTINATION_PATH, mean_name), mean)
     np.save(os.path.join(DESTINATION_PATH, std_name), std)

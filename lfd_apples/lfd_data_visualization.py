@@ -9,6 +9,7 @@ from scipy.spatial.transform import Rotation as R
 import pickle
 import matplotlib.pyplot as plt
 import random
+import joblib
 
 def get_paths(trial_num="trial_1"):
     # Detect OS and set IL_data base directory
@@ -278,15 +279,15 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
 
 def infer_actions():
     
-    phase = 'phase_3_pick'
+    phase = 'phase_1_approach'
     model = 'mlp'
     timesteps = '2_timesteps'
 
     # --- Load model ---
     model_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/' + phase + '/' + timesteps
-    model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.pkl'
+    model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
     with open(os.path.join(model_path, model_name), "rb") as f:
-        rf_loaded = pickle.load(f)
+        rf_loaded = joblib.load(f)
 
     # --- Pick randomly one trial from the test_trials list ---
     test_trials_list_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/' + phase + '/' + timesteps + '/test_trials.csv'
