@@ -118,16 +118,19 @@ def prepare_data_approach2(train_trials_list, test_trials_list, n_input_cols):
     return X_train_norm, Y_train, X_test_norm, Y_test, mean, std
 
 
-
-def main():
-
-    regressor = 'mlp'  # 'rf' or 'mlp'
+def learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps'):
+    """
+    Docstring for learn
+    
+    :param regressor: 'rf' or 'mlp'  Random Forest or Multi-Layer Perceptron
+    :param phase: 'phase_1_approach', 'phase_2_contact', 'phase_3_pick'
+    :param time_steps: Description
+    """
+    
     # Load Data
     BASE_DIRECTORY = '/media/alejo/IL_data/04_IL_preprocessed_(memory)'
-    experiment = 'experiment_1_(pull)'
-    phase = 'phase_1_approach'
-    time_steps = '2_timesteps'              # Number of timesteps considered as input data
-
+    experiment = 'experiment_1_(pull)'    
+   
     suffix = '_' + experiment + '_' + phase + '_' + time_steps       
     BASE_PATH = os.path.join(BASE_DIRECTORY, experiment, phase, time_steps)
 
@@ -254,6 +257,11 @@ def main():
         mse = mean_squared_error(Y_test[:, i], Y_pred[:, i])
         r2 = r2_score(Y_test[:, i], Y_pred[:, i])
         print(f"Output column {i}: MSE={mse:.4f}, R2={r2:.4f}")
+
+
+def main():
+
+    learn(regressor='mlp', phase='phase_1_approach', time_steps='1_timesteps')
 
 
 if __name__ == '__main__':
