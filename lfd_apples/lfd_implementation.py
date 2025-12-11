@@ -25,6 +25,7 @@ from lfd_apples.lfd_vision import extract_pooled_latent_vector
 from ultralytics import YOLO
 import cv2
 import pickle
+import joblib
 import numpy as np
 
 
@@ -45,8 +46,15 @@ class LFDController(Node):
         self.vel_pub = self.create_publisher(
             TwistStamped, '/cartesian_velocity_controller/command', 10)
         
-        # franka_cartesian_velocity_example_controller:
-        # type: franka_example_controllers/CartesianVelocityExampleController
+        # --- Timer for high-rate velocity ramping ---
+        self.timer_period = 0.001  # 500 Hz
+        self.create_timer(self.timer_period, self.publish_smoothed_velocity)
+
+        # --- Velocity ramping variables ---
+        self.current_cmd = TwistStamped()
+        self.target_cmd = TwistStamped()
+        self.max_linear_ramp = 0.001   # max delta per cycle for linear
+        self.max_angular_ramp = 0.005  # max delta per cycle for angular
         
 
         # Action Client
@@ -99,7 +107,7 @@ class LFDController(Node):
         self.data_ready = False
         self.running_lfd_approach = False
         self.running_lfd_contact = False
-        self.running_lfd_pick = False
+        self.running_lfd_pick = False        
 
         # Thresholds
         self.tof_threshold = 50                 # units in mm
@@ -114,20 +122,28 @@ class LFDController(Node):
         self.yolo_latent_layer = 12
 
         # State Space Vectors
-        self.t_2_data = []
-        self.t_1_data = []
+        self.t_2_data = np.zeros(142)
+        self.t_1_data = np.zeros(142)
         self.t_data = []
+        self.tof = np.zeros(1)
+        self.latent_image = np.zeros(127)
+        self.eef_pose = np.zeros(7)
+        self.Y = np.zeros(7)
 
         # Load learned model
-        phase = 'phase_3_pick'
+        phase = 'phase_1_approach'
         model = 'mlp'
         timesteps = '2_timesteps'        
-        # model_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/' + phase + '/' + timesteps
-        # model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.pkl'
-        # with open(os.path.join(model_path, model_name), "rb") as f:
-        #     self.lfd_model = pickle.load(f)
-        # self.lfd_mean = np.load(os.path.join(model_path, 'mean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-        # self.lfd_std = np.load(os.path.join(model_path, 'std_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
+        model_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/' + phase + '/' + timesteps
+        model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
+        with open(os.path.join(model_path, model_name), "rb") as f:
+            # self.lfd_model = pickle.load(f)
+            self.lfd_model = joblib.load(f)
+        self.lfd_mean = np.load(os.path.join(model_path, 'mean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+        self.lfd_std = np.load(os.path.join(model_path, 'std_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
+
+        # DataFrame to store normalized states over time
+        self.lfd_states_df = pd.DataFrame()
         
      
                 
@@ -358,13 +374,17 @@ class LFDController(Node):
         self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
         self.running_lfd_approach = True
 
-        while rclpy.ok(): # and self.running_lfd_approach:
+        while rclpy.ok() and self.running_lfd_approach:
+
+            if self.tof < self.tof_threshold:
+                self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.tof_threshold}")
+                self.running_lfd_approach = False
+                self.send_stop_message()
 
             rclpy.spin_once(self,timeout_sec=0.0)
             time.sleep(0.001)
         
         self.send_stop_message()
-
         self.running_lfd_approach = False
 
     def send_stop_message(self):
@@ -374,21 +394,9 @@ class LFDController(Node):
         :param self: Description
         """
 
-        stop_msg = TwistStamped()           
-        stop_msg.header.stamp = self.get_clock().now().to_msg()
-        stop_msg.twist.linear.x = 0.0
-        stop_msg.twist.linear.y = 0.0
-        stop_msg.twist.linear.z = 0.0
-        stop_msg.twist.angular.x = 0.0
-        stop_msg.twist.angular.y = 0.0
-        stop_msg.twist.angular.z = 0.0
-
-        try:
-            self.vel_pub.publish(stop_msg)
-            self.get_logger().info(f"stop message sent")
-        except Exception:
-            self.get_logger().info(f"stop message FAILED to be sent")
-            pass
+        self.target_cmd.twist = Twist()  # zero target
+        self.current_cmd.header.stamp = self.get_clock().now().to_msg()
+        self.vel_pub.publish(self.current_cmd)
 
 
     # === Sensor Topics Callback ====
@@ -400,12 +408,10 @@ class LFDController(Node):
         self.scC = float(msg.data[2])
         self.tof = float(msg.data[3])
 
-        # Update sensors average since last action
-        if self.running_lfd_approach and (self.tof < self.tof_threshold):
-            self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.tof_threshold}")
-            # self.running_lfd_approach = False
-            self.send_stop_message()
+        self.tof = np.array([self.tof])
 
+        # Update sensors average since last action
+                
     def palm_camera_callback(self, msg: Image):
         """
         We'll use this callback to publish the twist commands
@@ -417,45 +423,75 @@ class LFDController(Node):
 
         if self.running_lfd_approach:
 
-            # # --- Process Image ---
-            # self.raw_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            # # Get latent space features
-            # pooled_vector, feat_map = extract_pooled_latent_vector(
-            #     self.raw_image,
-            #     self.yolo_model,
-            #     layer_index=self.yolo_latent_layer
-            # )
-            # self.latent_image = pooled_vector.tolist()
-            # # --- Combine data ---
-            # self.t_data = [self.tof, self.latent_image]       
-            # # Normalize data
+            # --- Process Image ---
+            self.raw_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            # Get latent space features
+            pooled_vector, feat_map = extract_pooled_latent_vector(
+                self.raw_image,
+                self.yolo_model,
+                layer_index=self.yolo_latent_layer
+            )
+            self.latent_image = pooled_vector.tolist()
+            # --- Combine data ---
+            # self.t_data = np.array([self.tof] + self.latent_image)
+            self.t_data = np.concatenate([self.tof, self.latent_image, self.eef_pose])
+            # Normalize data
             # self.t_data_norm = (self.t_data - self.lfd_mean) / self.lfd_std
-            
-            # # --- Use previous time-step states ---
-            # # Update states from previous time steps       
-            # self.t_2_data = self.t_1_data            
-            # self.t_1_data = self.t_data                        
-            # # Combine data, from past steps            
-            # self.X = self.t_2_data + self.t_1_data + self.t_data_norm
+                        
+            # Combine data, from past steps            
+            self.X = np.concatenate([self.t_2_data, self.t_1_data, self.t_data])
+
+            # --- Append as row in DataFrame ---
+            self.lfd_states_df = pd.concat([
+                self.lfd_states_df, 
+                # pd.DataFrame([self.t_data_norm])
+                pd.DataFrame([self.X])
+
+            ], ignore_index=True)
             
             # # --- Predict Actions ---
             # self.Y = self.lfd_model.predict(self.X)
 
             # Send actions (twist)        
-            cmd = TwistStamped()
-            cmd.header.stamp = self.get_clock().now().to_msg()
-            cmd.twist.linear.x = 0.0 #self.Y[0]
-            cmd.twist.linear.y = 0.001 #self.Y[1]
-            cmd.twist.linear.z = 0.0 #self.Y[2]
-            cmd.twist.angular.x = 0.0 #   self.Y[3]
-            cmd.twist.angular.y = 0.0 #   self.Y[4]
-            cmd.twist.angular.z = 0.0 #   self.Y[5]
-            self.vel_pub.publish(cmd)
+            self.target_cmd.twist.linear.x = 0.0
+            self.target_cmd.twist.linear.y = 0.01  # example: replace with self.Y[1]
+            self.target_cmd.twist.linear.z = 0.0
+            self.target_cmd.twist.angular.x = 0.0
+            self.target_cmd.twist.angular.y = 0.0
+            self.target_cmd.twist.angular.z = 0.0
 
             self.get_logger().info(f"pal camera callback sending topic")
 
             # Add actions to State Space to pass them to the next time steps
-            # self.t_data = [self.tof, self.latent_image, self.Y]        
+            self.t_1_data = np.concatenate([self.t_data, self.Y])
+            self.t_2_data = self.t_1_data            
+
+        
+    def publish_smoothed_velocity(self):
+        # --- High-rate ramping + publishing ---
+
+        if not self.running_lfd_approach:
+            return
+
+        # Ramp linear velocities
+        for axis in ['x','y','z']:
+            cur = getattr(self.current_cmd.twist.linear, axis)
+            tgt = getattr(self.target_cmd.twist.linear, axis)
+            delta = tgt - cur
+            step = max(-self.max_linear_ramp, min(delta, self.max_linear_ramp))
+            setattr(self.current_cmd.twist.linear, axis, cur + step)
+
+        # Ramp angular velocities
+        for axis in ['x','y','z']:
+            cur = getattr(self.current_cmd.twist.angular, axis)
+            tgt = getattr(self.target_cmd.twist.angular, axis)
+            delta = tgt - cur
+            step = max(-self.max_angular_ramp, min(delta, self.max_angular_ramp))
+            setattr(self.current_cmd.twist.angular, axis, cur + step)
+
+        # Publish current velocity
+        self.current_cmd.header.stamp = self.get_clock().now().to_msg()
+        self.vel_pub.publish(self.current_cmd)
 
     def eef_pose_callback(self, msg: PoseStamped):
 
@@ -467,6 +503,14 @@ class LFDController(Node):
         self.eef_ori_y = msg.pose.orientation.y
         self.eef_ori_z = msg.pose.orientation.z
         self.eef_ori_w = msg.pose.orientation.w
+
+        self.eef_pose = np.array([self.eef_pos_x,
+                                  self.eef_pos_y,
+                                  self.eef_pos_z,
+                                  self.eef_ori_x,
+                                  self.eef_ori_y,
+                                  self.eef_ori_z,
+                                  self.eef_ori_w])
 
         # Update sensors average since last action
     
@@ -537,6 +581,11 @@ def main():
         # lfd robot implementation        
         input("\n\033[1;32m4 - Press Enter to start ROBOT lfd implementation.\033[0m\n")        
         node.run_lfd_approach()      
+
+        # Example CSV path
+        csv_path = "/media/alejo/New Volume/06_IL_implementation/lfd_recorded_data.csv"
+        node.lfd_states_df.to_csv(csv_path, index=False)
+        node.get_logger().info(f"LFD approach data saved to {csv_path}")
 
         
         # Dispose apple
