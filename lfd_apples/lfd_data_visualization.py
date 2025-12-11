@@ -280,7 +280,7 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
 def infer_actions():
     
     phase = 'phase_1_approach'
-    model = 'mlp'
+    model = 'rf'
     timesteps = '2_timesteps'
 
     # --- Load model ---
@@ -325,8 +325,8 @@ def infer_actions():
     arr = df_just_inputs.to_numpy()
 
     # --- 2. Load normalization stats (mean/std) if you saved them ---
-    mean = np.load(os.path.join(model_path, 'mean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-    std = np.load(os.path.join(model_path, 'std_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+    mean = np.load(os.path.join(model_path, model + '_mean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+    std = np.load(os.path.join(model_path, model + '_std_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
     X_new_norm = (arr - mean) / std
 
     # Infere output

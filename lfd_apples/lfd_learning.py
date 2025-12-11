@@ -176,7 +176,7 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps'):
 
         # --- Review Feature Importance ---
         # Create DataFrame with feature importances
-        filename = 'trial_1_downsampled_aligned_data_(phase_3_pick)_(' + time_steps + ').csv'
+        filename = 'trial_1_downsampled_aligned_data_(' + phase + ')_(' + time_steps + ').csv'
         df = pd.read_csv(os.path.join(BASE_PATH, filename))
         df = df.iloc[:, :-7]        # simply drop action columns
         df = df.iloc[:, 1:]         # drop timevector column
@@ -237,8 +237,8 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps'):
     df_test.to_csv(os.path.join(DESTINATION_PATH, 'test_trials.csv'), index=False)
 
     model_name = regressor + suffix + '.joblib'
-    mean_name = 'mean' + suffix + '.npy'
-    std_name = 'std' + suffix + '.npy'
+    mean_name = regressor + '_mean' + suffix + '.npy'
+    std_name = regressor + '_std' + suffix + '.npy'
 
     
     with open(os.path.join(DESTINATION_PATH, model_name), "wb") as f:
@@ -261,7 +261,7 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps'):
 
 def main():
 
-    learn(regressor='mlp', phase='phase_1_approach', time_steps='1_timesteps')
+    learn(regressor='rf', phase='phase_1_approach', time_steps='2_timesteps')
 
 
 if __name__ == '__main__':
