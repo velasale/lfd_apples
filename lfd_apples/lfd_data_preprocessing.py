@@ -643,11 +643,7 @@ def stage_2_crop_data_to_task_phases():
     trials_without_engagement = []
 
     for trial in (trials):
-        print(f'\nCropping {trial} into task phases...')
-
-        trial_number = int(trial.split("_")[1].split("(")[0])
-        if trial_number >= 10000:
-            SOURCE_PATH = Path("/media/alejo/IL_data/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam")
+        print(f'\nCropping {trial} into task phases...')        
 
         df = pd.read_csv(os.path.join(SOURCE_PATH, trial))        
                 
@@ -666,7 +662,7 @@ def stage_2_crop_data_to_task_phases():
         idx_phase_2_start = idx_phase_1_end
 
         phase_1_time = 7.0  # in seconds
-        idx_phase_1_start = idx_phase_1_end - int(phase_1_time * 30)  # assuming 30 Hz
+        idx_phase_1_start = max[0, (idx_phase_1_end - int(phase_1_time * 30))]  # assuming 30 Hz
         phase_1_extra_time_end = 2.0
         idx_phase_1_end += int(phase_1_extra_time_end * 30)
 
@@ -733,9 +729,13 @@ def stage_2_crop_data_to_task_phases():
         elif idx_phase_1_end == "Multiple":
             trials_with_multiple_contacts.append(trial)
             continue
-               
+        
+        phase_1_time = 7.0  # in seconds
+        idx_phase_1_start = max[0, (idx_phase_1_end - int(phase_1_time * 30))]  # assuming 30 Hz
+        phase_1_extra_time_end = 2.0
+        idx_phase_1_end += int(phase_1_extra_time_end * 30)
 
-        # ------------------------- Second: Crop data for each phase -----------------------
+        # Crop data for phase 1
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]
 
         # Save cropped data to CSV files
