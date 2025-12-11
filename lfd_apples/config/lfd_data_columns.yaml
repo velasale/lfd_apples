@@ -62,7 +62,7 @@ joint_states_cols:
 
 inhand_cam_feature_cols:
   prefix: "f"
-  count: 127
+  count: 128
 
 
 
