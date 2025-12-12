@@ -17,6 +17,8 @@ from ros2bag2csv import plot_pressure, plot_wrench
 from pathlib import Path
 import yaml
 from pathlib import Path
+from tf_transformations import quaternion_multiply, quaternion_conjugate
+from scipy.spatial.transform import Rotation as R
 
 
 # ====================== Handy functions =======================
@@ -113,6 +115,36 @@ def get_phase_columns(phase_name):
 
     groups = cfg["phases"][phase_name]
     return [col for group in groups for col in out[group]]
+
+
+def quat_to_angular_velocity(quaternions, delta_t):
+    """
+    quaternions: (N, 4) in xyzw
+    timestamps: (N,)
+    Returns: angular velocities (N, 3)
+    """
+    quaternions = np.asarray(quaternions)    
+    N = quaternions.shape[0]
+
+    # Convert to Rotation objects
+    R_all = R.from_quat(quaternions)
+
+    # Relative rotations between consecutive steps
+    R_rel = R_all[:-1].inv() * R_all[1:]
+
+    # Rotation vectors
+    rotvec = R_rel.as_rotvec()  # shape (N-1, 3)   
+
+    # Prepend a zero rotation vector for the first step
+    rotvec_full = np.vstack([np.zeros((1, 3)), rotvec])  # shape (N, 3)
+
+    # Angular velocity ω = rotvec / Δt
+    omega = rotvec_full / delta_t[:, None]
+    
+    pass 
+
+    return omega
+
 
 
 # ============ Topic-specific downsampling functions ===========
@@ -343,15 +375,22 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_
     # Compute deltas
     delta_times = np.diff(df_final['elapsed_time'].values, prepend=df_final['elapsed_time'].values[0])
     # Avoid division by zero for first entry (set to 1 so speed = 0/1 = 0)
-    delta_times[delta_times == 0] = 1e-9   # or 1.0 if timestamps are stable
+    delta_times[delta_times <= 0.0001] = 0.001   # 1 kHz
     delta_positions = np.diff(filtered_positions, axis=0, prepend=filtered_positions[0:1, :])
-    delta_orientations = np.diff(filtered_orientations, axis=0, prepend=filtered_orientations[0:1, :])
 
-    # Compute speeds (m/s)
+    # Linear Velocities (m/s)
     linear_speeds = delta_positions / delta_times[:, None]
-    orientation_speeds = delta_orientations / delta_times[:, None]
+
+    # Angular Velocities (rad/s)
+    # Previous approach:
+    # delta_orientations = np.diff(filtered_orientations, axis=0, prepend=filtered_orientations[0:1, :])
+    # orientation_speeds = delta_orientations / delta_times[:, None]
+    orientation_speeds = quat_to_angular_velocity(filtered_orientations, delta_times)
+    
+
     # Create a new DataFrame for actions
-    action_columns = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z', 'delta_ori_w']
+    # action_columns = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z', 'delta_ori_w']
+    action_columns = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_angular_x', 'delta_angular_y', 'delta_angular_z']
     actions_df = pd.DataFrame(np.hstack((linear_speeds, orientation_speeds)), columns=action_columns)
     # Copy the elapsed_time column
     actions_df['elapsed_time'] = df_final['elapsed_time'].values
@@ -502,11 +541,11 @@ def stage_1_align_and_downsample():
     # MAIN_DIR = os.path.join("D:")                                   # windows OS
     MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')        # ubuntu OS
     SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
-    # EXPERIMENT = "experiment_1_(pull)"
-    EXPERIMENT = "only_human_demos/with_palm_cam"   
+    EXPERIMENT = "experiment_1_(pull)"
+    # EXPERIMENT = "only_human_demos/with_palm_cam"   
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
 
-    demonstrator = ""  # "human" or "robot"
+    demonstrator = "robot"  # "human" or "robot"
     FIXED_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
     INHAND_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
     ARM_SUBDIR = os.path.join(demonstrator, "lfd_bag_main", "bag_csvs")
@@ -527,7 +566,7 @@ def stage_1_align_and_downsample():
         )
     
     # Type trial number in case you want to start from that one
-    start_index = trials_sorted.index("trial_10000")
+    start_index = trials_sorted.index("trial_134")
     # start_index = 0
     
 
@@ -873,17 +912,16 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact'):
     
 if __name__ == '__main__':
 
-    # stage_1_align_and_downsample()
+    stage_1_align_and_downsample()
 
     # stage_2_crop_data_to_task_phases()
+   
 
-    
-
-    steps = [0,1,2,3]
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
-    for step in steps:
-        for phase in phases:
-            stage_4_short_time_memory(n_time_steps=step, phase=phase)
+    # steps = [0,1,2,3]
+    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
+    # for step in steps:
+    #     for phase in phases:
+    #         stage_4_short_time_memory(n_time_steps=step, phase=phase)
   
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
