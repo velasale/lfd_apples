@@ -76,18 +76,20 @@ phases:
   phase_2_contact:
     - tof_cols
     - air_pressure_cols
-    - ee_pose_cols
     - wrench_cols
+    - ee_pose_cols
     - action_cols
 
   phase_3_pick:
-    - ee_pose_cols
+    - tof_cols
+    - air_pressure_cols
     - wrench_cols
+    - ee_pose_cols
     - action_cols
 
   phase_4_disposal:
     - tof_cols
     - air_pressure_cols
-    - ee_pose_cols
     - wrench_cols
+    - ee_pose_cols
     - action_cols
