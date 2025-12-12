@@ -4,10 +4,10 @@ action_cols:
   - delta_pos_x
   - delta_pos_y
   - delta_pos_z
-  - delta_ori_x
-  - delta_ori_y
-  - delta_ori_z
-  - delta_ori_w
+  - delta_angular_x
+  - delta_angular_y
+  - delta_angular_z
+  # - delta_ori_w
 
 air_pressure_cols:
   - scA
