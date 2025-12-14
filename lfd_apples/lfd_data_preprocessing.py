@@ -119,21 +119,24 @@ def get_phase_columns(phase_name):
 
 def quat_to_angular_velocity(quaternions, delta_t):
     """
-    quaternions: (N, 4) in xyzw
-    timestamps: (N,)
-    Returns: angular velocities (N, 3)
+    quaternions: (N, 4) in xyzw, expressed in world frame
+    delta_t: (N,) or scalar
+    Returns: angular velocities (N, 3) in world frame, rad/s
     """
+
     quaternions = np.asarray(quaternions)    
     N = quaternions.shape[0]
 
-    # Convert to Rotation objects
-    R_all = R.from_quat(quaternions)
+    q_current = quaternions[1:]      # shape (N-1, 4)
+    q_prev = quaternions[:-1]      # shape (N-1, 4)
 
-    # Relative rotations between consecutive steps
-    R_rel = R_all[:-1].inv() * R_all[1:]
+    r_current = R.from_quat(q_current)
+    r_prev = R.from_quat(q_prev)
+
+    r_rel = r_current * r_prev.inv()    # shape (N-1,)        
 
     # Rotation vectors
-    rotvec = R_rel.as_rotvec()  # shape (N-1, 3)   
+    rotvec = r_rel.as_rotvec()  # shape (N-1, 3)   
 
     # Prepend a zero rotation vector for the first step
     rotvec_full = np.vstack([np.zeros((1, 3)), rotvec])  # shape (N, 3)
@@ -541,11 +544,11 @@ def stage_1_align_and_downsample():
     # MAIN_DIR = os.path.join("D:")                                   # windows OS
     MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')        # ubuntu OS
     SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
-    EXPERIMENT = "experiment_1_(pull)"
-    # EXPERIMENT = "only_human_demos/with_palm_cam"   
+    # EXPERIMENT = "experiment_1_(pull)"
+    EXPERIMENT = "only_human_demos/with_palm_cam"   
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
 
-    demonstrator = "robot"  # "human" or "robot"
+    demonstrator = ""  # "human" or "robot"
     FIXED_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
     INHAND_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
     ARM_SUBDIR = os.path.join(demonstrator, "lfd_bag_main", "bag_csvs")
@@ -553,6 +556,7 @@ def stage_1_align_and_downsample():
 
     # Destination path
     MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')  
+    MAIN_DIR = os.path.join('/home/alejo/Documents/DATA')        # ubuntu OS
     DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_preprocessed")    
     DESTINATION_PATH = os.path.join(DESTINATION_DIR, EXPERIMENT)
         
@@ -566,7 +570,7 @@ def stage_1_align_and_downsample():
         )
     
     # Type trial number in case you want to start from that one
-    start_index = trials_sorted.index("trial_134")
+    start_index = trials_sorted.index("trial_10000")
     # start_index = 0
     
 
@@ -584,13 +588,13 @@ def stage_1_align_and_downsample():
             trials_with_one_subfolder.append(trial)
             continue
 
-        # Define paths to all raw data
+        # Define source paths to all raw data
         raw_palm_camera_images_path = os.path.join(SOURCE_PATH, trial, INHAND_CAM_SUBDIR)        
         raw_pressure_and_tof_path = os.path.join(SOURCE_PATH, trial, GRIPPER_SUBDIR, "microROS_sensor_data.csv")
         raw_eef_wrench_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.csv")        
         raw_ee_pose_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_current_pose.csv")
                
-        # Downsample data and align datasets based on in-hand camera images timestamps
+        # Downsample data and align datasets based on the timestamps of in-hand camera images
         compare_plots = False
         df = pd.DataFrame()
         df['timestamp_vector'] = get_timestamp_vector_from_images(raw_palm_camera_images_path)
@@ -608,7 +612,7 @@ def stage_1_align_and_downsample():
         df_ds_5 = reduce_size_inhand_camera_raw_images(raw_palm_camera_images_path, layer=12)
 
         # Compute ACTIONS based on ee pose
-        df_ds_6 = derive_actions_from_ee_pose(df, raw_ee_pose_path, compare_plots)
+        df_ds_6 = derive_actions_from_ee_pose(df, raw_ee_pose_path, compare_plots=compare_plots)
         
         # Combine all downsampled data (STATES AND ACTIONS) into a single DataFrame
         df_ds_all = [df_ds_1, 
@@ -663,7 +667,10 @@ def stage_2_crop_data_to_task_phases():
         DESTINATION_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)\experiment_1_(pull)")
     else:
         SOURCE_PATH = Path("/media/alejo/IL_data/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)")
-        DESTINATION_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)")      
+        DESTINATION_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)") 
+
+        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)')
+        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)')
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
@@ -749,6 +756,8 @@ def stage_2_crop_data_to_task_phases():
         SOURCE_PATH_ONLY_APPROACH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\only_human_demos/with_palm_cam")
     else:
         SOURCE_PATH_ONLY_APPROACH = Path("/media/alejo/IL_data/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam")
+
+        SOURCE_PATH_ONLY_APPROACH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam')
 
     only_human_trials = [f for f in os.listdir(SOURCE_PATH_ONLY_APPROACH) 
                          if os.path.isfile(os.path.join(SOURCE_PATH_ONLY_APPROACH, f)) and f.endswith(".csv")]   
@@ -869,8 +878,9 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact'):
         SOURCE_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_3_pick")
         DESTINATION_PATH = Path(r"D:\04_IL_preprocessed_(memory)/experiment_1_(pull)/phase_3_pick")
     else:
-        SOURCE_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/" + phase)
-        DESTINATION_PATH = Path("/media/alejo/IL_data/04_IL_preprocessed_(memory)/experiment_1_(pull)/" + phase)         
+        BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
+        SOURCE_PATH = Path(BASE_SOURCE_PATH + '/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/' + phase)
+        DESTINATION_PATH = Path(BASE_SOURCE_PATH + '/04_IL_preprocessed_(memory)/experiment_1_(pull)/' + phase)         
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
@@ -912,16 +922,16 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact'):
     
 if __name__ == '__main__':
 
-    stage_1_align_and_downsample()
+    # stage_1_align_and_downsample()
 
     # stage_2_crop_data_to_task_phases()
    
 
-    # steps = [0,1,2,3]
-    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
-    # for step in steps:
-    #     for phase in phases:
-    #         stage_4_short_time_memory(n_time_steps=step, phase=phase)
+    steps = [0,1,2,3,4]
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
+    for step in steps:
+        for phase in phases:
+            stage_4_short_time_memory(n_time_steps=step, phase=phase)
   
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'

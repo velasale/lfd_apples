@@ -10,6 +10,8 @@ import pickle
 import matplotlib.pyplot as plt
 import random
 import joblib
+import yaml
+
 
 def get_paths(trial_num="trial_1"):
     # Detect OS and set IL_data base directory
@@ -280,17 +282,19 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
 def infer_actions():
     
     phase = 'phase_1_approach'
-    model = 'rf'
+    model = 'mlp'
     timesteps = '2_timesteps'
 
     # --- Load model ---
-    model_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/' + phase + '/' + timesteps
+    BASE_PATH = '/home/alejo/Documents/DATA'
+    # BASE_PATH = '/media/alejo/IL_data'
+    model_path = os.path.join(BASE_PATH, '05_IL_learning/experiment_1_(pull)/', phase, timesteps)
     model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
     with open(os.path.join(model_path, model_name), "rb") as f:
         rf_loaded = joblib.load(f)
 
     # --- Pick randomly one trial from the test_trials list ---
-    test_trials_list_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/' + phase + '/' + timesteps + '/test_trials.csv'
+    test_trials_list_path = os.path.join(model_path, 'test_trials.csv')
     df = pd.read_csv(test_trials_list_path)  # CSV with one column containing file paths
     # Assuming the column is named 'file_path'
     file_paths = df['trial_id'].tolist()
@@ -298,58 +302,56 @@ def infer_actions():
     random_file = random.choice(file_paths)
     df = pd.read_csv(random_file)
 
-    groundtruth_delta_x = df['delta_pos_x'].values
-    groundtruth_delta_y = df['delta_pos_y'].values
-    groundtruth_delta_z = df['delta_pos_z'].values
+    # Extract ground truth actions
+    data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+    with open(data_columns_path, "r") as f:
+        cfg = yaml.safe_load(f)
+    
+    output_cols = cfg['action_cols']      
+    groundtruth_delta_x = df[output_cols[0]].values
+    groundtruth_delta_y = df[output_cols[1]].values
+    groundtruth_delta_z = df[output_cols[2]].values
 
-    quats = np.column_stack([
-        df['delta_ori_x'].values,
-        df['delta_ori_y'].values,
-        df['delta_ori_z'].values,
-        df['delta_ori_w'].values
-    ])   
+    groundtruth_omega_x = df[output_cols[3]].values
+    groundtruth_omega_y = df[output_cols[4]].values
+    groundtruth_omega_z = df[output_cols[5]].values
 
-    # convert to Euler angles (radians)
-    eulers = R.from_quat(quats).as_euler('xyz', degrees=False)
 
-    # Extract roll (x), pitch (y), yaw (z)
-    groundtruth_delta_roll = eulers[:, 0]
-    groundtruth_delta_pitch = eulers[:, 1]
-    groundtruth_delta_yaw = eulers[:, 2]
+    # quats = np.column_stack([
+    #     df['delta_ori_x'].values,
+    #     df['delta_ori_y'].values,
+    #     df['delta_ori_z'].values,
+    #     df['delta_ori_w'].values
+    # ])   
+
+    # # convert to Euler angles (radians)
+    # eulers = R.from_quat(quats).as_euler('xyz', degrees=False)
+
+    # # Extract roll (x), pitch (y), yaw (z)
+    # groundtruth_delta_roll = eulers[:, 0]
+    # groundtruth_delta_pitch = eulers[:, 1]
+    # groundtruth_delta_yaw = eulers[:, 2]
     
     
-    #  Names of the columns you dropped (ground truth)
-    output_cols = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z', 'delta_ori_w']
-    # delete ground truth (last seven columns)
+    # Remove ground truth action columns and timestamp vector
     df_just_inputs = df.drop(columns=['timestamp_vector'] + output_cols)
     arr = df_just_inputs.to_numpy()
 
     # --- 2. Load normalization stats (mean/std) if you saved them ---
-    mean = np.load(os.path.join(model_path, model + '_mean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-    std = np.load(os.path.join(model_path, model + '_std_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+    mean = np.load(os.path.join(model_path, model + '_Xmean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+    std = np.load(os.path.join(model_path, model + '_Xstd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
     X_new_norm = (arr - mean) / std
 
     # Infere output
-    Y_predictions = rf_loaded.predict(X_new_norm)
+    y_mean = np.load(os.path.join(model_path, model + '_Ymean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+    y_std = np.load(os.path.join(model_path, model + '_Ystd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))    
+    Y_predictions = rf_loaded.predict(X_new_norm) * y_std + y_mean
 
-    pred_quats = np.column_stack([
-        df['delta_ori_x'].values,
-        df['delta_ori_y'].values,
-        df['delta_ori_z'].values,
-        df['delta_ori_w'].values
-    ])   
 
     # --- 4. Assign predictions back to original dataframe ---
     for i, col in enumerate(output_cols):
         df[col] = Y_predictions[:, i]       
-
-    pred_quats = np.column_stack([
-        df['delta_ori_x'].values,
-        df['delta_ori_y'].values,
-        df['delta_ori_z'].values,
-        df['delta_ori_w'].values
-    ])  
-    pred_eulers = R.from_quat(pred_quats).as_euler('xyz', degrees=False)
+   
 
     # Create video to compare
     # Visualize Inhand Camera and Ground Truth Actions
@@ -393,22 +395,22 @@ def infer_actions():
     fig, axs = plt.subplots(3, 1, figsize=(6, 8), sharex=True)
 
     # Row 1: X-axis
-    axs[0].plot(df['timestamp_vector'], groundtruth_delta_roll, label='Ground Truth')
-    axs[0].plot(df['timestamp_vector'], pred_eulers[:, 0], label='Predictions')
+    axs[0].plot(df['timestamp_vector'], groundtruth_omega_x, label='Ground Truth')
+    axs[0].plot(df['timestamp_vector'], df['delta_angular_x'], label='Predictions')
     axs[0].set_title('EEF angular velocity roll (x-axis)')
     axs[0].legend()
     axs[0].grid(True)
 
     # Row 2: Y-axis
-    axs[1].plot(df['timestamp_vector'], groundtruth_delta_pitch, label='Ground Truth')
-    axs[1].plot(df['timestamp_vector'], pred_eulers[:, 1], label='Predictions')
+    axs[1].plot(df['timestamp_vector'], groundtruth_omega_y, label='Ground Truth')
+    axs[1].plot(df['timestamp_vector'], df['delta_angular_y'], label='Predictions')
     axs[1].set_title('EEF angular velocity pitch (y-axis)')
     axs[1].legend()
     axs[1].grid(True)
 
     # Row 3: Z-axis
-    axs[2].plot(df['timestamp_vector'], groundtruth_delta_yaw, label='Ground Truth')
-    axs[2].plot(df['timestamp_vector'], pred_eulers[:, 1], label='Predictions')
+    axs[2].plot(df['timestamp_vector'], groundtruth_omega_z, label='Ground Truth')
+    axs[2].plot(df['timestamp_vector'], df['delta_pos_z'], label='Predictions')
     axs[2].set_title('EEF angular velocity yaw (z-axis)')
     axs[2].legend()
     axs[2].grid(True)

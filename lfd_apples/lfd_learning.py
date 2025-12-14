@@ -9,9 +9,11 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 import matplotlib.pyplot as plt
 import joblib
+import yaml
 
 import pandas as pd
 import numpy as np
+from pathlib import Path
 
 
 def load_data(BASE_PATH):
@@ -82,20 +84,36 @@ def prepare_data(all_data, n_input_cols):
 
 
 def prepare_data_approach2(train_trials_list, test_trials_list, n_input_cols):
+    """
+    Docstring for prepare_data_approach2
+    
+    :param train_trials_list: Description
+    :param test_trials_list: Description
+    :param n_input_cols: Description
+    """
    
    # Prepare Training Set
     train_arrays = []
     for trial in train_trials_list:      
 
         df = pd.read_csv(trial)
+        df = df.apply(pd.to_numeric, errors='coerce')
+
         df.drop(columns=['timestamp_vector'], inplace=True)
        
-        arr = df.to_numpy()
+        arr = df.to_numpy(dtype=np.float64)
         train_arrays.append(arr)
 
     train_combined = np.vstack(train_arrays)
     X_train = train_combined[:, :n_input_cols]
     Y_train = train_combined[:, n_input_cols:]
+
+    # Clip linear velocities (columns 0,1,2) and angular velocities (columns 3,4,5)
+    Y_train_clipped = Y_train.copy()
+    linear_max = 1      # m/s
+    angular_max = 1      # rad/s
+    Y_train_clipped[:, 0:3] = np.clip(Y_train_clipped[:, 0:3], -linear_max, linear_max)    
+    Y_train_clipped[:, 3:6] = np.clip(Y_train_clipped[:, 3:6], -angular_max, angular_max)
 
     # Prepare Testing Set
     test_arrays = []
@@ -111,14 +129,24 @@ def prepare_data_approach2(train_trials_list, test_trials_list, n_input_cols):
     X_test = test_combined[:, :n_input_cols]
     Y_test = test_combined[:, n_input_cols:]
 
+    # Clip linear velocities (columns 0,1,2) and angular velocities (columns 3,4,5)
+    Y_test_clipped = Y_test.copy()
+    Y_test_clipped[:, 0:3] = np.clip(Y_test_clipped[:, 0:3], -linear_max, linear_max)    
+    Y_test_clipped[:, 3:6] = np.clip(Y_test_clipped[:, 3:6], -angular_max, angular_max)
 
     # Normalize features
-    X_train_norm, X_test_norm, mean, std = zscore_normalize(X_train, X_test)
+    X_train_norm, X_test_norm, X_mean, X_std = zscore_normalize(X_train, X_test)
+    Y_train_norm, Y_test_norm, Y_mean, Y_std = zscore_normalize(Y_train_clipped, Y_test_clipped)    
 
-    return X_train_norm, Y_train, X_test_norm, Y_test, mean, std
+    nan_rows = np.isnan(X_train_norm).any(axis=1)
+    print(f"Rows with NaNs in X_train_nrom: {np.where(nan_rows)[0]}")
+    nan_rows = np.isnan(Y_train).any(axis=1)
+    print(f"Rows with NaNs in Y_train: {np.where(nan_rows)[0]}")
+
+    return X_train_norm, Y_train_norm, X_test_norm, Y_test_clipped, X_mean, X_std, Y_mean, Y_std
 
 
-def learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps'):
+def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
     """
     Docstring for learn
     
@@ -128,22 +156,29 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps'):
     """
     
     # Load Data
-    BASE_DIRECTORY = '/media/alejo/IL_data/04_IL_preprocessed_(memory)'
+    # BASE_DIRECTORY = '/media/alejo/IL_data/04_IL_preprocessed_(memory)'
+    BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
+    BASE_DIRECTORY = os.path.join(BASE_SOURCE_PATH, '04_IL_preprocessed_(memory)')
     experiment = 'experiment_1_(pull)'    
    
     suffix = '_' + experiment + '_' + phase + '_' + time_steps       
     BASE_PATH = os.path.join(BASE_DIRECTORY, experiment, phase, time_steps)
 
-    DESTINATION_DIRECTORY = '/media/alejo/IL_data/05_IL_learning'
+    DESTINATION_DIRECTORY = os.path.join(BASE_SOURCE_PATH, '05_IL_learning')
     DESTINATION_PATH = os.path.join(DESTINATION_DIRECTORY, experiment, phase, time_steps)
     os.makedirs(DESTINATION_PATH, exist_ok=True)
 
     # Split data into Training trials and Test trials
-    all_data, all_trials_paths = load_data(BASE_PATH)
-    
+    all_data, all_trials_paths = load_data(BASE_PATH)    
     cols = all_data.shape[1]
-    output_cols = 7                         # These are the action columns
-    input_cols = cols - output_cols  
+
+    # Check size of actions
+    data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+    with open(data_columns_path, "r") as f:
+        cfg = yaml.safe_load(f)
+    
+    n_output_cols = len(cfg['action_cols'])                         # These are the action columns
+    n_input_cols = cols - n_output_cols  
 
     # Approach 1: Split data row-wise
     # Normalize data
@@ -152,10 +187,26 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps'):
 
     # Approach 2: Split data trial-wise
     train_trials, test_trials = train_test_split(
-        all_trials_paths, test_size=0.10, shuffle=True, random_state=112
+        all_trials_paths, test_size=0.20, shuffle=True, random_state=42
     )
-    X_train_norm, Y_train, X_test_norm, Y_test, mean, std = prepare_data_approach2(train_trials, test_trials, input_cols)
-    
+    X_train_norm, Y_train_norm, X_test_norm, Y_test, x_mean, x_std, y_mean, y_std = prepare_data_approach2(train_trials, test_trials, n_input_cols)
+
+    # Save Y_training set as csv for analysis
+    Y_train_df = pd.DataFrame(Y_train_norm)
+    Y_train_df.to_csv(os.path.join(DESTINATION_PATH, 'Y_train_normalized.csv'), index=False)
+
+    # plot distribution of Y_train_norm
+    plt.figure(figsize=(10,6))
+    for i in range(Y_train_norm.shape[1]):
+        plt.subplot(Y_train_norm.shape[1], 1, i+1)
+        plt.hist(Y_train_norm[:, i], bins=50, alpha=0.7)
+        plt.title(f'Distribution of Y_train_norm Column {i}')
+        plt.xlabel('Value')
+        plt.ylabel('Frequency')
+        plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(os.path.join(DESTINATION_PATH, 'Y_train_normalized_distribution.png'), dpi=300)
+    plt.close()
 
     # Linear Regression
     if regressor == 'rf':
@@ -164,21 +215,24 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps'):
             
         # --- Initialize regressor ---
         regressor_model = RandomForestRegressor(
-            n_estimators=100,
-            warm_start=True,
+            n_estimators=300,
+            max_depth=20,
+            min_samples_leaf=5,
+            max_features=0.7,
             n_jobs=-1,
+            random_state=42,
             verbose=2,
-            random_state=42
+            warm_start=False
         )
 
         # --- Train regressor ---
-        regressor_model.fit(X_train_norm, Y_train)
+        regressor_model.fit(X_train_norm, Y_train_norm)
 
         # --- Review Feature Importance ---
         # Create DataFrame with feature importances
         filename = 'trial_1_downsampled_aligned_data_(' + phase + ')_(' + time_steps + ').csv'
         df = pd.read_csv(os.path.join(BASE_PATH, filename))
-        df = df.iloc[:, :-7]        # simply drop action columns
+        df = df.iloc[:, :-n_output_cols]        # simply drop action columns
         df = df.iloc[:, 1:]         # drop timevector column
 
         feat_df = pd.DataFrame({
@@ -197,19 +251,19 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps'):
         # =============================== MULTI LINEAR PERCEPTRON =========================
         # --- Initialize MLP ---
         regressor_model = MLPRegressor(
-            hidden_layer_sizes=(50, 50),  # two hidden layers with 50 neurons each
+            hidden_layer_sizes=(75,75),  # two hidden layers with 50 neurons each
             activation='relu',
             solver='adam',
             learning_rate='adaptive',
+            # learning_rate_init=0.00001,
             max_iter=1000,
             early_stopping=True,            # it automatically takes 10% of data for validation
-            n_iter_no_change=30,
-            random_state=42,
+            n_iter_no_change=50,            
             verbose=True
         )
 
         # --- Train MLP ---
-        regressor_model.fit(X_train_norm, Y_train)
+        regressor_model.fit(X_train_norm, Y_train_norm)
 
         # --- Plot loss curve ---
         plt.figure(figsize=(8,5))
@@ -237,19 +291,25 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps'):
     df_test.to_csv(os.path.join(DESTINATION_PATH, 'test_trials.csv'), index=False)
 
     model_name = regressor + suffix + '.joblib'
-    mean_name = regressor + '_mean' + suffix + '.npy'
-    std_name = regressor + '_std' + suffix + '.npy'
+    Xmean_name = regressor + '_Xmean' + suffix + '.npy'
+    Xstd_name = regressor + '_Xstd' + suffix + '.npy'
+    Ymean_name = regressor + '_Ymean' + suffix + '.npy'
+    Ystd_name = regressor + '_Ystd' + suffix + '.npy'
 
     
     with open(os.path.join(DESTINATION_PATH, model_name), "wb") as f:
         # pickle.dump(regressor_model, f)   
         joblib.dump(regressor_model, f)
 
-    np.save(os.path.join(DESTINATION_PATH, mean_name), mean)
-    np.save(os.path.join(DESTINATION_PATH, std_name), std)
+    np.save(os.path.join(DESTINATION_PATH, Xmean_name), x_mean)
+    np.save(os.path.join(DESTINATION_PATH, Xstd_name), x_std)
+    np.save(os.path.join(DESTINATION_PATH, Ymean_name), y_mean)
+    np.save(os.path.join(DESTINATION_PATH, Ystd_name), y_std)
 
     # --- 5. Predict on validation set ---
     Y_pred = regressor_model.predict(X_test_norm)
+    # Denormalize predictions
+    Y_pred = Y_pred * y_std + y_mean
 
     # Evaluate model on validation set
     # Evaluate (per output column)
@@ -261,7 +321,7 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps'):
 
 def main():
 
-    learn(regressor='rf', phase='phase_1_approach', time_steps='2_timesteps')
+    learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps')
 
 
 if __name__ == '__main__':
