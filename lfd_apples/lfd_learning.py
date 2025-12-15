@@ -110,8 +110,8 @@ def prepare_data_approach2(train_trials_list, test_trials_list, n_input_cols):
 
     # Clip linear velocities (columns 0,1,2) and angular velocities (columns 3,4,5)
     Y_train_clipped = Y_train.copy()
-    linear_max = 0.5      # m/s
-    angular_max = 0.5      # rad/s
+    linear_max = 2      # m/s
+    angular_max = 2      # rad/s
     Y_train_clipped[:, 0:3] = np.clip(Y_train_clipped[:, 0:3], -linear_max, linear_max)    
     Y_train_clipped[:, 3:6] = np.clip(Y_train_clipped[:, 3:6], -angular_max, angular_max)
 
@@ -172,7 +172,7 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
     all_data, all_trials_paths = load_data(BASE_PATH)    
     cols = all_data.shape[1]
 
-    # Check size of actions
+    # Load actions
     data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
     with open(data_columns_path, "r") as f:
         cfg = yaml.safe_load(f)
@@ -321,7 +321,7 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
 
 def main():
 
-    learn(regressor='mlp', phase='phase_3_pick', time_steps='2_timesteps')
+    learn(regressor='rf', phase='phase_3_pick', time_steps='3_timesteps')
 
 
 if __name__ == '__main__':

@@ -282,8 +282,8 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
 def infer_actions():
     
     phase = 'phase_3_pick'
-    model = 'mlp'
-    timesteps = '2_timesteps'
+    model = 'rf'
+    timesteps = '3_timesteps'
 
     # --- Load model ---
     BASE_PATH = '/home/alejo/Documents/DATA'
