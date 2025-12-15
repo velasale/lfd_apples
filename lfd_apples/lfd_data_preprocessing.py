@@ -127,8 +127,8 @@ def quat_to_angular_velocity(quaternions, delta_t):
     quaternions = np.asarray(quaternions)    
     N = quaternions.shape[0]
 
-    q_current = quaternions[1:]      # shape (N-1, 4)
-    q_prev = quaternions[:-1]      # shape (N-1, 4)
+    q_current = quaternions[1:]         # shape (N-1, 4)
+    q_prev = quaternions[:-1]           # shape (N-1, 4)
 
     r_current = R.from_quat(q_current)
     r_prev = R.from_quat(q_prev)
@@ -136,15 +136,13 @@ def quat_to_angular_velocity(quaternions, delta_t):
     r_rel = r_current * r_prev.inv()    # shape (N-1,)        
 
     # Rotation vectors
-    rotvec = r_rel.as_rotvec()  # shape (N-1, 3)   
+    rotvec = r_rel.as_rotvec()          # shape (N-1, 3)   
 
     # Prepend a zero rotation vector for the first step
     rotvec_full = np.vstack([np.zeros((1, 3)), rotvec])  # shape (N, 3)
 
     # Angular velocity ω = rotvec / Δt
-    omega = rotvec_full / delta_t[:, None]
-    
-    pass 
+    omega = rotvec_full / delta_t[:, None]    
 
     return omega
 
@@ -356,46 +354,53 @@ def get_timestamp_vector_from_images(image_folder_path):
 
 # =================== Action Space derivation ===================
 def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_plots=True):
-    """ Applies a gaussian filter, Derive actions based on end-effector pose changes over time, and downsamples. 
-    Actions are computed as differences in position and orientation over time.
     """
-
-    df_raw = pd.read_csv(raw_data_path)        
+    Derive the Action Space from eef_pose. Action Space consists of linear and angular velocities.
+    Linear velocities are computed as differences in position over time.
+    Angular velocities are computed from differences in orientation (quaternions) over time. 
     
-    # Combine with the rest of the dataframe
+    :param reference_df: Description
+    :param raw_data_path: Description
+    :param sigma: Description
+    :param compare_plots: Description
+    """    
+
+    # Step 1: Load raw data, and remove unnecessary columns
+    df_raw = pd.read_csv(raw_data_path)        
     df_final = pd.concat([df_raw], axis=1)
     df_final.drop(columns=["_header._stamp._sec", "_header._stamp._nanosec", "_header._frame_id", "timestamp"], inplace=True)
 
-    # Compute actions as differences in position and orientation
+    # Load actions yaml file for column names
+    data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+    with open(data_columns_path, "r") as f:
+        cfg = yaml.safe_load(f)    
+    action_columns = cfg["action_cols"]
+
+    # Step 2: Get eef positions and orientations
     positions = df_final[['_pose._position._x', '_pose._position._y', '_pose._position._z']].values
     orientations = df_final[['_pose._orientation._x', '_pose._orientation._y', '_pose._orientation._z', '_pose._orientation._w']].values
 
-    # Filter signals if needed (e.g., smoothing) - optional step
-    sigma = 100  # adjust for more/less smoothing
-    filtered_positions = gaussian_filter1d(positions, sigma=sigma, axis=0)
-    filtered_orientations = gaussian_filter1d(orientations, sigma=sigma, axis=0)  
-
-    # Compute deltas
+    # Step 3: Compute delta time Δt
     delta_times = np.diff(df_final['elapsed_time'].values, prepend=df_final['elapsed_time'].values[0])
-    # Avoid division by zero for first entry (set to 1 so speed = 0/1 = 0)
-    delta_times[delta_times <= 0.0001] = 0.001   # 1 kHz
-    delta_positions = np.diff(filtered_positions, axis=0, prepend=filtered_positions[0:1, :])
+    delta_times[delta_times <= 0.0001] = 0.001   # Avoid division by zero for first entry. Franka Arm sampling rate 1 kHz
 
-    # Linear Velocities (m/s)
+    # Step 4: Compute linear velocities (m/s) and angular velocities (rad/s)
+    delta_positions = np.diff(positions, axis=0, prepend=positions[0:1, :])
     linear_speeds = delta_positions / delta_times[:, None]
+    orientation_speeds = quat_to_angular_velocity(orientations, delta_times)  
 
-    # Angular Velocities (rad/s)
-    # Previous approach:
-    # delta_orientations = np.diff(filtered_orientations, axis=0, prepend=filtered_orientations[0:1, :])
-    # orientation_speeds = delta_orientations / delta_times[:, None]
-    orientation_speeds = quat_to_angular_velocity(filtered_orientations, delta_times)
-    
+    # Save before filtering for comparison
+    actions_df_before_filtering = pd.DataFrame(np.hstack((linear_speeds, orientation_speeds)), columns=action_columns)
+    actions_df_before_filtering['elapsed_time'] = df_final['elapsed_time'].values
 
-    # Create a new DataFrame for actions
-    # action_columns = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z', 'delta_ori_w']
-    action_columns = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_angular_x', 'delta_angular_y', 'delta_angular_z']
+    # Step 6: Filter linear and angular speeds
+    # linear_speeds = gaussian_filter1d(linear_speeds, sigma=10, axis=0)
+    window_size = 30
+    linear_speeds = median_filter(linear_speeds, size=(window_size,1))
+    # orientation_speeds = gaussian_filter1d(orientation_speeds, sigma=10, axis=0)
+    orientation_speeds = median_filter(orientation_speeds, size=(window_size,1))    
+
     actions_df = pd.DataFrame(np.hstack((linear_speeds, orientation_speeds)), columns=action_columns)
-    # Copy the elapsed_time column
     actions_df['elapsed_time'] = df_final['elapsed_time'].values
 
     # Interpolate to reference timestamps
@@ -404,18 +409,40 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_
     if compare_plots:
         # Compare plots before and after downsampling
         # Ensure numeric 1-D arrays
-        plt.figure()    
+
+        fig, axs = plt.subplots(2, 1, sharex=True, figsize=(10, 6))
+
+        # --- Linear velocities subplot ---
+        x_ds = np.array(actions_df_before_filtering['elapsed_time']).flatten()
+        y_ds = np.array(actions_df_before_filtering['delta_pos_x']).flatten()
+        axs[0].plot(x_ds, y_ds, label='Original Action delta pos x', alpha=0.5)
 
         x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
         y_ds = np.array(df_downsampled['delta_pos_x']).flatten()
-        plt.plot(x_ds, y_ds, label='Downsampled Action delta pos x')
+        axs[0].plot(x_ds, y_ds, label='Filtered and Downsampled Action delta pos x')        
 
-        x_ds = np.array(actions_df['elapsed_time']).flatten()
-        y_ds = np.array(actions_df['delta_pos_x']).flatten()
-        plt.plot(x_ds, y_ds, label='Original Action delta pos x', alpha=0.5)
-        
-        plt.legend()
-        plt.title('Action delta pos x Over Time')        
+        axs[0].set_title('Action delta pos x Over Time')
+        axs[0].set_ylabel('Linear Velocity')
+        axs[0].legend()
+        axs[0].grid(True)
+
+        # --- Angular velocities subplot ---
+        x_ds = np.array(actions_df_before_filtering['elapsed_time']).flatten()
+        y_ds = np.array(actions_df_before_filtering['delta_angular_x']).flatten()
+        axs[1].plot(x_ds, y_ds, label='Original Action delta angular x', alpha=0.5)
+
+        x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
+        y_ds = np.array(df_downsampled['delta_angular_x']).flatten()
+        axs[1].plot(x_ds, y_ds, label='Filtered and Downsampled Action delta angular x')        
+
+        axs[1].set_title('Action delta angular x Over Time')
+        axs[1].set_xlabel('Time [s]')
+        axs[1].set_ylabel('Angular Velocity')
+        axs[1].legend()
+        axs[1].grid(True)
+
+        plt.tight_layout()
+        plt.show()
 
     return df_downsampled
 
@@ -544,11 +571,11 @@ def stage_1_align_and_downsample():
     # MAIN_DIR = os.path.join("D:")                                   # windows OS
     MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')        # ubuntu OS
     SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
-    # EXPERIMENT = "experiment_1_(pull)"
-    EXPERIMENT = "only_human_demos/with_palm_cam"   
+    EXPERIMENT = "experiment_1_(pull)"
+    # EXPERIMENT = "only_human_demos/with_palm_cam"   
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
 
-    demonstrator = ""  # "human" or "robot"
+    demonstrator = "robot"  # "human" or "robot"
     FIXED_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
     INHAND_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
     ARM_SUBDIR = os.path.join(demonstrator, "lfd_bag_main", "bag_csvs")
@@ -570,8 +597,8 @@ def stage_1_align_and_downsample():
         )
     
     # Type trial number in case you want to start from that one
-    start_index = trials_sorted.index("trial_10000")
-    # start_index = 0
+    # start_index = trials_sorted.index("trial_10000")
+    start_index = 0
     
 
     # ---------- Step 2: Loop through all trials ----------
@@ -922,17 +949,15 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact'):
     
 if __name__ == '__main__':
 
-    # stage_1_align_and_downsample()
+    stage_1_align_and_downsample()
 
-    # stage_2_crop_data_to_task_phases()
-   
+    # stage_2_crop_data_to_task_phases()   
 
-    steps = [0,1,2,3,4]
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
-    for step in steps:
-        for phase in phases:
-            stage_4_short_time_memory(n_time_steps=step, phase=phase)
-  
+    # steps = [0,1,2,3,4]
+    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
+    # for step in steps:
+    #     for phase in phases:
+    #         stage_4_short_time_memory(n_time_steps=step, phase=phase)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
