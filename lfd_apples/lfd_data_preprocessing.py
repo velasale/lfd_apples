@@ -355,9 +355,9 @@ def get_timestamp_vector_from_images(image_folder_path):
 # =================== Action Space derivation ===================
 def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_plots=True):
     """
-    Derive the Action Space from eef_pose. Action Space consists of linear and angular velocities.
-    Linear velocities are computed as differences in position over time.
-    Angular velocities are computed from differences in orientation (quaternions) over time. 
+    Derive Action Space from eef_pose. Action Space consists of linear and angular velocities.
+     * Linear velocities are computed as differences in position over time.
+     * Angular velocities are computed from differences in orientation (quaternions) over time. 
     
     :param reference_df: Description
     :param raw_data_path: Description
@@ -569,7 +569,7 @@ def stage_1_align_and_downsample():
 
     # ---------- Step 1: Load raw data ----------
     # MAIN_DIR = os.path.join("D:")                                   # windows OS
-    MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')        # ubuntu OS
+    MAIN_DIR = os.path.join('/media', 'alejo', 'New Volume')        # ubuntu OS
     SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
     EXPERIMENT = "experiment_1_(pull)"
     # EXPERIMENT = "only_human_demos/with_palm_cam"   
@@ -597,8 +597,8 @@ def stage_1_align_and_downsample():
         )
     
     # Type trial number in case you want to start from that one
-    # start_index = trials_sorted.index("trial_10000")
-    start_index = 0
+    start_index = trials_sorted.index("trial_237")
+    # start_index = 0
     
 
     # ---------- Step 2: Loop through all trials ----------
@@ -949,15 +949,15 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact'):
     
 if __name__ == '__main__':
 
-    stage_1_align_and_downsample()
+    # stage_1_align_and_downsample()
 
     # stage_2_crop_data_to_task_phases()   
 
-    # steps = [0,1,2,3,4]
-    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
-    # for step in steps:
-    #     for phase in phases:
-    #         stage_4_short_time_memory(n_time_steps=step, phase=phase)  
+    steps = [0,1,2,3,4]
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
+    for step in steps:
+        for phase in phases:
+            stage_4_short_time_memory(n_time_steps=step, phase=phase)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
