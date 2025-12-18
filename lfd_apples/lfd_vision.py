@@ -11,6 +11,15 @@ from tqdm import tqdm
 import pandas as pd
 
 
+import os
+import cv2
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+
+
 def dino_patch_heatmap_video(image_folder, output_video, frame_rate=30):
 
     """Generate a video overlaying DINOv2 patch-level feature heatmaps on images.
@@ -275,16 +284,17 @@ def extract_pooled_latent_vector(
 
 
 
+
 def pooled_latent_heatmap_video(
-        image_folder, 
-        output_video, 
-        model_name, 
-        layer_index=12, 
-        frame_rate=30
+    image_folder, 
+    output_video, 
+    model_name, 
+    layer_index=12, 
+    frame_rate=30
 ):
     model = YOLO(model_name)
 
-    # get sample frame for video size
+    # Get sample frame for video size
     sample_img_path = next(
         (os.path.join(image_folder, f)
          for f in sorted(os.listdir(image_folder))
@@ -299,9 +309,9 @@ def pooled_latent_heatmap_video(
 
     os.makedirs(os.path.dirname(output_video), exist_ok=True)
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_writer = cv2.VideoWriter(output_video, fourcc, frame_rate, (W, H))
+    video_writer = cv2.VideoWriter(output_video, fourcc, frame_rate, (W*2, H))  # double width for 2 images
 
-    pooled_vectors = []  # store vectors for CSV
+    pooled_vectors = []
 
     for fname in tqdm(sorted(os.listdir(image_folder))):
         if not fname.lower().endswith(('.jpg', '.png', '.jpeg')):
@@ -310,63 +320,60 @@ def pooled_latent_heatmap_video(
         img_path = os.path.join(image_folder, fname)
         img_cv = cv2.imread(img_path)
 
-        # extract image-level pooled latent vector
         pooled_vector, feat_map = extract_pooled_latent_vector(
-            img_cv, 
-            model,
-            layer_index=layer_index
+            img_cv, model, layer_index=layer_index
         )
         pooled_vectors.append(pooled_vector)
 
-        # heatmap for visualization
-        heatmap_2d = (
-            pooled_vector.reshape(-1, 1).repeat(10, axis=1)
-        )
-        heatmap_2d = (
-            (heatmap_2d - heatmap_2d.min()) 
-            / (np.ptp(heatmap_2d) + 1e-6) * 255
-        ).astype(np.uint8)
+        feat_map_cpu = feat_map.detach().cpu().numpy()
 
-        heatmap_resized = cv2.resize(heatmap_2d, (W, H))
-        heatmap_color = cv2.applyColorMap(heatmap_resized, cv2.COLORMAP_VIRIDIS)
+        # Take first channel for visualization
+        if feat_map_cpu.ndim == 3:
+            heatmap = feat_map_cpu[0, :, :]
+        elif feat_map_cpu.ndim == 4:
+            heatmap = feat_map_cpu[0, 0, :, :]
 
-        overlay = cv2.addWeighted(img_cv, 0.6, heatmap_color, 0.4, 0)
+        # Normalize to 0-255 and convert to uint8
+        heatmap_norm = ((heatmap - heatmap.min()) / (np.ptp(heatmap) + 1e-6) * 255).astype(np.uint8)
+        heatmap_color = cv2.applyColorMap(cv2.resize(heatmap_norm, (W, H)), cv2.COLORMAP_VIRIDIS)
+
+        # Side-by-side: left = raw image, right = heatmap
+        side_by_side = np.concatenate([img_cv, heatmap_color], axis=1)
+
+        # Optionally overlay filename
         cv2.putText(
-            overlay, fname, (10, 30),
+            side_by_side, fname, (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1
         )
 
-        video_writer.write(overlay)
+        video_writer.write(side_by_side)
 
     video_writer.release()
+    print(f"Pooled latent heatmap video saved to {output_video}")
 
-    # save all pooled vectors to CSV
+    # Save pooled vectors
     df = pd.DataFrame(pooled_vectors)
     df.to_csv("pooled_features.csv", index=False)
-
-    print(f"Pooled latent heatmap video saved to {output_video}")
+    print(df.shape[1], "features saved to pooled_features.csv")
 
 
 def main():
   
-    image_folder = "/home/alejo/Documents/temporal/trial_5/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw"
-    # dino_output_video = "/home/alejo/Documents/temporal/trial_5/dinov2_patch_heatmap_video.mp4"
-    yolo_output_video = "/home/alejo/Documents/temporal/trial_5/yolo_detection_video.mp4"
-    frame_rate = 30  # frames per second
+    trial = 'trial_1'
+    for layer in range(22):
+       
+        frame_rate = 30  # frames per second
+        
+        image_path = '/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)/' + trial + '/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw'       
+        yolo_output_video = "/home/alejo/Documents/temporal/" + trial + "_yolo_detection_video_" + str(layer) + "layers.mp4"
+        
+        # dino_patch_heatmap_video(image_folder, dino_output_video, frame_rate)
+        # Get the path to the folder containing this script
 
-    # dino_patch_heatmap_video(image_folder, dino_output_video, frame_rate)
-
-    # Get the path to the folder containing this script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    pt_path = os.path.join(script_dir, "resources", "best_segmentation.pt")
-
-    # yolo_centers_video(image_folder, yolo_output_video , model_name=pt_path, frame_rate=frame_rate)
-
-    yolo_output_video = "/home/alejo/Documents/temporal/trial_5/yolo_latent_video.mp4"
-    # yolo_latent_heatmap_video(image_folder, yolo_output_video, model_name=pt_path)
-
-    yolo_pool_output_video = "/home/alejo/Documents/temporal/trial_5/yolo_pool_video.mp4"
-    pooled_latent_heatmap_video(image_folder, yolo_pool_output_video, model_name=pt_path)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        pt_path = os.path.join(script_dir, "resources", "best_segmentation.pt")
+    
+        pooled_latent_heatmap_video(image_path, yolo_output_video, model_name=pt_path, layer_index=layer, frame_rate=frame_rate)
 
 if __name__ == "__main__":
     main()  
