@@ -62,7 +62,7 @@ joint_states_cols:
 
 inhand_cam_feature_cols:
   prefix: "f"
-  count: 128
+  count: 64        # Number of features extracted from in-hand camera images, Layer 15 of Segmentation Network
 
 
 
