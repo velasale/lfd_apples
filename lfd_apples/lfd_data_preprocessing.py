@@ -4,14 +4,18 @@ import pandas as pd
 import ast
 import re
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from hampel import hampel
 
 from lfd_vision import extract_pooled_latent_vector
 from ultralytics import YOLO
 import cv2
 
 from scipy.ndimage import gaussian_filter, median_filter, gaussian_filter1d
+from scipy.signal import medfilt, butter, filtfilt, lfilter
 
 from ros2bag2csv import plot_pressure, plot_wrench
 from pathlib import Path
@@ -154,7 +158,7 @@ def downsample_pressure_and_tof_data(df, raw_data_path, compare_plots=True):
     df_raw = pd.read_csv(raw_data_path)    
     df_raw["_data_as_list"] = df_raw["_data"].apply(parse_array_string)
 
-    # Split that list into multiple independent columns
+    # Split raw data list into multiple independent columns
     data_expanded = pd.DataFrame(df_raw["_data_as_list"].tolist(), columns=["scA", "scB", "scC", "tof"])
 
     # Combine with the rest of the dataframe
@@ -168,29 +172,41 @@ def downsample_pressure_and_tof_data(df, raw_data_path, compare_plots=True):
     if compare_plots:
         # Compare plots before and after downsampling
         # Ensure numeric 1-D arrays
-        plt.figure()    
 
         x = np.array(df_final['elapsed_time']).flatten()
-        y = np.array(df_final['scA']).flatten()
-        plt.plot(x, y, label='Original scA')
-
         x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-        y_ds = np.array(df_downsampled['scA']).flatten()
-        plt.plot(x_ds, y_ds, label='Downsampled scA', linestyle='--')
+
+        fig, axes = plt.subplots(3, 1, sharex=True, figsize=(10, 8))
+        signals = ['scA', 'scB', 'scC']                     
         
-        plt.legend()
-        plt.title('Pressure Sensor A Before and After Downsampling')        
+        for ax, sig in zip(axes, signals):
+
+            y = np.array(df_final[sig]).flatten()
+            y_ds = np.array(df_downsampled[sig]).flatten()
+
+            ax.plot(x, y, label=f'Original {sig}', alpha=0.5, linewidth=3)
+            ax.plot(x_ds, y_ds, label=f'Downsampled {sig}', color='black', linewidth=1)
+            
+            ax.set_title(f'Air pressure sensor {sig} before and after Downsampling')
+            ax.legend()
+            ax.grid(True)
+
+        axes[-1].set_xlabel('Elapsed Time')
+
+        plt.tight_layout()
+        plt.show()
 
     return df_downsampled
 
 
-def reduce_size_inhand_camera_raw_images(raw_data_path, layer=12):
+def reduce_size_inhand_camera_raw_images(raw_data_path, layer=15):
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     pt_path = os.path.join(script_dir, "resources", "best_segmentation.pt")
 
     model = YOLO(pt_path)
     rows = []
+   
 
     for fname in sorted(os.listdir(raw_data_path)):
         if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
@@ -208,7 +224,8 @@ def reduce_size_inhand_camera_raw_images(raw_data_path, layer=12):
             model,
             layer_index=layer
         )
-
+        feat_map_cpu = feat_map.detach().cpu().numpy()        
+        
         # build row: first filename, then 256 feature values
         row = [fname] + pooled_vector.tolist()
         rows.append(row)
@@ -219,42 +236,59 @@ def reduce_size_inhand_camera_raw_images(raw_data_path, layer=12):
     columns = ["filename"] + [f"f{i}" for i in range(feature_dim)]
     df = pd.DataFrame(rows, columns=columns)
 
-    df.drop(columns=["filename"], inplace=True)
+    df.drop(columns=["filename"], inplace=True)   
 
     return df
       
 
 def downsample_eef_wrench_data(df, raw_data_path, compare_plots=True):
 
-    df_raw = pd.read_csv(raw_data_path)    
-    # df_raw["_data_as_list"] = df_raw["_data"].apply(parse_array_string)
-
-    # Split that list into multiple independent columns
-    # data_expanded = pd.DataFrame(df_raw["_data_as_list"].tolist(), columns=["scA", "scB", "scC", "tof"])
+    df_raw = pd.read_csv(raw_data_path)        
 
     # Combine with the rest of the dataframe
     df_final = pd.concat([df_raw], axis=1)
     df_final.drop(columns=["_header._stamp._sec", "_header._stamp._nanosec", "_header._frame_id", "timestamp"], inplace=True)
 
+    # Apply filter to smooth wrench signals
+    df_filtered = df_final.copy()    
+    signals = ['_wrench._force._x', '_wrench._force._y', '_wrench._force._z',
+               '_wrench._torque._x', '_wrench._torque._y', '_wrench._torque._z']
+    for sig in signals:      
+
+        df_filtered[sig] = hampel(df_filtered[sig], window_size=11, n_sigma=3.0).filtered_data
+        # Butterworth low-pass filter
+        b, a = butter(N=4, Wn=10, fs=1000, btype='low')
+        df_filtered[sig] = filtfilt(b, a, df_filtered[sig])
 
     # Interpolate to reference timestamps
-    df_downsampled = interpolate_to_reference_multi(df_final, df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
+    df_downsampled = interpolate_to_reference_multi(df_filtered, df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
 
+    # Compare plots before and after downsampling
     if compare_plots:
-        # Compare plots before and after downsampling
-        # Ensure numeric 1-D arrays
-        plt.figure()    
-
+                
         x = np.array(df_final['elapsed_time']).flatten()
-        y = np.array(df_final['_wrench._force._z']).flatten()
-        plt.plot(x, y, label='Original wrench Force Z', alpha=0.5)
-
         x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-        y_ds = np.array(df_downsampled['_wrench._force._z']).flatten()
-        plt.plot(x_ds, y_ds, label='Downsampled wrench Force z')
+
+        fig, axes = plt.subplots(3, 1, sharex=True, figsize=(10, 8))
+        signals = ['_wrench._force._x', '_wrench._force._y', '_wrench._force._z']                     
         
-        plt.legend()
-        plt.title('Wrench Force XBefore and After Downsampling')        
+        for ax, sig in zip(axes, signals):
+
+            y = np.array(df_final[sig]).flatten()
+            y_ds = np.array(df_downsampled[sig]).flatten()
+
+            ax.plot(x, y, label=f'Original {sig}', alpha=0.5, linewidth=2)
+            ax.plot(x_ds, y_ds, label=f'Downsampled {sig}', color='black', linewidth=1)
+            
+            ax.set_title(f'Wrench signal {sig} before and after Filtering and Downsampling')
+            ax.legend()
+            ax.grid(True)
+
+        axes[-1].set_xlabel('Elapsed Time')
+
+        plt.tight_layout()
+        plt.show()        
+       
 
     return df_downsampled
 
@@ -279,21 +313,31 @@ def downsample_robot_joint_states_data(df, raw_data_path, compare_plots=True):
     # Interpolate to reference timestamps
     df_downsampled = interpolate_to_reference_multi(df_final, df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
 
-    if compare_plots:
-        # Compare plots before and after downsampling
-        # Ensure numeric 1-D arrays
-        plt.figure()    
-
-        x = np.array(df_final['elapsed_time']).flatten()
-        y = np.array(df_final['pos_joint_1']).flatten()
-        plt.plot(x, y, label='Original pos joint 1')
-
-        x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-        y_ds = np.array(df_downsampled['pos_joint_1']).flatten()
-        plt.plot(x_ds, y_ds, label='Downsampled pos joint 1', linestyle='--')
+    # Compare plots before and after downsampling        
+    if compare_plots:       
         
-        plt.legend()
-        plt.title('Pos joint 1 Before and After Downsampling')        
+        x = np.array(df_final['elapsed_time']).flatten()
+        x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
+
+        fig, axes = plt.subplots(3, 1, sharex=True, figsize=(10, 8))
+        signals = ['pos_joint_1', 'vel_joint_1', 'eff_joint_1']                     
+        
+        for ax, sig in zip(axes, signals):
+
+            y = np.array(df_final[sig]).flatten()
+            y_ds = np.array(df_downsampled[sig]).flatten()
+
+            ax.plot(x, y, label=f'Original {sig}', alpha=0.5, linewidth=2)
+            ax.plot(x_ds, y_ds, label=f'Downsampled {sig}', color='black', linewidth=1)
+            
+            ax.set_title(f'Joint signal {sig} before and after Downsampling')
+            ax.legend()
+            ax.grid(True)
+
+        axes[-1].set_xlabel('Elapsed Time')
+
+        plt.tight_layout()
+        plt.show()            
 
     return df_downsampled
 
@@ -309,21 +353,31 @@ def downsample_robot_ee_pose_data(df, raw_data_path, compare_plots=True):
     # Interpolate to reference timestamps
     df_downsampled = interpolate_to_reference_multi(df_final, df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
 
+    # Compare plots before and after downsampling    
     if compare_plots:
-        # Compare plots before and after downsampling
-        # Ensure numeric 1-D arrays
-        plt.figure()    
 
         x = np.array(df_final['elapsed_time']).flatten()
-        y = np.array(df_final['_pose._position._x']).flatten()
-        plt.plot(x, y, label='Original pose position x')
-
         x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-        y_ds = np.array(df_downsampled['_pose._position._x']).flatten()
-        plt.plot(x_ds, y_ds, label='Downsampled pose position x', linestyle='--')
+
+        fig, axes = plt.subplots(3, 1, sharex=True, figsize=(10, 8))
+        signals = ['_pose._position._x', '_pose._position._y', '_pose._position._z']                     
         
-        plt.legend()
-        plt.title('Pose position x Before and After Downsampling')        
+        for ax, sig in zip(axes, signals):
+
+            y = np.array(df_final[sig]).flatten()
+            y_ds = np.array(df_downsampled[sig]).flatten()
+
+            ax.plot(x, y, label=f'Original {sig}', alpha=0.5, linewidth=2)
+            ax.plot(x_ds, y_ds, label=f'Downsampled {sig}', color='black', linewidth=1)
+            
+            ax.set_title(f'eef pose signal {sig} before and after Downsampling')
+            ax.legend()
+            ax.grid(True)
+
+        axes[-1].set_xlabel('Elapsed Time')
+
+        plt.tight_layout()
+        plt.show()            
 
     return df_downsampled
 
@@ -346,6 +400,7 @@ def get_timestamp_vector_from_images(image_folder_path):
                 timestamp = float(timestamp_str)
                 timestamps.append(timestamp)
             except ValueError:
+                print(f"Could not convert timestamp '{timestamp_str}' to float in filename '{filename}'.")
                 # Skip files that don't match expected pattern
                 continue
 
@@ -576,15 +631,16 @@ def stage_1_align_and_downsample():
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
 
     demonstrator = "robot"  # "human" or "robot"
+
     FIXED_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
     INHAND_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
     ARM_SUBDIR = os.path.join(demonstrator, "lfd_bag_main", "bag_csvs")
     GRIPPER_SUBDIR = os.path.join(demonstrator, "lfd_bag_main", "bag_csvs")
 
     # Destination path
-    MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')  
+    # MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')  
     MAIN_DIR = os.path.join('/home/alejo/Documents/DATA')        # ubuntu OS
-    DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_preprocessed")    
+    DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_preprocessed_(aligned_and_downsampled)")    
     DESTINATION_PATH = os.path.join(DESTINATION_DIR, EXPERIMENT)
         
     
@@ -615,7 +671,7 @@ def stage_1_align_and_downsample():
             trials_with_one_subfolder.append(trial)
             continue
 
-        # Define source paths to all raw data
+        # Define source paths to RAW data
         raw_palm_camera_images_path = os.path.join(SOURCE_PATH, trial, INHAND_CAM_SUBDIR)        
         raw_pressure_and_tof_path = os.path.join(SOURCE_PATH, trial, GRIPPER_SUBDIR, "microROS_sensor_data.csv")
         raw_eef_wrench_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_external_wrench_in_stiffness_frame.csv")        
@@ -636,7 +692,7 @@ def stage_1_align_and_downsample():
             df_ds_3 = downsample_robot_joint_states_data(df, raw_joint_states_path, compare_plots=compare_plots)
         
         df_ds_4 = downsample_robot_ee_pose_data(df, raw_ee_pose_path, compare_plots=compare_plots)
-        df_ds_5 = reduce_size_inhand_camera_raw_images(raw_palm_camera_images_path, layer=12)
+        df_ds_5 = reduce_size_inhand_camera_raw_images(raw_palm_camera_images_path, layer=15)
 
         # Compute ACTIONS based on ee pose
         df_ds_6 = derive_actions_from_ee_pose(df, raw_ee_pose_path, compare_plots=compare_plots)
@@ -894,7 +950,7 @@ def stage_3_fix_hw_issues():
           f'Trials with faulty scC data: {faulty_trials_scC}\n')
 
 
-def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact'):
+def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact', keep_actions_in_memory=False):
     """
     Generates a Dataframe with short-term memory given n_time_steps
     (e.g. t-2, t-1, t)
@@ -933,6 +989,10 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact'):
 
             # Rename columns of ith timestep dataframe
             if time_step > 0:
+
+                if not keep_actions_in_memory:
+                    df_time_step_ith = df_time_step_ith.iloc[:, :-6]
+                
                 df_time_step_ith.columns = [col + f"_(t_{time_step})" for col in df_time_step_ith.columns]           
 
             # Combine dataframes            
@@ -949,15 +1009,15 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact'):
     
 if __name__ == '__main__':
 
-    # stage_1_align_and_downsample()
+    stage_1_align_and_downsample()
 
     # stage_2_crop_data_to_task_phases()   
 
-    steps = [0,1,2,3,4]
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
-    for step in steps:
-        for phase in phases:
-            stage_4_short_time_memory(n_time_steps=step, phase=phase)  
+    # steps = [0,1,2,3,4]
+    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
+    # for step in steps:
+    #     for phase in phases:
+    #         stage_4_short_time_memory(n_time_steps=step, phase=phase)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
