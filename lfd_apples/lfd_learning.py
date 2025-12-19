@@ -187,8 +187,8 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
 
     # Approach 2: Split data trial-wise
     train_trials, test_trials = train_test_split(
-        all_trials_paths, test_size=0.20, shuffle=True, random_state=42
-    )
+        all_trials_paths, test_size=0.15, shuffle=True)
+    
     X_train_norm, Y_train_norm, X_test_norm, Y_test, x_mean, x_std, y_mean, y_std = prepare_data_approach2(train_trials, test_trials, n_input_cols)
 
     # Save Y_training set as csv for analysis
@@ -217,8 +217,8 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
         regressor_model = RandomForestRegressor(
             n_estimators=300,
             max_depth=20,
-            min_samples_leaf=5,
-            max_features=0.7,
+            # min_samples_leaf=5,
+            # max_features=0.7,
             n_jobs=-1,
             random_state=42,
             verbose=2,
@@ -251,11 +251,11 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
         # =============================== MULTI LINEAR PERCEPTRON =========================
         # --- Initialize MLP ---
         regressor_model = MLPRegressor(
-            hidden_layer_sizes=(50,50,50),  # two hidden layers with 50 neurons each
+            hidden_layer_sizes=(50,50),  # two hidden layers with 50 neurons each
             activation='relu',
             solver='adam',
             learning_rate='adaptive',
-            # learning_rate_init=0.00001,
+            # learning_rate_init=0.001,
             max_iter=2000,
             early_stopping=True,            # it automatically takes 10% of data for validation
             n_iter_no_change=50,            
@@ -321,7 +321,7 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
 
 def main():
 
-    learn(regressor='rf', phase='phase_3_pick', time_steps='3_timesteps')
+    learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps')
 
 
 if __name__ == '__main__':

@@ -14,7 +14,7 @@ import pandas as pd
 
 from lfd_apples.listen_franka import main as listen_main
 from lfd_apples.listen_franka import start_recording_bagfile, stop_recording_bagfile, save_metadata, find_next_trial_number 
-from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array
+from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array, fr3_jacobian
 
 from std_msgs.msg import Int16MultiArray
 from std_srvs.srv import SetBool
@@ -29,6 +29,8 @@ import joblib
 import numpy as np
 
 
+
+
 class LFDController(Node):
 
     def __init__(self):
@@ -40,22 +42,33 @@ class LFDController(Node):
         self.eef_pose_sub = self.create_subscription(
             PoseStamped, '/franka_robot_state_broadcaster/current_pose', self.eef_pose_callback, 10)
         self.palm_camera_sub = self.create_subscription(
-            Image, 'gripper/rgb_palm_camera/image_raw', self.palm_camera_callback, 10)        
+            Image, 'gripper/rgb_palm_camera/image_raw', self.palm_camera_callback, 10)       
+        self.joint_states_sub = self.create_subscription(
+            JointState, '/joint_states', self.joint_states_callback, 10)  # Dummy subscriber to ensure joint states are available
         
         # Topic Publishers
         self.vel_pub = self.create_publisher(
             TwistStamped, '/cartesian_velocity_controller/command', 10)
         
         # --- Timer for high-rate velocity ramping ---
-        self.timer_period = 0.001  # 500 Hz
+        self.timer_period = 0.03  # 500 Hz
         self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
         # --- Velocity ramping variables ---
         self.current_cmd = TwistStamped()
-        self.target_cmd = TwistStamped()
-        self.max_linear_ramp = 0.001   # max delta per cycle for linear
-        self.max_angular_ramp = 0.005  # max delta per cycle for angular
-        
+        self.target_cmd = TwistStamped()        
+
+        self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        self.current_angular_accel = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+
+        self.SCALING_FACTOR = 0.01
+        self.max_linear_accel   = 0.1 * self.SCALING_FACTOR   # m/s²
+        self.max_angular_accel  = 0.2 * self.SCALING_FACTOR    # rad/s²
+
+        self.max_linear_jerk    = 0.5 * self.SCALING_FACTOR    # m/s³
+        self.max_angular_jerk   = 1.0 * self.SCALING_FACTOR    # rad/s³   
+
+        self.last_cmd_time = self.get_clock().now()
 
         # Action Client
         self.action_client = ActionClient(
@@ -78,6 +91,7 @@ class LFDController(Node):
         self.load_client.wait_for_service()
 
         self.joint_names = [f"fr3_joint{i+1}" for i in range(7)]
+        self.joint_states = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         self.trajectory_points = []       
 
         # Home position with eef pose starting on - x
@@ -122,29 +136,43 @@ class LFDController(Node):
         self.yolo_latent_layer = 12
 
         # State Space Vectors
-        self.t_2_data = np.zeros(142)
-        self.t_1_data = np.zeros(142)
+        self.KEEP_ACTIONS_MEMORY = False
+        if self.KEEP_ACTIONS_MEMORY:
+            self.t_2_data = np.zeros(142)       
+            self.t_1_data = np.zeros(142)
+        else:
+            self.t_2_data = np.zeros(136)       
+            self.t_1_data = np.zeros(136)
+            
+
         self.t_data = []
         self.tof = np.zeros(1)
         self.latent_image = np.zeros(127)
         self.eef_pose = np.zeros(7)
-        self.Y = np.zeros(7)
+        self.Y = np.zeros(6)
 
         # Load learned model
         phase = 'phase_1_approach'
         model = 'mlp'
-        timesteps = '2_timesteps'        
-        model_path = '/media/alejo/IL_data/05_IL_learning/experiment_1_(pull)/' + phase + '/' + timesteps
+        timesteps = '2_timesteps'       
+        BASE_DIR = '/home/alejo/Documents/DATA'
+        # BASE_DIR = '/media/alejo/IL_data'
+        model_path = os.path.join(BASE_DIR, '05_IL_learning/experiment_1_(pull)', phase, timesteps)
         model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
         with open(os.path.join(model_path, model_name), "rb") as f:
             # self.lfd_model = pickle.load(f)
             self.lfd_model = joblib.load(f)
-        self.lfd_mean = np.load(os.path.join(model_path, 'mean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-        self.lfd_std = np.load(os.path.join(model_path, 'std_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
+        self.lfd_X_mean = np.load(os.path.join(model_path, model + '_Xmean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+        self.lfd_X_std = np.load(os.path.join(model_path, model + '_Xstd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
+        self.lfd_Y_mean = np.load(os.path.join(model_path, model + '_Ymean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+        self.lfd_Y_std = np.load(os.path.join(model_path, model + '_Ystd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
 
         # DataFrame to store normalized states over time
         self.lfd_states_df = pd.DataFrame()
-        
+        self.lfd_actions_df = pd.DataFrame()      
+
+
+       
      
                 
     def move_to_home(self):
@@ -376,10 +404,10 @@ class LFDController(Node):
 
         while rclpy.ok() and self.running_lfd_approach:
 
-            if self.tof < self.tof_threshold:
-                self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.tof_threshold}")
-                self.running_lfd_approach = False
+            if self.tof.item() < self.tof_threshold:
+                self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.tof_threshold}")                
                 self.send_stop_message()
+                self.running_lfd_approach = False
 
             rclpy.spin_once(self,timeout_sec=0.0)
             time.sleep(0.001)
@@ -399,6 +427,16 @@ class LFDController(Node):
         self.vel_pub.publish(self.current_cmd)
 
 
+    def compute_joint_velocities(self, desired_ee_velocity: np.ndarray, joint_positions: list):
+        """
+        desired_ee_velocity: 6-element NumPy array
+        joint_positions: list of 7 floats
+        returns: 7-element NumPy array
+        """
+        jacobian = fr3_jacobian(joint_positions)
+        joint_velocities = np.linalg.pinv(jacobian) @ desired_ee_velocity
+        self.get_logger().info(f'Joint velocities: {joint_velocities}')
+
     # === Sensor Topics Callback ====
     def gripper_sensors_callback(self, msg: Int16MultiArray):
 
@@ -412,6 +450,7 @@ class LFDController(Node):
 
         # Update sensors average since last action
                 
+
     def palm_camera_callback(self, msg: Image):
         """
         We'll use this callback to publish the twist commands
@@ -422,7 +461,8 @@ class LFDController(Node):
         """
 
         if self.running_lfd_approach:
-
+            
+            # ====================== PROCESS DATA ======================
             # --- Process Image ---
             self.raw_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
             # Get latent space features
@@ -433,65 +473,118 @@ class LFDController(Node):
             )
             self.latent_image = pooled_vector.tolist()
             # --- Combine data ---
-            # self.t_data = np.array([self.tof] + self.latent_image)
-            self.t_data = np.concatenate([self.tof, self.latent_image, self.eef_pose])
-            # Normalize data
-            # self.t_data_norm = (self.t_data - self.lfd_mean) / self.lfd_std
-                        
-            # Combine data, from past steps            
+            self.t_data = np.concatenate([self.tof, self.latent_image, self.eef_pose])            
+            # Combine data, with past steps            
             self.X = np.concatenate([self.t_2_data, self.t_1_data, self.t_data])
-
+            # Normalize data                        
+            self.X_norm = (self.X - self.lfd_X_mean) / self.lfd_X_std
             # --- Append as row in DataFrame ---
             self.lfd_states_df = pd.concat([
                 self.lfd_states_df, 
                 # pd.DataFrame([self.t_data_norm])
-                pd.DataFrame([self.X])
-
+                pd.DataFrame([self.X_norm])
             ], ignore_index=True)
             
-            # # --- Predict Actions ---
-            # self.Y = self.lfd_model.predict(self.X)
+            # ======================= Predict Actions ======================
+            # Predict normalized actions
+            self.Y_norm = self.lfd_model.predict(self.X_norm.reshape(1, -1))
+            # Denormalize actions
+            self.Y = self.Y_norm * self.lfd_Y_std + self.lfd_Y_mean
+                        
+            scaling_factor = 1.0
+            self.Y = self.Y * scaling_factor            
+            y = self.Y[0]
+            # --- Append as row in DataFrame ---
+            self.lfd_actions_df = pd.concat([
+                self.lfd_actions_df, 
+                # pd.DataFrame([self.t_data_norm])
+                pd.DataFrame([y])
+
+            ], ignore_index=True)
+            self.get_logger().info(f'Target actions: {y}')       
 
             # Send actions (twist)        
-            self.target_cmd.twist.linear.x = 0.0
-            self.target_cmd.twist.linear.y = 0.01  # example: replace with self.Y[1]
-            self.target_cmd.twist.linear.z = 0.0
-            self.target_cmd.twist.angular.x = 0.0
-            self.target_cmd.twist.angular.y = 0.0
-            self.target_cmd.twist.angular.z = 0.0
+            self.target_cmd.twist.linear.x = float(y[0])
+            self.target_cmd.twist.linear.y = float(y[1])
+            self.target_cmd.twist.linear.z = float(y[2])
+            self.target_cmd.twist.angular.x = float(y[3])
+            self.target_cmd.twist.angular.y = float(y[4])
+            self.target_cmd.twist.angular.z = float(y[5])
 
             self.get_logger().info(f"pal camera callback sending topic")
+            self.Y = np.array([self.target_cmd.twist.linear.x,
+                                self.target_cmd.twist.linear.y,
+                                self.target_cmd.twist.linear.z,
+                                self.target_cmd.twist.angular.x,
+                                self.target_cmd.twist.angular.y,
+                                self.target_cmd.twist.angular.z], dtype=float)
+            
+            self.compute_joint_velocities(self.Y, self.joint_states)
+
 
             # Add actions to State Space to pass them to the next time steps
-            self.t_1_data = np.concatenate([self.t_data, self.Y])
-            self.t_2_data = self.t_1_data            
+            self.t_2_data = self.t_1_data
 
+            if self.KEEP_ACTIONS_MEMORY:
+                self.t_1_data = np.concatenate([self.t_data, self.Y])
+            else:
+                self.t_1_data = self.t_data
+            
+            
         
     def publish_smoothed_velocity(self):
-        # --- High-rate ramping + publishing ---
-
         if not self.running_lfd_approach:
             return
 
-        # Ramp linear velocities
-        for axis in ['x','y','z']:
-            cur = getattr(self.current_cmd.twist.linear, axis)
-            tgt = getattr(self.target_cmd.twist.linear, axis)
-            delta = tgt - cur
-            step = max(-self.max_linear_ramp, min(delta, self.max_linear_ramp))
-            setattr(self.current_cmd.twist.linear, axis, cur + step)
+        dt = (self.get_clock().now() - self.last_cmd_time).nanoseconds * 1e-9
+        self.last_cmd_time = self.get_clock().now()
 
-        # Ramp angular velocities
-        for axis in ['x','y','z']:
-            cur = getattr(self.current_cmd.twist.angular, axis)
-            tgt = getattr(self.target_cmd.twist.angular, axis)
-            delta = tgt - cur
-            step = max(-self.max_angular_ramp, min(delta, self.max_angular_ramp))
-            setattr(self.current_cmd.twist.angular, axis, cur + step)
+        if dt <= 0.0:
+            return
 
-        # Publish current velocity
+        # --- Linear axes ---
+        for axis in ['x', 'y', 'z']:
+            v_cur = getattr(self.current_cmd.twist.linear, axis)
+            v_tgt = getattr(self.target_cmd.twist.linear, axis)
+            a_cur = self.current_linear_accel[axis]
+
+            # Desired acceleration
+            a_des = (v_tgt - v_cur) / dt
+            a_des = np.clip(a_des, -self.max_linear_accel, self.max_linear_accel)
+
+            # Jerk-limited acceleration update
+            da = a_des - a_cur
+            da = np.clip(da, -self.max_linear_jerk * dt,
+                            self.max_linear_jerk * dt)
+
+            a_new = a_cur + da
+            v_new = v_cur + a_new * dt
+
+            self.current_linear_accel[axis] = a_new
+            setattr(self.current_cmd.twist.linear, axis, v_new)
+
+        # --- Angular axes ---
+        for axis in ['x', 'y', 'z']:
+            v_cur = getattr(self.current_cmd.twist.angular, axis)
+            v_tgt = getattr(self.target_cmd.twist.angular, axis)
+            a_cur = self.current_angular_accel[axis]
+
+            a_des = (v_tgt - v_cur) / dt
+            a_des = np.clip(a_des, -self.max_angular_accel, self.max_angular_accel)
+
+            da = a_des - a_cur
+            da = np.clip(da, -self.max_angular_jerk * dt,
+                            self.max_angular_jerk * dt)
+
+            a_new = a_cur + da
+            v_new = v_cur + a_new * dt
+
+            self.current_angular_accel[axis] = a_new
+            setattr(self.current_cmd.twist.angular, axis, v_new)
+
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
         self.vel_pub.publish(self.current_cmd)
+
 
     def eef_pose_callback(self, msg: PoseStamped):
 
@@ -514,6 +607,12 @@ class LFDController(Node):
 
         # Update sensors average since last action
     
+
+    def joint_states_callback(self, msg: JointState):
+
+        self.joint_states = list(msg.position[:7])
+
+        # Dummy callback to ensure joint states are available
 
 
 
@@ -547,9 +646,10 @@ def main():
 
     node = LFDController()    
 
-    BAG_MAIN_DIR = "/media/alejo/New Volume/06_IL_implementation/bagfiles"
+    BASE_DIR = '/home/alejo/Documents/DATA'
+    BAG_MAIN_DIR = '06_IL_implementation/bagfiles'
     EXPERIMENT = "experiment_1_(pull)"
-    BAG_FILEPATH = os.path.join(BAG_MAIN_DIR, EXPERIMENT)
+    BAG_FILEPATH = os.path.join(BASE_DIR, BAG_MAIN_DIR, EXPERIMENT)
     os.makedirs(BAG_FILEPATH, exist_ok=True)
     
     batch_size = 10
@@ -566,31 +666,50 @@ def main():
         # HUMAN_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'human')
         ROBOT_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL)               
         
-        # ------------ Step 1: LFD implementation with Robot --------
+
+        # ------------ Step 1: Move robot to home position ---------
         node.get_logger().info("Moving to home position...")
         while not node.move_to_home():
             pass
+
+        # Enable freedrive mode and record demonstration                
+        node.swap_controller(node.arm_controller, node.gravity_controller)
+        time.sleep(1.0)        
+        # Start recording                
+        node.get_logger().info("Human Demo. Free-drive arm close to apple.")        
+
+        input("\n\033[1;32m - Press ENTER when you are done.\033[0m\n")    
+
+
         # Enable cartesian velocity controller
         node.get_logger().info("Switching to Cartesian velocity controller...")
-        node.swap_controller(node.arm_controller, node.eef_velocity_controller)
+        node.swap_controller(node.gravity_controller, node.eef_velocity_controller)     
+        time.sleep(1.0)        
+        # node.swap_controller(node.arm_controller, node.eef_velocity_controller)
 
         # Start recording
         input("\n\033[1;32m3 - Place apple on the proxy. Press ENTER when done.\033[0m\n")
         robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
 
-        # lfd robot implementation        
+
+        # -------------- Step 2: Run lfd controller ----------------        
         input("\n\033[1;32m4 - Press Enter to start ROBOT lfd implementation.\033[0m\n")        
         node.run_lfd_approach()      
 
-        # Example CSV path
-        csv_path = "/media/alejo/New Volume/06_IL_implementation/lfd_recorded_data.csv"
-        node.lfd_states_df.to_csv(csv_path, index=False)
+        # Save states to CSV        
+        csv_path = os.path.join(ROBOT_BAG_FILEPATH, 'lfd_recorded_data.csv')
+        node.lfd_states_df.to_csv(csv_path, index=False, header=False)
         node.get_logger().info(f"LFD approach data saved to {csv_path}")
-
+        csv_path = os.path.join(ROBOT_BAG_FILEPATH, 'lfd_actions.csv')
+        node.lfd_actions_df.to_csv(csv_path, index=False, header=False)
+        node.get_logger().info(f"LFD approach actions saved to {csv_path}")
         
+        
+
+        # -------------- Step 3: Dispose apple ----------------
+        input("\n\033[1;32m5 - Press Enter to dispose apple.\033[0m\n")
         # Dispose apple
         node.swap_controller(node.eef_velocity_controller, node.arm_controller)        
-
 
         # Stop recording
         stop_recording_bagfile(robot_rosbag_list)

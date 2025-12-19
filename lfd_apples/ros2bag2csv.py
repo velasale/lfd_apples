@@ -32,6 +32,29 @@ plt.rcParams.update({
 
 
 # ----------------- FORWARD KINEMATICS ----------------- #
+def fr3_jacobian(joint_angles):
+    """Compute geometric Jacobian using fr3_fk_all and dh_transform."""
+    n_joints = 7
+
+    # Get all intermediate transforms from base to each joint/EE
+    _, Ts = fr3_fk(joint_angles)
+    o_n = Ts[-1][:3, 3]         # end-effector position
+    J = np.zeros((6, n_joints))
+
+    for i in range(n_joints):
+        T_i = Ts[i]
+        o_i = T_i[:3, 3]
+        z_i = T_i[:3, 2]  # joint axis in base frame
+
+        J_v = np.cross(z_i, o_n - o_i)
+        J_w = z_i
+
+        J[:3, i] = J_v
+        J[3:, i] = J_w
+
+    return J
+
+
 def dh_transform(a, alpha, d, theta):
     """Compute the Denavit-Hartenberg transformation matrix."""
     ct = np.cos(theta)
@@ -87,13 +110,12 @@ def fr3_fk(joint_angles):
     ]
 
     T = np.eye(4)
+    Ts = [T.copy()]  # store intermediate transforms
     for a, alpha, d, theta in dh_params:
         T = T @ dh_transform(a, alpha, d, theta)
-        # print('\n', a, alpha, d, theta)
-        # print(T)  # Debug: print each transformation step
-
-
-    return T
+        Ts.append(T.copy())
+        
+    return T, Ts
 
 # ----------------- HANDY FUNCTIONS ----------------- #
 def parse_position(s):
