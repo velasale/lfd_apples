@@ -1,12 +1,13 @@
+
+
 import os
 import platform
 import pandas as pd
 import ast
 import re
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+
+
 from tqdm import tqdm
 from hampel import hampel
 
@@ -24,6 +25,12 @@ from pathlib import Path
 from tf_transformations import quaternion_multiply, quaternion_conjugate
 from scipy.spatial.transform import Rotation as R
 
+import tkinter
+# print(tkinter.TkVersion)
+
+import matplotlib
+matplotlib.use("TkAgg")  # Ensures interactive plotting
+import matplotlib.pyplot as plt
 
 # ====================== Handy functions =======================
 def rename_folder(SOURCE_PATH, start_index=100):
@@ -194,20 +201,13 @@ def downsample_pressure_and_tof_data(df, raw_data_path, compare_plots=True):
         axes[-1].set_xlabel('Elapsed Time')
 
         plt.tight_layout()
-        plt.show()
 
     return df_downsampled
 
 
-def reduce_size_inhand_camera_raw_images(raw_data_path, layer=15):
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    pt_path = os.path.join(script_dir, "resources", "best_segmentation.pt")
-
-    model = YOLO(pt_path)
+def reduce_size_inhand_camera_raw_images(raw_data_path, model, layer=15):
+    
     rows = []
-   
-
     for fname in sorted(os.listdir(raw_data_path)):
         if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
             continue
@@ -223,8 +223,7 @@ def reduce_size_inhand_camera_raw_images(raw_data_path, layer=15):
             img_cv,
             model,
             layer_index=layer
-        )
-        feat_map_cpu = feat_map.detach().cpu().numpy()        
+        )        
         
         # build row: first filename, then 256 feature values
         row = [fname] + pooled_vector.tolist()
@@ -253,11 +252,11 @@ def downsample_eef_wrench_data(df, raw_data_path, compare_plots=True):
     df_filtered = df_final.copy()    
     signals = ['_wrench._force._x', '_wrench._force._y', '_wrench._force._z',
                '_wrench._torque._x', '_wrench._torque._y', '_wrench._torque._z']
+    
+    b, a = butter(N=4, Wn=10, fs=1000, btype='low')
     for sig in signals:      
-
         df_filtered[sig] = hampel(df_filtered[sig], window_size=11, n_sigma=3.0).filtered_data
-        # Butterworth low-pass filter
-        b, a = butter(N=4, Wn=10, fs=1000, btype='low')
+        # Butterworth low-pass filter        
         df_filtered[sig] = filtfilt(b, a, df_filtered[sig])
 
     # Interpolate to reference timestamps
@@ -287,7 +286,6 @@ def downsample_eef_wrench_data(df, raw_data_path, compare_plots=True):
         axes[-1].set_xlabel('Elapsed Time')
 
         plt.tight_layout()
-        plt.show()        
        
 
     return df_downsampled
@@ -337,7 +335,6 @@ def downsample_robot_joint_states_data(df, raw_data_path, compare_plots=True):
         axes[-1].set_xlabel('Elapsed Time')
 
         plt.tight_layout()
-        plt.show()            
 
     return df_downsampled
 
@@ -377,7 +374,6 @@ def downsample_robot_ee_pose_data(df, raw_data_path, compare_plots=True):
         axes[-1].set_xlabel('Elapsed Time')
 
         plt.tight_layout()
-        plt.show()            
 
     return df_downsampled
 
@@ -448,12 +444,21 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_
     actions_df_before_filtering = pd.DataFrame(np.hstack((linear_speeds, orientation_speeds)), columns=action_columns)
     actions_df_before_filtering['elapsed_time'] = df_final['elapsed_time'].values
 
-    # Step 6: Filter linear and angular speeds
-    # linear_speeds = gaussian_filter1d(linear_speeds, sigma=10, axis=0)
-    window_size = 30
-    linear_speeds = median_filter(linear_speeds, size=(window_size,1))
-    # orientation_speeds = gaussian_filter1d(orientation_speeds, sigma=10, axis=0)
-    orientation_speeds = median_filter(orientation_speeds, size=(window_size,1))    
+    b, a = butter(N=4, Wn=10, fs=1000, btype='low')
+    # Step 6: Filter linear and angular speeds    
+    for col in range(3):      
+        linear_speeds[:,col] = hampel(linear_speeds[:,col], window_size=11, n_sigma=3.0).filtered_data
+        # Butterworth low-pass filter        
+        linear_speeds[:,col] = filtfilt(b, a, linear_speeds[:,col])
+
+        orientation_speeds[:,col] = hampel(orientation_speeds[:,col], window_size=11, n_sigma=3.0).filtered_data
+        # Butterworth low-pass filter
+        orientation_speeds[:,col] = filtfilt(b, a, orientation_speeds[:,col])
+
+    # window_size = 30
+    # linear_speeds = median_filter(linear_speeds, size=(window_size,1))
+    # # orientation_speeds = gaussian_filter1d(orientation_speeds, sigma=10, axis=0)
+    # orientation_speeds = median_filter(orientation_speeds, size=(window_size,1))    
 
     actions_df = pd.DataFrame(np.hstack((linear_speeds, orientation_speeds)), columns=action_columns)
     actions_df['elapsed_time'] = df_final['elapsed_time'].values
@@ -465,7 +470,7 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_
         # Compare plots before and after downsampling
         # Ensure numeric 1-D arrays
 
-        fig, axs = plt.subplots(2, 1, sharex=True, figsize=(10, 6))
+        fig, axs = plt.subplots(2, 1, sharex=True, figsize=(14, 10))
 
         # --- Linear velocities subplot ---
         x_ds = np.array(actions_df_before_filtering['elapsed_time']).flatten()
@@ -497,7 +502,8 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_
         axs[1].grid(True)
 
         plt.tight_layout()
-        plt.show()
+        plt.savefig('my_plot.png')
+        
 
     return df_downsampled
 
@@ -642,7 +648,11 @@ def stage_1_align_and_downsample():
     MAIN_DIR = os.path.join('/home/alejo/Documents/DATA')        # ubuntu OS
     DESTINATION_DIR = os.path.join(MAIN_DIR, "02_IL_preprocessed_(aligned_and_downsampled)")    
     DESTINATION_PATH = os.path.join(DESTINATION_DIR, EXPERIMENT)
-        
+
+    # Load YOLO model for in-hand camera feature extraction
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    pt_path = os.path.join(script_dir, "resources", "best_segmentation.pt")
+    cv_model = YOLO(pt_path)    
     
     trials = [trial for trial in os.listdir(SOURCE_PATH)
               if os.path.isdir(os.path.join(SOURCE_PATH, trial))]
@@ -692,7 +702,7 @@ def stage_1_align_and_downsample():
             df_ds_3 = downsample_robot_joint_states_data(df, raw_joint_states_path, compare_plots=compare_plots)
         
         df_ds_4 = downsample_robot_ee_pose_data(df, raw_ee_pose_path, compare_plots=compare_plots)
-        df_ds_5 = reduce_size_inhand_camera_raw_images(raw_palm_camera_images_path, layer=15)
+        df_ds_5 = reduce_size_inhand_camera_raw_images(raw_palm_camera_images_path, model=cv_model, layer=15)
 
         # Compute ACTIONS based on ee pose
         df_ds_6 = derive_actions_from_ee_pose(df, raw_ee_pose_path, compare_plots=compare_plots)
@@ -723,6 +733,10 @@ def stage_1_align_and_downsample():
 
         if compare_plots:
             plt.show()
+        else:
+            plt.close('all')
+   
+
         
 
     print(f'Trials without subfolders: {trials_without_subfolders}\n')
@@ -941,9 +955,7 @@ def stage_3_fix_hw_issues():
         plt.legend()
         plt.ylim([-10, 120])
         plt.grid()
-        plt.show()
-
-        
+            
     
     print(f'\nTrials with faulty scA data: {faulty_trials_scA}\n'
           f'Trials with faulty scB data: {faulty_trials_scB}\n'
@@ -1009,15 +1021,15 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact', keep_acti
     
 if __name__ == '__main__':
 
-    stage_1_align_and_downsample()
+    # stage_1_align_and_downsample()
 
     # stage_2_crop_data_to_task_phases()   
 
-    # steps = [0,1,2,3,4]
-    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
-    # for step in steps:
-    #     for phase in phases:
-    #         stage_4_short_time_memory(n_time_steps=step, phase=phase)  
+    steps = [0,1,2,3,4]
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
+    for step in steps:
+        for phase in phases:
+            stage_4_short_time_memory(n_time_steps=step, phase=phase)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
