@@ -1,12 +1,18 @@
 # Action and state space columns used in all harvesting phases
 
 action_cols:
-  - delta_pos_x
-  - delta_pos_y
-  - delta_pos_z
-  - delta_angular_x
-  - delta_angular_y
-  - delta_angular_z
+  - v_eef_x
+  - v_eef_y
+  - v_eef_z
+  - w_eef_x
+  - w_eef_y
+  - w_eef_z
+  # - delta_pos_x
+  # - delta_pos_y
+  # - delta_pos_z
+  # - delta_angular_x
+  # - delta_angular_y
+  # - delta_angular_z
   # - delta_ori_w
 
 air_pressure_cols:
@@ -70,26 +76,26 @@ phases:
   phase_1_approach:
     - tof_cols
     - inhand_cam_feature_cols
-    - ee_pose_cols
+    # - ee_pose_cols
     - action_cols
 
   phase_2_contact:
     - tof_cols
     - air_pressure_cols
     - wrench_cols
-    - ee_pose_cols
+    # - ee_pose_cols
     - action_cols
 
   phase_3_pick:
     - tof_cols
     - air_pressure_cols
     - wrench_cols
-    - ee_pose_cols
+    # - ee_pose_cols
     - action_cols
 
   phase_4_disposal:
     - tof_cols
     - air_pressure_cols
     - wrench_cols
-    - ee_pose_cols
+    # - ee_pose_cols
     - action_cols
