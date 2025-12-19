@@ -25,9 +25,6 @@ from pathlib import Path
 from tf_transformations import quaternion_multiply, quaternion_conjugate
 from scipy.spatial.transform import Rotation as R
 
-import tkinter
-# print(tkinter.TkVersion)
-
 import matplotlib
 matplotlib.use("TkAgg")  # Ensures interactive plotting
 import matplotlib.pyplot as plt
@@ -751,7 +748,114 @@ def stage_1_align_and_downsample():
     print('done!')
 
 
-def stage_2_crop_data_to_task_phases():
+def stage_2_transform_data_to_eef_frame():
+
+    # --- Step 2: Define Data Source and Destination paths ----
+    if platform.system() == "Windows":
+        SOURCE_PATH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\experiment_1_(pull)")
+        DESTINATION_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)\experiment_1_(pull)")
+    else:
+        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam')
+        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/only_human_demos/with_palm_cam')
+
+    trials = [f for f in os.listdir(SOURCE_PATH)
+             if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
+    
+    os.makedirs(DESTINATION_PATH, exist_ok=True)
+
+    plt.close('all')
+
+    for trial in (trials):
+        
+        print(f'\nTransforming {trial} to eef frame...')        
+        df = pd.read_csv(os.path.join(SOURCE_PATH, trial))        
+
+        # --- Transform actions ---
+        # Actions are cartesian velocities in the base frame, need to transform to eef frame
+        # This is done by applying the inverse of the current eef pose to the actions
+        # Note: This is a placeholder for the actual transformation logic
+        # In practice, you would need to implement the actual transformation using the eef pose data
+
+        # Cartesian velocities in the base frame
+        cartesian_velocities_in_base_frame = df[['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_angular_x', 'delta_angular_y', 'delta_angular_z']].values
+        # End-effector pose in the base frame
+        eef_pose_in_base_frame = df[['_pose._position._x', '_pose._position._y', '_pose._position._z',
+                       '_pose._orientation._x', '_pose._orientation._y', '_pose._orientation._z', '_pose._orientation._w']].values
+        
+        time_vector = df['timestamp_vector'].values
+
+        v_eef_list = []
+        w_eef_list = []
+
+        for i,row in df.iterrows():
+
+            v_base = cartesian_velocities_in_base_frame[i, :3]
+            w_base = cartesian_velocities_in_base_frame[i, 3:]
+            q_base = eef_pose_in_base_frame[i, 3:]
+
+            # Rotation matrix from quaternion   base <- eef
+            R_base_eef = R.from_quat(q_base).as_matrix()            
+
+            # Inverse rotation matrix : eef <- base
+            R_eef_base = R_base_eef.T
+            # Transform linear velocity
+            v_eef = R_eef_base @ v_base
+            # Transform angular velocity
+            w_eef = R_eef_base @ w_base
+
+            v_eef_list.append(v_eef)
+            w_eef_list.append(w_eef)
+
+        v_eef_array = np.vstack(v_eef_list)
+        w_eef_array = np.vstack(w_eef_list)
+
+        v_eef_array_filtered = np.zeros_like(v_eef_array)
+        w_eef_array_filtered = np.zeros_like(w_eef_array)
+
+        b, a = butter(N=2, Wn=2, fs=30, btype='low')
+        # Step 6: Filter linear and angular speeds    
+        for col in range(3):                              
+            v_eef_array_filtered[:,col] = filtfilt(b, a, v_eef_array[:,col])
+            w_eef_array_filtered[:,col] = filtfilt(b, a, w_eef_array[:,col])        
+
+        plot_velocities = False    
+
+        if plot_velocities:
+            fig, ax = plt.subplots(2, 1, sharex=True, figsize=(8, 5))
+
+            ax[0].plot(time_vector, v_eef_array[:,0], label='Unfiltered v_eef_x', alpha=0.5, linewidth=1, color='green')
+            ax[0].plot(time_vector, v_eef_array_filtered[:,0], label='Filtered v_eef_x', linewidth=1, color='blue')
+            ax[0].set_ylabel('Velocity [m/s]')
+            ax[0].set_title(f'v_eef_x over time for {trial}')
+            ax[0].grid(True)
+            ax[0].legend()
+
+            ax[1].plot(time_vector, w_eef_array[:,0], label='Unfiltered w_eef_x', alpha=0.5, linewidth=1, color='orange')
+            ax[1].plot(time_vector, w_eef_array_filtered[:,0], label='Filtered w_eef_x', linewidth=1, color='red')           
+            ax[1].set_ylabel('Angular velocity [rad/s]')
+            ax[1].set_title(f'w_eef_x over time for {trial}')
+            ax[1].grid(True)
+            ax[1].legend()
+
+            plt.show()
+
+        # Switch back to DataFrame
+        v_eef_df = pd.DataFrame(v_eef_array_filtered, columns=['v_eef_x', 'v_eef_y', 'v_eef_z'])
+        w_eef_df = pd.DataFrame(w_eef_array_filtered, columns=['w_eef_x', 'w_eef_y', 'w_eef_z'])
+
+        # Combine with original DataFrame
+        df_eef_frame = pd.concat([df, v_eef_df, w_eef_df], axis=1)
+
+        # Save transformed data to CSV files
+        base_filename = os.path.splitext(trial)[0]
+        df_eef_frame.to_csv(os.path.join(DESTINATION_PATH, f"{base_filename}_transformed.csv"), index=False)
+
+       
+        pass
+        # 
+
+
+def stage_3_crop_data_to_task_phases():
 
     # --- Step 1: Define data columns for each phase ---
     phase_1_approach_cols = get_phase_columns("phase_1_approach")
@@ -766,8 +870,8 @@ def stage_2_crop_data_to_task_phases():
         SOURCE_PATH = Path("/media/alejo/IL_data/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)")
         DESTINATION_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)") 
 
-        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)')
-        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)')
+        SOURCE_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)')
+        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/04_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)')
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
@@ -851,10 +955,8 @@ def stage_2_crop_data_to_task_phases():
 
     if platform.system() == "Windows":
         SOURCE_PATH_ONLY_APPROACH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\only_human_demos/with_palm_cam")
-    else:
-        SOURCE_PATH_ONLY_APPROACH = Path("/media/alejo/IL_data/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam")
-
-        SOURCE_PATH_ONLY_APPROACH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam')
+    else:       
+        SOURCE_PATH_ONLY_APPROACH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/only_human_demos/with_palm_cam')
 
     only_human_trials = [f for f in os.listdir(SOURCE_PATH_ONLY_APPROACH) 
                          if os.path.isfile(os.path.join(SOURCE_PATH_ONLY_APPROACH, f)) and f.endswith(".csv")]   
@@ -901,7 +1003,64 @@ def stage_2_crop_data_to_task_phases():
         print(trial)
 
 
-def stage_3_fix_hw_issues():
+def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact', keep_actions_in_memory=False):
+    """
+    Generates a Dataframe with short-term memory given n_time_steps
+    (e.g. t-2, t-1, t)
+    """
+
+    # Data Source and Destination folders
+    if platform.system() == "Windows":
+        SOURCE_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_3_pick")
+        DESTINATION_PATH = Path(r"D:\04_IL_preprocessed_(memory)/experiment_1_(pull)/phase_3_pick")
+    else:
+        BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
+        SOURCE_PATH = Path(BASE_SOURCE_PATH + '/04_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/' + phase)
+        DESTINATION_PATH = Path(BASE_SOURCE_PATH + '/05_IL_preprocessed_(memory)/experiment_1_(pull)/' + phase)         
+
+    trials = [f for f in os.listdir(SOURCE_PATH)
+             if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
+    
+    DESTINATION_PATH = os.path.join(DESTINATION_PATH, f"{n_time_steps}_timesteps")
+    os.makedirs(DESTINATION_PATH, exist_ok=True) 
+
+    # Data Destination
+    for trial in trials:
+
+        print(f'\n Adjusting {trial} with time steps...')
+        df = pd.read_csv(os.path.join(SOURCE_PATH, trial)) 
+        total_rows = df.shape[0]
+        
+        df_combined = pd.DataFrame()
+
+        for time_step in range(n_time_steps + 1):
+
+            start_index = n_time_steps - time_step 
+            end_index = total_rows - time_step
+            df_time_step_ith = df.iloc[start_index: end_index]
+            df_time_step_ith = df_time_step_ith.reset_index(drop=True)
+
+            # Rename columns of ith timestep dataframe
+            if time_step > 0:
+
+                if not keep_actions_in_memory:
+                    df_time_step_ith = df_time_step_ith.iloc[:, :-6]
+                
+                df_time_step_ith.columns = [col + f"_(t_{time_step})" for col in df_time_step_ith.columns]           
+
+            # Combine dataframes            
+            df_combined = pd.concat([df_time_step_ith, df_combined], axis=1)
+            if time_step > 0:
+                df_combined = df_combined.drop(f"timestamp_vector_(t_{time_step})", axis=1)
+        
+        df_combined = df_combined[["timestamp_vector"] + [c for c in df_combined.columns if c != "timestamp_vector"]]
+
+        # Save cropped data to CSV files
+        base_filename = os.path.splitext(trial)[0]
+        df_combined.to_csv(os.path.join(DESTINATION_PATH, f"{base_filename}_({n_time_steps}_timesteps).csv"), index=False)
+
+
+def stage_5_fix_hw_issues():
 
     # Find trials whose pressure sensors had issues (e.g. pressure drops to -1)
 
@@ -962,68 +1121,13 @@ def stage_3_fix_hw_issues():
           f'Trials with faulty scC data: {faulty_trials_scC}\n')
 
 
-def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact', keep_actions_in_memory=False):
-    """
-    Generates a Dataframe with short-term memory given n_time_steps
-    (e.g. t-2, t-1, t)
-    """
 
-    # Data Source and Destination folders
-    if platform.system() == "Windows":
-        SOURCE_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_3_pick")
-        DESTINATION_PATH = Path(r"D:\04_IL_preprocessed_(memory)/experiment_1_(pull)/phase_3_pick")
-    else:
-        BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
-        SOURCE_PATH = Path(BASE_SOURCE_PATH + '/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/' + phase)
-        DESTINATION_PATH = Path(BASE_SOURCE_PATH + '/04_IL_preprocessed_(memory)/experiment_1_(pull)/' + phase)         
 
-    trials = [f for f in os.listdir(SOURCE_PATH)
-             if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
-    
-    DESTINATION_PATH = os.path.join(DESTINATION_PATH, f"{n_time_steps}_timesteps")
-    os.makedirs(DESTINATION_PATH, exist_ok=True) 
-
-    # Data Destination
-    for trial in trials:
-
-        print(f'\n Adjusting {trial} with time steps...')
-        df = pd.read_csv(os.path.join(SOURCE_PATH, trial)) 
-        total_rows = df.shape[0]
-        
-        df_combined = pd.DataFrame()
-
-        for time_step in range(n_time_steps + 1):
-
-            start_index = n_time_steps - time_step 
-            end_index = total_rows - time_step
-            df_time_step_ith = df.iloc[start_index: end_index]
-            df_time_step_ith = df_time_step_ith.reset_index(drop=True)
-
-            # Rename columns of ith timestep dataframe
-            if time_step > 0:
-
-                if not keep_actions_in_memory:
-                    df_time_step_ith = df_time_step_ith.iloc[:, :-6]
-                
-                df_time_step_ith.columns = [col + f"_(t_{time_step})" for col in df_time_step_ith.columns]           
-
-            # Combine dataframes            
-            df_combined = pd.concat([df_time_step_ith, df_combined], axis=1)
-            if time_step > 0:
-                df_combined = df_combined.drop(f"timestamp_vector_(t_{time_step})", axis=1)
-        
-        df_combined = df_combined[["timestamp_vector"] + [c for c in df_combined.columns if c != "timestamp_vector"]]
-
-        # Save cropped data to CSV files
-        base_filename = os.path.splitext(trial)[0]
-        df_combined.to_csv(os.path.join(DESTINATION_PATH, f"{base_filename}_({n_time_steps}_timesteps).csv"), index=False)
-
-    
 if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
-
-    # stage_2_crop_data_to_task_phases()   
+    # stage_2_transform_data_to_eef_frame()
+    # stage_3_crop_data_to_task_phases()   
 
     steps = [0,1,2,3,4]
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
