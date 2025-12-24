@@ -13,7 +13,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', ['launch/lfd_gripper.launch.py']),
-        ('share/' + package_name + '/resources', glob('lfd_apples/resources/*.sh')),
+        ('share/' + package_name + '/resources', glob('lfd_apples/resources/*')),
         # Install data directory (JSONs, etc.)
         (os.path.join('share', package_name, 'data'), glob('lfd_apples/data/*.json')),        
     ],
@@ -34,6 +34,7 @@ setup(
             'lfd_data_collection = lfd_apples.lfd_data_collection:main',
             'lfd_implementation = lfd_apples.lfd_implementation:main',
             'franka_recover = lfd_apples.franka_recover:main',
+            'yolo_latent_node = lfd_apples.yolo_latent_node:main',
         ],
     },
 )

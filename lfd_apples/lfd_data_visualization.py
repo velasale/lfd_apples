@@ -283,12 +283,12 @@ def infer_actions():
     
     phase = 'phase_1_approach'
     model = 'mlp'
-    timesteps = '3_timesteps'
+    timesteps = '2_timesteps'
 
     # --- Load model ---
     BASE_PATH = '/home/alejo/Documents/DATA'
     # BASE_PATH = '/media/alejo/IL_data'
-    model_path = os.path.join(BASE_PATH, '05_IL_learning/experiment_1_(pull)/', phase, timesteps)
+    model_path = os.path.join(BASE_PATH, '06_IL_learning/experiment_1_(pull)/', phase, timesteps)
     model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
     with open(os.path.join(model_path, model_name), "rb") as f:
         rf_loaded = joblib.load(f)
@@ -367,21 +367,21 @@ def infer_actions():
 
     # Row 1: X-axis
     axs[0].plot(df['timestamp_vector'], groundtruth_delta_x, label='Ground Truth')
-    axs[0].plot(df['timestamp_vector'], df['delta_pos_x'], label='Predictions')
+    axs[0].plot(df['timestamp_vector'], df['v_eef_x'], label='Predictions')
     axs[0].set_title('EEF linear velocity x-axis')
     axs[0].legend()
     axs[0].grid(True)
 
     # Row 2: Y-axis
     axs[1].plot(df['timestamp_vector'], groundtruth_delta_y, label='Ground Truth')
-    axs[1].plot(df['timestamp_vector'], df['delta_pos_y'], label='Predictions')
+    axs[1].plot(df['timestamp_vector'], df['v_eef_y'], label='Predictions')
     axs[1].set_title('EEF linear velocity y-axis')
     axs[1].legend()
     axs[1].grid(True)
 
     # Row 3: Z-axis
     axs[2].plot(df['timestamp_vector'], groundtruth_delta_z, label='Ground Truth')
-    axs[2].plot(df['timestamp_vector'], df['delta_pos_z'], label='Predictions')
+    axs[2].plot(df['timestamp_vector'], df['v_eef_z'], label='Predictions')
     axs[2].set_title('EEF linear velocity z-axis')
     axs[2].legend()
     axs[2].grid(True)
@@ -396,21 +396,21 @@ def infer_actions():
 
     # Row 1: X-axis
     axs[0].plot(df['timestamp_vector'], groundtruth_omega_x, label='Ground Truth')
-    axs[0].plot(df['timestamp_vector'], df['delta_angular_x'], label='Predictions')
+    axs[0].plot(df['timestamp_vector'], df['w_eef_x'], label='Predictions')
     axs[0].set_title('EEF angular velocity roll (x-axis)')
     axs[0].legend()
     axs[0].grid(True)
 
     # Row 2: Y-axis
     axs[1].plot(df['timestamp_vector'], groundtruth_omega_y, label='Ground Truth')
-    axs[1].plot(df['timestamp_vector'], df['delta_angular_y'], label='Predictions')
+    axs[1].plot(df['timestamp_vector'], df['w_eef_y'], label='Predictions')
     axs[1].set_title('EEF angular velocity pitch (y-axis)')
     axs[1].legend()
     axs[1].grid(True)
 
     # Row 3: Z-axis
     axs[2].plot(df['timestamp_vector'], groundtruth_omega_z, label='Ground Truth')
-    axs[2].plot(df['timestamp_vector'], df['delta_pos_z'], label='Predictions')
+    axs[2].plot(df['timestamp_vector'], df['w_eef_z'], label='Predictions')
     axs[2].set_title('EEF angular velocity yaw (z-axis)')
     axs[2].legend()
     axs[2].grid(True)

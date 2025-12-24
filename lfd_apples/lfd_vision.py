@@ -283,8 +283,6 @@ def extract_pooled_latent_vector(
     return pooled_vector.cpu().numpy(), feat_map
 
 
-
-
 def pooled_latent_heatmap_video(
     image_folder, 
     output_video, 

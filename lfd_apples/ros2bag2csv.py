@@ -12,15 +12,15 @@ from scipy.ndimage import gaussian_filter, median_filter
 import json
 
 from tqdm import tqdm
-
 from rclpy.serialization import deserialize_message
 from rosidl_runtime_py.utilities import get_message
 
-import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D 
-
 import cv2
 import numpy as np
+
+import matplotlib.pyplot as plt
+
 
 plt.rcParams.update({
     "text.usetex": False,          # don't need full LaTeX, use mathtext
@@ -891,7 +891,7 @@ class Trial:
         conn.close()
 
 
-def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixed_camera_bag=True):
+def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixed_camera_bag=True, implementation_stage=False):
     
     bag_file = bag_folder + "/lfd_bag_main/lfd_bag_main_0.db3"
     csv_dir = bag_folder + "/lfd_bag_main/bag_csvs"
@@ -943,7 +943,11 @@ def extract_data_and_plot(bag_folder, trial_number, inhand_camera_bag=True, fixe
             print("⚠️ Singularities detected during the trial! Updating metadata JSON and filename...")
 
         filename = f"metadata_{trial_number}.json"
-        json_path = os.path.abspath(os.path.join(bag_folder, "..", filename)) 
+        if implementation_stage:
+            json_path = os.path.abspath(os.path.join(bag_folder, filename)) 
+        else:
+            json_path = os.path.abspath(os.path.join(bag_folder, "..", filename)) 
+        
         # json_path = os.path.abspath(os.path.join(bag_folder, filename)) 
         print(json_path)
         with open(json_path, 'r') as f:            

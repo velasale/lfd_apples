@@ -158,13 +158,13 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
     # Load Data
     # BASE_DIRECTORY = '/media/alejo/IL_data/04_IL_preprocessed_(memory)'
     BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
-    BASE_DIRECTORY = os.path.join(BASE_SOURCE_PATH, '04_IL_preprocessed_(memory)')
+    BASE_DIRECTORY = os.path.join(BASE_SOURCE_PATH, '05_IL_preprocessed_(memory)')
     experiment = 'experiment_1_(pull)'    
    
     suffix = '_' + experiment + '_' + phase + '_' + time_steps       
     BASE_PATH = os.path.join(BASE_DIRECTORY, experiment, phase, time_steps)
 
-    DESTINATION_DIRECTORY = os.path.join(BASE_SOURCE_PATH, '05_IL_learning')
+    DESTINATION_DIRECTORY = os.path.join(BASE_SOURCE_PATH, '06_IL_learning')
     DESTINATION_PATH = os.path.join(DESTINATION_DIRECTORY, experiment, phase, time_steps)
     os.makedirs(DESTINATION_PATH, exist_ok=True)
 
@@ -230,7 +230,7 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
 
         # --- Review Feature Importance ---
         # Create DataFrame with feature importances
-        filename = 'trial_1_downsampled_aligned_data_(' + phase + ')_(' + time_steps + ').csv'
+        filename = 'trial_1_downsampled_aligned_data_transformed_(' + phase + ')_(' + time_steps + ').csv'
         df = pd.read_csv(os.path.join(BASE_PATH, filename))
         df = df.iloc[:, :-n_output_cols]        # simply drop action columns
         df = df.iloc[:, 1:]         # drop timevector column
@@ -244,6 +244,9 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
         feat_df = feat_df.sort_values(by="importance", ascending=False)
         top = feat_df.head(20)
         print("\n\nTop Features:\n", top, '\n\n')
+
+        # Save feature importances to CSV
+        feat_df.to_csv(os.path.join(DESTINATION_PATH, 'rf_feature_importances.csv'), index=False)
 
 
     elif regressor == 'mlp':
@@ -321,7 +324,15 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
 
 def main():
 
-    learn(regressor='mlp', phase='phase_1_approach', time_steps='3_timesteps')
+    regressors = ['mlp']
+    time_steps = ['0_timesteps', '1_timesteps', '2_timesteps', '3_timesteps']
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
+
+    for regressor in regressors:
+        for phase in phases:
+            for t in time_steps:
+                learn(regressor=regressor, phase=phase, time_steps=t)
+    
 
 
 if __name__ == '__main__':

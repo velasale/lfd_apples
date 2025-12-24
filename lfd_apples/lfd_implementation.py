@@ -9,26 +9,33 @@ from controller_manager_msgs.srv import SwitchController, LoadController, ListCo
 import subprocess
 import time
 import os
-import matplotlib.pyplot as plt
+
 import pandas as pd
 
+# Custom imports
 from lfd_apples.listen_franka import main as listen_main
 from lfd_apples.listen_franka import start_recording_bagfile, stop_recording_bagfile, save_metadata, find_next_trial_number 
 from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array, fr3_jacobian
+from lfd_apples.lfd_vision import extract_pooled_latent_vector
 
+# ROS2 imports
 from std_msgs.msg import Int16MultiArray
+from std_msgs.msg import Float32MultiArray
 from std_srvs.srv import SetBool
 from geometry_msgs.msg import PoseStamped, TwistStamped, Twist
 from sensor_msgs.msg import Image
+
+# CV Bridge and YOLO imports
 from cv_bridge import CvBridge
-from lfd_apples.lfd_vision import extract_pooled_latent_vector
 from ultralytics import YOLO
 import cv2
+
 import pickle
 import joblib
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
-
+import matplotlib.pyplot as plt
 
 
 class LFDController(Node):
@@ -42,7 +49,7 @@ class LFDController(Node):
         self.eef_pose_sub = self.create_subscription(
             PoseStamped, '/franka_robot_state_broadcaster/current_pose', self.eef_pose_callback, 10)
         self.palm_camera_sub = self.create_subscription(
-            Image, 'gripper/rgb_palm_camera/image_raw', self.palm_camera_callback, 10)       
+            Float32MultiArray, 'lfd/latent_image', self.palm_camera_callback, 10)       
         self.joint_states_sub = self.create_subscription(
             JointState, '/joint_states', self.joint_states_callback, 10)  # Dummy subscriber to ensure joint states are available
         
@@ -51,7 +58,7 @@ class LFDController(Node):
             TwistStamped, '/cartesian_velocity_controller/command', 10)
         
         # --- Timer for high-rate velocity ramping ---
-        self.timer_period = 0.03  # 500 Hz
+        self.timer_period = 0.001  # 500 Hz
         self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
         # --- Velocity ramping variables ---
@@ -61,7 +68,7 @@ class LFDController(Node):
         self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
         self.current_angular_accel = {'x': 0.0, 'y': 0.0, 'z': 0.0}
 
-        self.SCALING_FACTOR = 0.01
+        self.SCALING_FACTOR = 1e-3
         self.max_linear_accel   = 0.1 * self.SCALING_FACTOR   # m/s²
         self.max_angular_accel  = 0.2 * self.SCALING_FACTOR    # rad/s²
 
@@ -125,39 +132,48 @@ class LFDController(Node):
 
         # Thresholds
         self.tof_threshold = 50                 # units in mm
-        self.air_pressure_threshold = 600       # units in hPa
+        self.air_pressure_threshold = 600       # units in hPa        
 
-        # Computer Vision
-        self.bridge = CvBridge()
-        self.raw_image = None
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        pt_path = os.path.join(script_dir, "resources", "best_segmentation.pt")
-        self.yolo_model = YOLO(pt_path)
-        self.yolo_latent_layer = 12
+        # === Space Representation ===
+        # State Space 
+        self.ncols_tof = 1
+        self.ncols_latent_image = 64
+        self.ncols_eef_pose = 7        
+        self.ncols_air_pressure = 3
+        self.ncols_joint_positions = 7
+        self.ncols_joint_velocities = 7
+        self.ncols_joint_efforts = 7
+        self.ncols_wrench = 6
+        # Action Space
+        self.ncols_eef_velocity = 6
 
-        # State Space Vectors
+        self.ncols_approach = self.ncols_tof + self.ncols_latent_image
+        self.ncols_contact = self.ncols_tof + self.ncols_air_pressure + self.ncols_wrench
+        self.ncols_pick = self.ncols_tof + self.ncols_air_pressure + self.ncols_wrench        
+
         self.KEEP_ACTIONS_MEMORY = False
+        previous_timesteps_ncols = self.ncols_approach  
         if self.KEEP_ACTIONS_MEMORY:
-            self.t_2_data = np.zeros(142)       
-            self.t_1_data = np.zeros(142)
-        else:
-            self.t_2_data = np.zeros(136)       
-            self.t_1_data = np.zeros(136)
-            
+            previous_timesteps_ncols += self.ncols_eef_velocity  # Add action space dimensions         
+        self.t_2_data = np.zeros(previous_timesteps_ncols)       
+        self.t_1_data = np.zeros(previous_timesteps_ncols)            
 
+        # Initialize state space arrays
         self.t_data = []
-        self.tof = np.zeros(1)
-        self.latent_image = np.zeros(127)
-        self.eef_pose = np.zeros(7)
-        self.Y = np.zeros(6)
+        self.tof = np.zeros(self.ncols_tof)
+        self.latent_image = np.zeros(self.ncols_latent_image)        
+        self.eef_pose = np.zeros(self.ncols_eef_pose)
+        self.Y = np.zeros(self.ncols_eef_velocity)
+        self.Y_base_frame = np.zeros(self.ncols_eef_velocity)
+
 
         # Load learned model
         phase = 'phase_1_approach'
-        model = 'mlp'
+        model = 'rf'
         timesteps = '2_timesteps'       
         BASE_DIR = '/home/alejo/Documents/DATA'
         # BASE_DIR = '/media/alejo/IL_data'
-        model_path = os.path.join(BASE_DIR, '05_IL_learning/experiment_1_(pull)', phase, timesteps)
+        model_path = os.path.join(BASE_DIR, '06_IL_learning/experiment_1_(pull)', phase, timesteps)
         model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
         with open(os.path.join(model_path, model_name), "rb") as f:
             # self.lfd_model = pickle.load(f)
@@ -170,11 +186,7 @@ class LFDController(Node):
         # DataFrame to store normalized states over time
         self.lfd_states_df = pd.DataFrame()
         self.lfd_actions_df = pd.DataFrame()      
-
-
-       
-     
-                
+                   
     def move_to_home(self):
         self.get_logger().info('Waiting for action server...')
         if not self.action_client.wait_for_server(timeout_sec=5.0):
@@ -426,7 +438,6 @@ class LFDController(Node):
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
         self.vel_pub.publish(self.current_cmd)
 
-
     def compute_joint_velocities(self, desired_ee_velocity: np.ndarray, joint_positions: list):
         """
         desired_ee_velocity: 6-element NumPy array
@@ -451,9 +462,10 @@ class LFDController(Node):
         # Update sensors average since last action
                 
 
-    def palm_camera_callback(self, msg: Image):
+    def palm_camera_callback(self, msg: Float32MultiArray):
         """
         We'll use this callback to publish the twist commands
+        Image arrives as a Float32MultiArray with 64 elements
         
         :param self: Description
         :param msg: Description
@@ -462,21 +474,15 @@ class LFDController(Node):
 
         if self.running_lfd_approach:
             
-            # ====================== PROCESS DATA ======================
-            # --- Process Image ---
-            self.raw_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            # Get latent space features
-            pooled_vector, feat_map = extract_pooled_latent_vector(
-                self.raw_image,
-                self.yolo_model,
-                layer_index=self.yolo_latent_layer
-            )
-            self.latent_image = pooled_vector.tolist()
+            # --- Extract latent image ---
+            self.latent_image = msg.data
+
             # --- Combine data ---
-            self.t_data = np.concatenate([self.tof, self.latent_image, self.eef_pose])            
+            self.t_data = np.concatenate([self.tof, self.latent_image])            
             # Combine data, with past steps            
             self.X = np.concatenate([self.t_2_data, self.t_1_data, self.t_data])
-            # Normalize data                        
+            
+            # --- Normalize data ---                        
             self.X_norm = (self.X - self.lfd_X_mean) / self.lfd_X_std
             # --- Append as row in DataFrame ---
             self.lfd_states_df = pd.concat([
@@ -490,10 +496,36 @@ class LFDController(Node):
             self.Y_norm = self.lfd_model.predict(self.X_norm.reshape(1, -1))
             # Denormalize actions
             self.Y = self.Y_norm * self.lfd_Y_std + self.lfd_Y_mean
-                        
+            self.Y = self.Y.squeeze()    
+
+
+            # Transform actions (eef cartesian velocities) to base frame                        
+            position = self.eef_pose[:3]
+            orientation = self.eef_pose[3:]
+            position_skew_matrix = np.array([[0, -position[2], position[1]],
+                                         [position[2], 0, -position[0]],
+                                         [-position[1], position[0], 0]])
+            # Rotation matrix from quaternion   base <- eef
+            R_base_eef = R.from_quat(orientation).as_matrix()   
+            v_eef = self.Y[:3]  # Assuming the model outputs in base frame for now
+            w_eef = self.Y[3:]  # Assuming the model outputs in base frame for now
+
+            # Check array sizes and shapes
+            v_eef = np.array(v_eef, dtype=float).reshape(3,)
+            w_eef = np.array(w_eef, dtype=float).reshape(3,)
+            R_base_eef = np.array(R_base_eef, dtype=float).reshape(3, 3)
+            position_skew_matrix = np.array(position_skew_matrix, dtype=float).reshape(3, 3)
+
+            v_base = R_base_eef @ v_eef + position_skew_matrix @ R_base_eef @ w_eef
+            w_base = R_base_eef @ w_eef
+
+            self.Y_base_frame = np.array([v_base[0], v_base[1], v_base[2], w_base[0], w_base[1], w_base[2]])
+
+            # Scale down the velocities
             scaling_factor = 1.0
-            self.Y = self.Y * scaling_factor            
-            y = self.Y[0]
+            self.Y_base_frame = self.Y_base_frame * scaling_factor       
+
+            y = self.Y
             # --- Append as row in DataFrame ---
             self.lfd_actions_df = pd.concat([
                 self.lfd_actions_df, 
@@ -501,26 +533,19 @@ class LFDController(Node):
                 pd.DataFrame([y])
 
             ], ignore_index=True)
-            self.get_logger().info(f'Target actions: {y}')       
+            self.get_logger().info(f'Target actions in eef frame: {y}')       
+            y_base = self.Y_base_frame
+            self.get_logger().info(f'Target actions in base frame: {y_base}') 
 
             # Send actions (twist)        
-            self.target_cmd.twist.linear.x = float(y[0])
-            self.target_cmd.twist.linear.y = float(y[1])
-            self.target_cmd.twist.linear.z = float(y[2])
-            self.target_cmd.twist.angular.x = float(y[3])
-            self.target_cmd.twist.angular.y = float(y[4])
-            self.target_cmd.twist.angular.z = float(y[5])
+            self.target_cmd.twist.linear.x = float(y_base[0])
+            self.target_cmd.twist.linear.y = float(y_base[1])
+            self.target_cmd.twist.linear.z = float(y_base[2])
+            self.target_cmd.twist.angular.x = float(y_base[3])
+            self.target_cmd.twist.angular.y = float(y_base[4])
+            self.target_cmd.twist.angular.z = float(y_base[5])
 
-            self.get_logger().info(f"pal camera callback sending topic")
-            self.Y = np.array([self.target_cmd.twist.linear.x,
-                                self.target_cmd.twist.linear.y,
-                                self.target_cmd.twist.linear.z,
-                                self.target_cmd.twist.angular.x,
-                                self.target_cmd.twist.angular.y,
-                                self.target_cmd.twist.angular.z], dtype=float)
-            
-            self.compute_joint_velocities(self.Y, self.joint_states)
-
+            self.get_logger().info(f"palm camera callback sending topic")
 
             # Add actions to State Space to pass them to the next time steps
             self.t_2_data = self.t_1_data
@@ -529,10 +554,10 @@ class LFDController(Node):
                 self.t_1_data = np.concatenate([self.t_data, self.Y])
             else:
                 self.t_1_data = self.t_data
-            
-            
+                        
         
     def publish_smoothed_velocity(self):
+
         if not self.running_lfd_approach:
             return
 
@@ -615,7 +640,6 @@ class LFDController(Node):
         # Dummy callback to ensure joint states are available
 
 
-
 def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
 
     print("Extracting data and generating plots...")
@@ -623,7 +647,7 @@ def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
     try:
         plt.ion()  # <-- interactive mode ON
         # extract_data_and_plot(os.path.join(BAG_DIR, TRIAL), "")
-        extract_data_and_plot(BAG_DIR, trial_number, inhand_camera_bag)
+        extract_data_and_plot(BAG_DIR, trial_number, inhand_camera_bag, implementation_stage=True)
         print("✅ Data extraction complete.")
 
         # Prompt user to hit Enter to close figures
@@ -647,7 +671,7 @@ def main():
     node = LFDController()    
 
     BASE_DIR = '/home/alejo/Documents/DATA'
-    BAG_MAIN_DIR = '06_IL_implementation/bagfiles'
+    BAG_MAIN_DIR = '07_IL_implementation/bagfiles'
     EXPERIMENT = "experiment_1_(pull)"
     BAG_FILEPATH = os.path.join(BASE_DIR, BAG_MAIN_DIR, EXPERIMENT)
     os.makedirs(BAG_FILEPATH, exist_ok=True)
@@ -664,7 +688,9 @@ def main():
         TRIAL = find_next_trial_number(BAG_FILEPATH, prefix="trial_")
         os.makedirs(os.path.join(BAG_FILEPATH, TRIAL), exist_ok=True)
         # HUMAN_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'human')
-        ROBOT_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL)               
+        ROBOT_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL)              
+
+        save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL)) 
         
 
         # ------------ Step 1: Move robot to home position ---------
@@ -702,8 +728,7 @@ def main():
         node.get_logger().info(f"LFD approach data saved to {csv_path}")
         csv_path = os.path.join(ROBOT_BAG_FILEPATH, 'lfd_actions.csv')
         node.lfd_actions_df.to_csv(csv_path, index=False, header=False)
-        node.get_logger().info(f"LFD approach actions saved to {csv_path}")
-        
+        node.get_logger().info(f"LFD approach actions saved to {csv_path}")        
         
 
         # -------------- Step 3: Dispose apple ----------------
