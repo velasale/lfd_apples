@@ -12,6 +12,11 @@ import random
 import joblib
 import yaml
 
+import torch
+
+# Custom imports
+from lfd_apples.lfd_learning import VelocityMLP  # make sure this class is imported
+
 
 def get_paths(trial_num="trial_1"):
     # Detect OS and set IL_data base directory
@@ -279,149 +284,101 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
     print("Video saved:", output_video_path)
 
 
-def infer_actions():
-    
-    phase = 'phase_1_approach'
-    model = 'mlp'
-    timesteps = '2_timesteps'
+def infer_actions(regressor='lstm'):
 
-    # --- Load model ---
+    phase = 'phase_3_pick'
+    timesteps = '0_timesteps'
+
     BASE_PATH = '/home/alejo/Documents/DATA'
-    # BASE_PATH = '/media/alejo/IL_data'
-    model_path = os.path.join(BASE_PATH, '06_IL_learning/experiment_1_(pull)/', phase, timesteps)
-    model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
-    with open(os.path.join(model_path, model_name), "rb") as f:
-        rf_loaded = joblib.load(f)
+    model_path = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{phase}/{timesteps}')
 
-    # --- Pick randomly one trial from the test_trials list ---
-    test_trials_list_path = os.path.join(model_path, 'test_trials.csv')
-    df = pd.read_csv(test_trials_list_path)  # CSV with one column containing file paths
-    # Assuming the column is named 'file_path'
-    file_paths = df['trial_id'].tolist()
+    # --- Load test trials ---
+    test_trials_csv = os.path.join(model_path, 'test_trials.csv')
+    df_trials = pd.read_csv(test_trials_csv)
+    test_trials_list = df_trials['trial_id'].tolist()
+
     # Pick one randomly
-    random_file = random.choice(file_paths)
+    random_file = random.choice(test_trials_list)
     df = pd.read_csv(random_file)
 
-    # Extract ground truth actions
-    data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+    # --- Load action columns from config ---
+    data_columns_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
     with open(data_columns_path, "r") as f:
         cfg = yaml.safe_load(f)
-    
-    output_cols = cfg['action_cols']      
-    groundtruth_delta_x = df[output_cols[0]].values
-    groundtruth_delta_y = df[output_cols[1]].values
-    groundtruth_delta_z = df[output_cols[2]].values
+    output_cols = cfg['action_cols']
 
-    groundtruth_omega_x = df[output_cols[3]].values
-    groundtruth_omega_y = df[output_cols[4]].values
-    groundtruth_omega_z = df[output_cols[5]].values
+    # --- Extract ground truth ---
+    groundtruth = {col: df[col].values for col in output_cols}
 
+    # --- Prepare input features ---
+    df_inputs = df.drop(columns=['timestamp_vector'] + output_cols)
+    X = df_inputs.to_numpy()
 
-    # quats = np.column_stack([
-    #     df['delta_ori_x'].values,
-    #     df['delta_ori_y'].values,
-    #     df['delta_ori_z'].values,
-    #     df['delta_ori_w'].values
-    # ])   
+    # --- Load normalization stats ---
+    X_mean = np.load(os.path.join(model_path, f"{regressor}_Xmean_experiment_1_(pull)_{phase}_{timesteps}.npy"))
+    X_std  = np.load(os.path.join(model_path, f"{regressor}_Xstd_experiment_1_(pull)_{phase}_{timesteps}.npy"))
+    X_norm = (X - X_mean) / X_std
 
-    # # convert to Euler angles (radians)
-    # eulers = R.from_quat(quats).as_euler('xyz', degrees=False)
+    # --- Load target stats ---
+    Y_mean = np.load(os.path.join(model_path, f"{regressor}_Ymean_experiment_1_(pull)_{phase}_{timesteps}.npy"))
+    Y_std  = np.load(os.path.join(model_path, f"{regressor}_Ystd_experiment_1_(pull)_{phase}_{timesteps}.npy"))
 
-    # # Extract roll (x), pitch (y), yaw (z)
-    # groundtruth_delta_roll = eulers[:, 0]
-    # groundtruth_delta_pitch = eulers[:, 1]
-    # groundtruth_delta_yaw = eulers[:, 2]
-    
-    
-    # Remove ground truth action columns and timestamp vector
-    df_just_inputs = df.drop(columns=['timestamp_vector'] + output_cols)
-    arr = df_just_inputs.to_numpy()
+    # --- Predict ---
+    if regressor in ['rf', 'mlp']:
+        model_name = f"{regressor}_experiment_1_(pull)_{phase}_{timesteps}.joblib"
+        with open(os.path.join(model_path, model_name), "rb") as f:
+            loaded_model = joblib.load(f)
 
-    # --- 2. Load normalization stats (mean/std) if you saved them ---
-    mean = np.load(os.path.join(model_path, model + '_Xmean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-    std = np.load(os.path.join(model_path, model + '_Xstd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-    X_new_norm = (arr - mean) / std
+        Y_pred = loaded_model.predict(X_norm)
+        Y_pred_denorm = Y_pred * Y_std + Y_mean
 
-    # Infere output
-    y_mean = np.load(os.path.join(model_path, model + '_Ymean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-    y_std = np.load(os.path.join(model_path, model + '_Ystd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))    
-    Y_predictions = rf_loaded.predict(X_new_norm) * y_std + y_mean
+    elif regressor == 'mlp_torch':
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        mlp_model = VelocityMLP(input_dim=X_norm.shape[1], output_dim=len(output_cols)).to(device)
+        mlp_model.load_state_dict(torch.load(os.path.join(model_path, "mlp_torch_model.pt"), map_location=device))
+        mlp_model.eval()
 
+        X_tensor = torch.tensor(X_norm, dtype=torch.float32).to(device)
+        with torch.no_grad():
+            Y_pred = mlp_model(X_tensor).cpu().numpy()
+        Y_pred_denorm = Y_pred * Y_std + Y_mean
 
-    # --- 4. Assign predictions back to original dataframe ---
+    # --- Assign predictions back to dataframe ---
     for i, col in enumerate(output_cols):
-        df[col] = Y_predictions[:, i]       
-   
+        df[col] = Y_pred_denorm[:, i]
 
-    # Create video to compare
-    # Visualize Inhand Camera and Ground Truth Actions
-
-    # images_folder = '/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_' + trial_number + '/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw'
-    # csv_path = output_path
-    # output_video_path = os.path.join(DESTINATION_PATH, 'trial_' + trial_number + '_predictions.mp4')
-    # combine_inhand_camera_and_actions('trial_' + trial_number, images_folder, csv_path, output_video_path)
-
-    # ============== Linear Velocities =================
-    fig, axs = plt.subplots(3, 1, figsize=(6, 8), sharex=True)
-
-
-    # Row 1: X-axis
-    axs[0].plot(df['timestamp_vector'], groundtruth_delta_x, label='Ground Truth')
-    axs[0].plot(df['timestamp_vector'], df['v_eef_x'], label='Predictions')
-    axs[0].set_title('EEF linear velocity x-axis')
-    axs[0].legend()
-    axs[0].grid(True)
-
-    # Row 2: Y-axis
-    axs[1].plot(df['timestamp_vector'], groundtruth_delta_y, label='Ground Truth')
-    axs[1].plot(df['timestamp_vector'], df['v_eef_y'], label='Predictions')
-    axs[1].set_title('EEF linear velocity y-axis')
-    axs[1].legend()
-    axs[1].grid(True)
-
-    # Row 3: Z-axis
-    axs[2].plot(df['timestamp_vector'], groundtruth_delta_z, label='Ground Truth')
-    axs[2].plot(df['timestamp_vector'], df['v_eef_z'], label='Predictions')
-    axs[2].set_title('EEF linear velocity z-axis')
-    axs[2].legend()
-    axs[2].grid(True)
-
+    # --- Plot Linear Velocities ---
+    fig, axs = plt.subplots(3, 1, figsize=(8, 6), sharex=True)
+    linear_cols = output_cols[:3]
+    for i, col in enumerate(linear_cols):
+        axs[i].plot(df['timestamp_vector'], groundtruth[col], label='Ground Truth')
+        axs[i].plot(df['timestamp_vector'], df[col], label='Predictions')
+        axs[i].set_title(f'EEF linear velocity {col}')
+        axs[i].legend()
+        axs[i].grid(True)
     plt.xlabel("Timestamp")
-    plt.suptitle(random_file.split('timesteps/')[1])
     plt.tight_layout()
-
-
-    # ==================== Angular Velocities =====================
-    fig, axs = plt.subplots(3, 1, figsize=(6, 8), sharex=True)
-
-    # Row 1: X-axis
-    axs[0].plot(df['timestamp_vector'], groundtruth_omega_x, label='Ground Truth')
-    axs[0].plot(df['timestamp_vector'], df['w_eef_x'], label='Predictions')
-    axs[0].set_title('EEF angular velocity roll (x-axis)')
-    axs[0].legend()
-    axs[0].grid(True)
-
-    # Row 2: Y-axis
-    axs[1].plot(df['timestamp_vector'], groundtruth_omega_y, label='Ground Truth')
-    axs[1].plot(df['timestamp_vector'], df['w_eef_y'], label='Predictions')
-    axs[1].set_title('EEF angular velocity pitch (y-axis)')
-    axs[1].legend()
-    axs[1].grid(True)
-
-    # Row 3: Z-axis
-    axs[2].plot(df['timestamp_vector'], groundtruth_omega_z, label='Ground Truth')
-    axs[2].plot(df['timestamp_vector'], df['w_eef_z'], label='Predictions')
-    axs[2].set_title('EEF angular velocity yaw (z-axis)')
-    axs[2].legend()
-    axs[2].grid(True)
-
-    plt.xlabel("Timestamp")
-    plt.suptitle(random_file.split('timesteps/')[1])
-    plt.tight_layout()
-
-
     plt.show()
 
+    # --- Plot Angular Velocities ---
+    fig, axs = plt.subplots(3, 1, figsize=(8, 6), sharex=True)
+    angular_cols = output_cols[3:]
+    for i, col in enumerate(angular_cols):
+        axs[i].plot(df['timestamp_vector'], groundtruth[col], label='Ground Truth')
+        axs[i].plot(df['timestamp_vector'], df[col], label='Predictions')
+        axs[i].set_title(f'EEF angular velocity {col}')
+        axs[i].legend()
+        axs[i].grid(True)
+    plt.xlabel("Timestamp")
+    plt.tight_layout()
+    plt.show()
+
+    # --- Optional: Create video overlay ---
+    # trial_name = random_file.split('/')[-1].split('_downsampled')[0]
+    # images_folder, _, output_video_path = get_paths(trial_name)
+    # combine_inhand_camera_and_actions(trial_name, images_folder, random_file, output_video_path)
+
+    print(f"Predictions done for trial: {random_file} using {regressor}")
 
 def main():
 

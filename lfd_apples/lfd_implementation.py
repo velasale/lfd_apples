@@ -464,7 +464,7 @@ class LFDController(Node):
 
     def palm_camera_callback(self, msg: Float32MultiArray):
         """
-        We'll use this callback to publish the twist commands
+        We'll use this callback to publish Twist commands everytime a new latent image arrives.
         Image arrives as a Float32MultiArray with 64 elements
         
         :param self: Description

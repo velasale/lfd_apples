@@ -1129,11 +1129,11 @@ if __name__ == '__main__':
     # stage_2_transform_data_to_eef_frame()
     # stage_3_crop_data_to_task_phases()   
 
-    steps = [0,1,2,3,4]
+    steps = [4,5,6,7,8,9,10]
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
     for step in steps:
         for phase in phases:
-            stage_4_short_time_memory(n_time_steps=step, phase=phase)  
+            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=True)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
