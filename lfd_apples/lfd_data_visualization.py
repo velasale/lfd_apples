@@ -284,10 +284,10 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
     print("Video saved:", output_video_path)
 
 
-def infer_actions(regressor='mlp_torch'):
+def infer_actions(regressor='rf'):
 
-    phase = 'phase_1_approach'
-    timesteps = '4_timesteps'
+    phase = 'phase_2_contact'
+    timesteps = '10_timesteps'
 
     BASE_PATH = '/home/alejo/Documents/DATA'
     model_path = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{phase}/{timesteps}')
@@ -297,8 +297,17 @@ def infer_actions(regressor='mlp_torch'):
     df_trials = pd.read_csv(test_trials_csv)
     test_trials_list = df_trials['trial_id'].tolist()
 
-    # Pick one randomly
-    random_file = random.choice(test_trials_list)
+    # --- Pick trial ---
+    random_trial = False
+    if random_trial:
+        random_file = random.choice(test_trials_list)
+    else:
+        trial_number = 35
+        main_folder = '/home/alejo/Documents/DATA/05_IL_preprocessed_(memory)/experiment_1_(pull)'
+        random_file = os.path.join(main_folder, phase, timesteps)
+        filename = 'trial_' + str(trial_number) + '_downsampled_aligned_data_transformed_(' + phase + ')_(' + timesteps + ').csv'
+        random_file = os.path.join(random_file, filename)
+
     df = pd.read_csv(random_file)
 
     # --- Load action columns from config ---
@@ -347,29 +356,20 @@ def infer_actions(regressor='mlp_torch'):
     for i, col in enumerate(output_cols):
         df[col] = Y_pred_denorm[:, i]
 
-    # --- Plot Linear Velocities ---
-    fig, axs = plt.subplots(3, 1, figsize=(8, 6), sharex=True)
-    linear_cols = output_cols[:3]
-    for i, col in enumerate(linear_cols):
-        axs[i].plot(df['timestamp_vector'], groundtruth[col], label='Ground Truth')
-        axs[i].plot(df['timestamp_vector'], df[col], label='Predictions')
-        axs[i].set_title(f'EEF linear velocity {col}')
-        axs[i].legend()
-        axs[i].grid(True)
-    plt.xlabel("Timestamp")
-    plt.tight_layout()
-    plt.show()
+    trial_description = (random_file.split('(pull)')[1]).split('steps/')[1]
+    
 
-    # --- Plot Angular Velocities ---
-    fig, axs = plt.subplots(3, 1, figsize=(8, 6), sharex=True)
-    angular_cols = output_cols[3:]
-    for i, col in enumerate(angular_cols):
+    # --- Plot Linear Velocities ---
+    fig, axs = plt.subplots(6, 1, figsize=(8, 12), sharex=True)    
+
+    for i, col in enumerate(output_cols):
         axs[i].plot(df['timestamp_vector'], groundtruth[col], label='Ground Truth')
         axs[i].plot(df['timestamp_vector'], df[col], label='Predictions')
-        axs[i].set_title(f'EEF angular velocity {col}')
+        axs[i].set_title(f'Action {col}')
         axs[i].legend()
-        axs[i].grid(True)
+        axs[i].grid(True)   
     plt.xlabel("Timestamp")
+    plt.suptitle(f'Model: $\\bf{{{regressor}}}$ \n{trial_description}')
     plt.tight_layout()
     plt.show()
 
@@ -379,6 +379,34 @@ def infer_actions(regressor='mlp_torch'):
     # combine_inhand_camera_and_actions(trial_name, images_folder, random_file, output_video_path)
 
     print(f"Predictions done for trial: {random_file} using {regressor}")
+
+
+def important_features(top=5):
+    """Display the top features"""
+
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
+    for phase in phases:
+
+        phase_df = pd.DataFrame()
+
+        for n_timesteps in range(11):
+
+            # Step 1: Define path
+            folder = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)/' 
+            steps = str(n_timesteps) + '_timesteps'
+            filepath = os.path.join(folder, phase, steps, 'rf_feature_importances.csv')                       
+
+            # Step 2: Open file
+            df = pd.read_csv(filepath)
+            sub_df = df.iloc[:top, 0]
+
+            # Step 5: Append Column with column name = timesteps
+            phase_df[steps] = sub_df
+
+        print(f'\nFeature importance during \033[1m{phase}\033[0m$: \n\n {phase_df}')
+
+                  
+
 
 def main():
 
@@ -399,5 +427,7 @@ def main():
 if __name__ == '__main__':
 
     # main()
+    # infer_actions()
 
-    infer_actions()
+    important_features(top=10)
+
