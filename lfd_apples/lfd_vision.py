@@ -14,10 +14,12 @@ import pandas as pd
 import os
 import cv2
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+
 from tqdm import tqdm
+
+import matplotlib
+# matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 
 def dino_patch_heatmap_video(image_folder, output_video, frame_rate=30):
@@ -355,6 +357,68 @@ def pooled_latent_heatmap_video(
     print(df.shape[1], "features saved to pooled_features.csv")
 
 
+def visualize_specific_channel(channel_number=23):
+
+    # Load YOLO model
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    pt_path = os.path.join(script_dir, "resources", "best_segmentation.pt")
+    cv_model = YOLO(pt_path)
+    cv_model.eval()
+
+    layer15_out = None
+
+    def hook_fn(module, input, output):
+        nonlocal layer15_out   # 🔑 THIS IS THE FIX
+        layer15_out = output.detach()
+
+    cv_model.model.model[15].register_forward_hook(hook_fn)
+
+    folder = '/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)/trial_1/robot/lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw'
+    file = 'frame_00000_0.082738.jpg'
+    filepath = os.path.join(folder, file)
+
+    img = cv2.imread(filepath)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.resize(img, (640, 384))
+    img = cv2.rotate(img, cv2.ROTATE_180)
+
+    img_tensor = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+    img_tensor = img_tensor.unsqueeze(0)
+
+    with torch.no_grad():
+        _ = cv_model.model(img_tensor)
+
+    print(layer15_out.shape)  # ✅ now works
+
+    channel = layer15_out[0, channel_number].cpu().numpy()  # 48 x 80
+
+    # Resize the original image
+    img_resized = cv2.resize(img, (640, 384))
+
+    # Prepare heatmap
+    heatmap = cv2.resize(channel, (640, 384))
+    heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min())
+
+    # Create subplots: 1 row, 2 columns
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # Left: raw channel 21 activation
+    im0 = axes[0].imshow(channel, cmap="inferno")
+    axes[0].set_title(f"YOLO Layer 15 – Channel {channel_number}")
+    axes[0].axis("off")
+    fig.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04, label="Activation")
+
+    # Right: overlay on RGB image
+    axes[1].imshow(img_resized)
+    axes[1].imshow(heatmap, cmap="inferno", alpha=0.5)
+    axes[1].set_title(f"Channel {channel_number} Activation Overlay")
+    axes[1].axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+
+
 def main():
   
     trial = 'trial_1'
@@ -374,5 +438,8 @@ def main():
         pooled_latent_heatmap_video(image_path, yolo_output_video, model_name=pt_path, layer_index=layer, frame_rate=frame_rate)
 
 if __name__ == "__main__":
-    main()  
+
+    # main()  
+
+    visualize_specific_channel()
     
