@@ -312,12 +312,10 @@ def rf_regressor(regressor, dataset_class):
     regressor_model = RandomForestRegressor(
         n_estimators=300,
         max_depth=20,
-        # min_samples_leaf=5,
-        # max_features=0.7,
-        n_jobs=-1,
-        random_state=42,
+        min_samples_leaf=5,
+        max_features=0.7,
+        n_jobs=-1,        
         verbose=2,
-        warm_start=False
     )       
 
     # Train rf regressor
@@ -409,7 +407,10 @@ def torch_mlp_regressor(regressor, dataset_class):
 
     # Split Training data into Train and Validation data      
     X_train_final, X_val_arr, Y_train_final, Y_val_arr = train_test_split(
-        lfd.X_train_norm, lfd.Y_train_norm, test_size=0.15, shuffle=True, random_state=42
+        lfd.X_train_norm, 
+        lfd.Y_train_norm, 
+        test_size=0.15, 
+        shuffle=False        
     )
 
     # Convert to torch tensors
@@ -425,10 +426,10 @@ def torch_mlp_regressor(regressor, dataset_class):
     ).to(device)
 
     optimizer = torch.optim.Adam(regressor_model.parameters(), lr=1e-3)
-    n_epochs = 250
+    n_epochs = 500
     batch_size = 128
 
-    lambda_smooth = 0
+    lambda_smooth = 0.2
 
     train_losses = []
     val_losses = []
@@ -538,10 +539,12 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
     """
     
     # === Load Data ===
+    print('\nLoading Data ...')
     BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
     lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps)
 
     # === Train Model ===
+    print('\nTraining model ...')
     if regressor == 'rf': regressor_model = rf_regressor(regressor, lfd_dataset)              
 
     elif regressor == 'mlp': regressor_model = mlp_regressor(regressor, lfd_dataset)
@@ -672,7 +675,7 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
         )
 
     # === Predictions ===       
-
+    print('\nRunning Predictions')
     if regressor in ['mlp_torch', 'lstm']:
         
         Y_test_seq = torch.tensor(lfd_dataset.Y_test, dtype=torch.float32)
@@ -703,14 +706,15 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
 
 def main():
 
+    regressors = ['rf', 'mlp','mlp_torch']
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
     regressors = ['mlp_torch']
-    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
     phases = ['phase_1_approach']
 
     for regressor in regressors:
         for phase in phases:
             print(f"================== {phase} ===================")
-            for t in range(4,5):
+            for t in range(10,11):
                 time_steps = str(t) + '_timesteps'
                 print(f"--- {time_steps} ---")                
                 learn(regressor=regressor, phase=phase, time_steps=time_steps)    
