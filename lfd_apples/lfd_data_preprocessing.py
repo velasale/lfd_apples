@@ -152,8 +152,36 @@ def quat_to_angular_velocity(quaternions, delta_t):
     # Angular velocity ω = rotvec / Δt
     omega = rotvec_full / delta_t[:, None]    
 
-    return omega
+    return omega, rotvec_full
 
+
+def plot_signals_before_and_after(df_before, df_after, signals):
+    
+    try:
+        x = np.array(df_before['elapsed_time']).flatten()
+        x_ds = np.array(df_after['timestamp_vector']).flatten()
+    except KeyError:
+        x = np.arange(len(df_before))
+        x_ds = np.arange(len(df_after))
+
+    n_signals = len(signals)
+    fig, axes = plt.subplots(n_signals, 1, sharex=True, figsize=(10, 8))                
+    
+    for ax, sig in zip(axes, signals):
+
+        y = np.array(df_before[sig]).flatten()
+        y_ds = np.array(df_after[sig]).flatten()
+
+        ax.plot(x, y, label=f'Original {sig}', color='orange', alpha=0.5, linewidth=1)
+        ax.plot(x_ds, y_ds, label=f'Downsampled {sig}', color='black', linewidth=1)
+        
+        ax.set_title(f'Channel {sig} before and after Downsampling')
+        ax.legend()
+        ax.grid(True)
+
+    axes[-1].set_xlabel('Elapsed Time')
+
+    plt.tight_layout()
 
 
 # ============ Topic-specific downsampling functions ===========
@@ -169,40 +197,28 @@ def downsample_pressure_and_tof_data(df, raw_data_path, compare_plots=True):
     df_final = pd.concat([df_raw, data_expanded], axis=1)
     df_final.drop(columns=["_data", "_data_as_list", "timestamp", "_layout._data_offset"], inplace=True)
 
+    # Filter signals
+    df_filtered = df_final.copy()   
+    signals = ['scA', 'scB', 'scC', 'tof']          
+    for sign in signals:
+        # df_filtered[sign] = hampel(
+            # df_filtered[sign],
+            # window_size=5,   # ~170 ms at 30 Hz
+            # n_sigma=3.0).filtered_data
+        df_filtered[sign] = gaussian_filter(df_filtered[sign],sigma=1.0)
 
     # Interpolate to reference timestamps
-    df_downsampled = interpolate_to_reference_multi(df_final, df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
+    df_downsampled = interpolate_to_reference_multi(df_filtered, df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
 
-    if compare_plots:
-        # Compare plots before and after downsampling
-        # Ensure numeric 1-D arrays
-
-        x = np.array(df_final['elapsed_time']).flatten()
-        x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-
-        fig, axes = plt.subplots(3, 1, sharex=True, figsize=(10, 8))
-        signals = ['scA', 'scB', 'scC']                     
-        
-        for ax, sig in zip(axes, signals):
-
-            y = np.array(df_final[sig]).flatten()
-            y_ds = np.array(df_downsampled[sig]).flatten()
-
-            ax.plot(x, y, label=f'Original {sig}', alpha=0.5, linewidth=3)
-            ax.plot(x_ds, y_ds, label=f'Downsampled {sig}', color='black', linewidth=1)
-            
-            ax.set_title(f'Air pressure sensor {sig} before and after Downsampling')
-            ax.legend()
-            ax.grid(True)
-
-        axes[-1].set_xlabel('Elapsed Time')
-
-        plt.tight_layout()
+    # Compare plots before and after downsampling
+    if compare_plots:               
+         
+        plot_signals_before_and_after(df_before=df_final, df_after=df_downsampled, signals=signals)        
 
     return df_downsampled
 
 
-def reduce_size_inhand_camera_raw_images(raw_data_path, model, layer=15):
+def reduce_size_inhand_camera_raw_images(raw_data_path, model, layer=15, compare_plots=True):
     
     rows = []
     for fname in sorted(os.listdir(raw_data_path)):
@@ -231,8 +247,17 @@ def reduce_size_inhand_camera_raw_images(raw_data_path, model, layer=15):
     feature_dim = len(rows[0]) - 1  # typically 256
     columns = ["filename"] + [f"f{i}" for i in range(feature_dim)]
     df = pd.DataFrame(rows, columns=columns)
-
     df.drop(columns=["filename"], inplace=True)   
+
+    df_filtered = pd.DataFrame(
+        gaussian_filter1d(df, sigma=2, axis=0),
+        columns = [f"f{i}" for i in range(feature_dim)],
+        index=df.index
+        )
+
+    if compare_plots: 
+        signals = ["f1", "f10", "f20"]
+        plot_signals_before_and_after(df, df_filtered, signals)
 
     return df
       
@@ -250,9 +275,9 @@ def downsample_eef_wrench_data(df, raw_data_path, compare_plots=True):
     signals = ['_wrench._force._x', '_wrench._force._y', '_wrench._force._z',
                '_wrench._torque._x', '_wrench._torque._y', '_wrench._torque._z']
     
-    b, a = butter(N=4, Wn=10, fs=1000, btype='low')
+    b, a = butter(N=4, Wn=4, fs=1000, btype='low')
     for sig in signals:      
-        df_filtered[sig] = hampel(df_filtered[sig], window_size=11, n_sigma=3.0).filtered_data
+        df_filtered[sig] = hampel(df_filtered[sig], window_size=21, n_sigma=3.0).filtered_data
         # Butterworth low-pass filter        
         df_filtered[sig] = filtfilt(b, a, df_filtered[sig])
 
@@ -260,30 +285,10 @@ def downsample_eef_wrench_data(df, raw_data_path, compare_plots=True):
     df_downsampled = interpolate_to_reference_multi(df_filtered, df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
 
     # Compare plots before and after downsampling
-    if compare_plots:
-                
-        x = np.array(df_final['elapsed_time']).flatten()
-        x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-
-        fig, axes = plt.subplots(3, 1, sharex=True, figsize=(10, 8))
-        signals = ['_wrench._force._x', '_wrench._force._y', '_wrench._force._z']                     
-        
-        for ax, sig in zip(axes, signals):
-
-            y = np.array(df_final[sig]).flatten()
-            y_ds = np.array(df_downsampled[sig]).flatten()
-
-            ax.plot(x, y, label=f'Original {sig}', alpha=0.5, linewidth=2)
-            ax.plot(x_ds, y_ds, label=f'Downsampled {sig}', color='black', linewidth=1)
-            
-            ax.set_title(f'Wrench signal {sig} before and after Filtering and Downsampling')
-            ax.legend()
-            ax.grid(True)
-
-        axes[-1].set_xlabel('Elapsed Time')
-
-        plt.tight_layout()
-       
+    if compare_plots:                
+        signals = ['_wrench._force._x', '_wrench._force._y', '_wrench._force._z']        
+        plot_signals_before_and_after(df_before=df_final, df_after=df_downsampled, signals=signals)                   
+               
 
     return df_downsampled
 
@@ -309,29 +314,9 @@ def downsample_robot_joint_states_data(df, raw_data_path, compare_plots=True):
     df_downsampled = interpolate_to_reference_multi(df_final, df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
 
     # Compare plots before and after downsampling        
-    if compare_plots:       
-        
-        x = np.array(df_final['elapsed_time']).flatten()
-        x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-
-        fig, axes = plt.subplots(3, 1, sharex=True, figsize=(10, 8))
-        signals = ['pos_joint_1', 'vel_joint_1', 'eff_joint_1']                     
-        
-        for ax, sig in zip(axes, signals):
-
-            y = np.array(df_final[sig]).flatten()
-            y_ds = np.array(df_downsampled[sig]).flatten()
-
-            ax.plot(x, y, label=f'Original {sig}', alpha=0.5, linewidth=2)
-            ax.plot(x_ds, y_ds, label=f'Downsampled {sig}', color='black', linewidth=1)
-            
-            ax.set_title(f'Joint signal {sig} before and after Downsampling')
-            ax.legend()
-            ax.grid(True)
-
-        axes[-1].set_xlabel('Elapsed Time')
-
-        plt.tight_layout()
+    if compare_plots:               
+        signals = ['pos_joint_1', 'vel_joint_1', 'eff_joint_1']        
+        plot_signals_before_and_after(df_before=df_final, df_after=df_downsampled, signals=signals)                       
 
     return df_downsampled
 
@@ -349,28 +334,8 @@ def downsample_robot_ee_pose_data(df, raw_data_path, compare_plots=True):
 
     # Compare plots before and after downsampling    
     if compare_plots:
-
-        x = np.array(df_final['elapsed_time']).flatten()
-        x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-
-        fig, axes = plt.subplots(3, 1, sharex=True, figsize=(10, 8))
-        signals = ['_pose._position._x', '_pose._position._y', '_pose._position._z']                     
-        
-        for ax, sig in zip(axes, signals):
-
-            y = np.array(df_final[sig]).flatten()
-            y_ds = np.array(df_downsampled[sig]).flatten()
-
-            ax.plot(x, y, label=f'Original {sig}', alpha=0.5, linewidth=2)
-            ax.plot(x_ds, y_ds, label=f'Downsampled {sig}', color='black', linewidth=1)
-            
-            ax.set_title(f'eef pose signal {sig} before and after Downsampling')
-            ax.legend()
-            ax.grid(True)
-
-        axes[-1].set_xlabel('Elapsed Time')
-
-        plt.tight_layout()
+        signals = ['_pose._position._x', '_pose._position._y', '_pose._position._z']  
+        plot_signals_before_and_after(df_before=df_final, df_after=df_downsampled, signals=signals)          
 
     return df_downsampled
 
@@ -435,11 +400,14 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_
     # Step 4: Compute linear velocities (m/s) and angular velocities (rad/s)
     delta_positions = np.diff(positions, axis=0, prepend=positions[0:1, :])
     linear_speeds = delta_positions / delta_times[:, None]
-    orientation_speeds = quat_to_angular_velocity(orientations, delta_times)  
+    orientation_speeds, delta_orientations = quat_to_angular_velocity(orientations, delta_times)  
 
     # Save before filtering for comparison
-    actions_df_before_filtering = pd.DataFrame(np.hstack((linear_speeds, orientation_speeds)), columns=action_columns)
+    delta_columns = ["delta_pos_x", "delta_pos_y", "delta_pos_z", "delta_ori_x", "delta_ori_y", "delta_ori_z"]
+    all_columns = action_columns + delta_columns
+    actions_df_before_filtering = pd.DataFrame(np.hstack((linear_speeds, orientation_speeds, delta_positions, delta_orientations)), columns=all_columns)    
     actions_df_before_filtering['elapsed_time'] = df_final['elapsed_time'].values
+
 
     b, a = butter(N=4, Wn=10, fs=1000, btype='low')
     # Step 6: Filter linear and angular speeds    
@@ -452,55 +420,29 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_
         # Butterworth low-pass filter
         orientation_speeds[:,col] = filtfilt(b, a, orientation_speeds[:,col])
 
+        delta_positions[:,col] = hampel(delta_positions[:,col], window_size=11, n_sigma=3.0).filtered_data
+        delta_positions[:,col] = filtfilt(b,a, delta_positions[:,col])
+
+        delta_orientations[:,col] = hampel(delta_orientations[:,col], window_size=11, n_sigma=3.0).filtered_data
+        delta_orientations[:,col] = filtfilt(b,a, delta_orientations[:,col])
+
     # window_size = 30
     # linear_speeds = median_filter(linear_speeds, size=(window_size,1))
     # # orientation_speeds = gaussian_filter1d(orientation_speeds, sigma=10, axis=0)
     # orientation_speeds = median_filter(orientation_speeds, size=(window_size,1))    
 
-    actions_df = pd.DataFrame(np.hstack((linear_speeds, orientation_speeds)), columns=action_columns)
+    actions_df = pd.DataFrame(np.hstack((linear_speeds, orientation_speeds, delta_positions, delta_orientations)), columns=all_columns)
     actions_df['elapsed_time'] = df_final['elapsed_time'].values
 
     # Interpolate to reference timestamps
     df_downsampled = interpolate_to_reference_multi(actions_df, reference_df, ts_col_values="elapsed_time", ts_col_ref="timestamp_vector", method="linear")
 
+    # Compare plots before and after downsampling
     if compare_plots:
-        # Compare plots before and after downsampling
-        # Ensure numeric 1-D arrays
-
-        fig, axs = plt.subplots(2, 1, sharex=True, figsize=(14, 10))
-
-        # --- Linear velocities subplot ---
-        x_ds = np.array(actions_df_before_filtering['elapsed_time']).flatten()
-        y_ds = np.array(actions_df_before_filtering['delta_pos_x']).flatten()
-        axs[0].plot(x_ds, y_ds, label='Original Action delta pos x', alpha=0.5)
-
-        x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-        y_ds = np.array(df_downsampled['delta_pos_x']).flatten()
-        axs[0].plot(x_ds, y_ds, label='Filtered and Downsampled Action delta pos x')        
-
-        axs[0].set_title('Action delta pos x Over Time')
-        axs[0].set_ylabel('Linear Velocity')
-        axs[0].legend()
-        axs[0].grid(True)
-
-        # --- Angular velocities subplot ---
-        x_ds = np.array(actions_df_before_filtering['elapsed_time']).flatten()
-        y_ds = np.array(actions_df_before_filtering['delta_angular_x']).flatten()
-        axs[1].plot(x_ds, y_ds, label='Original Action delta angular x', alpha=0.5)
-
-        x_ds = np.array(df_downsampled['timestamp_vector']).flatten()
-        y_ds = np.array(df_downsampled['delta_angular_x']).flatten()
-        axs[1].plot(x_ds, y_ds, label='Filtered and Downsampled Action delta angular x')        
-
-        axs[1].set_title('Action delta angular x Over Time')
-        axs[1].set_xlabel('Time [s]')
-        axs[1].set_ylabel('Angular Velocity')
-        axs[1].legend()
-        axs[1].grid(True)
-
-        plt.tight_layout()
-        plt.savefig('my_plot.png')
-        
+        signals = action_columns
+        plot_signals_before_and_after(df_before=actions_df_before_filtering, df_after=df_downsampled, signals=signals)   
+        signals = delta_columns
+        plot_signals_before_and_after(df_before=actions_df_before_filtering, df_after=df_downsampled, signals=signals)   
 
     return df_downsampled
 
@@ -626,14 +568,14 @@ def find_end_of_phase_3_contact(df, trial, total_force_threshold=20):
 def stage_1_align_and_downsample():
 
     # ---------- Step 1: Load raw data ----------
-    # MAIN_DIR = os.path.join("D:")                                   # windows OS
-    MAIN_DIR = os.path.join('/media', 'alejo', 'New Volume')        # ubuntu OS
+    # MAIN_DIR = os.path.join("D:")                                     # windows OS
+    MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')            # ubuntu OS
     SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
-    EXPERIMENT = "experiment_1_(pull)"
-    # EXPERIMENT = "only_human_demos/with_palm_cam"   
+    # EXPERIMENT = "experiment_1_(pull)"
+    EXPERIMENT = "only_human_demos/with_palm_cam"   
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
 
-    demonstrator = "robot"  # "human" or "robot"
+    demonstrator = ""  # "human" or "robot"
 
     FIXED_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
     INHAND_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
@@ -660,8 +602,8 @@ def stage_1_align_and_downsample():
         )
     
     # Type trial number in case you want to start from that one
-    start_index = trials_sorted.index("trial_237")
-    # start_index = 0
+    # start_index = trials_sorted.index("trial_237")
+    start_index = 0
     
 
     # ---------- Step 2: Loop through all trials ----------
@@ -699,7 +641,7 @@ def stage_1_align_and_downsample():
             df_ds_3 = downsample_robot_joint_states_data(df, raw_joint_states_path, compare_plots=compare_plots)
         
         df_ds_4 = downsample_robot_ee_pose_data(df, raw_ee_pose_path, compare_plots=compare_plots)
-        df_ds_5 = reduce_size_inhand_camera_raw_images(raw_palm_camera_images_path, model=cv_model, layer=15)
+        df_ds_5 = reduce_size_inhand_camera_raw_images(raw_palm_camera_images_path, model=cv_model, layer=15, compare_plots=compare_plots)
 
         # Compute ACTIONS based on ee pose
         df_ds_6 = derive_actions_from_ee_pose(df, raw_ee_pose_path, compare_plots=compare_plots)
@@ -718,7 +660,7 @@ def stage_1_align_and_downsample():
                        df_ds_3.iloc[:, 1:],     # drop timestamp column
                        df_ds_4.iloc[:, 1:],     # drop timestamp column  
                        df_ds_5,                 # no timestamp column   
-                       df_ds_6.iloc[:, 1:]           # drop timestamp column
+                       df_ds_6.iloc[:, 1:]      # drop timestamp column
                        ]
         
         combined_df = pd.concat(dfs_trimmed, axis=1)
@@ -731,20 +673,10 @@ def stage_1_align_and_downsample():
         if compare_plots:
             plt.show()
         else:
-            plt.close('all')
-   
-
-        
+            plt.close('all')        
 
     print(f'Trials without subfolders: {trials_without_subfolders}\n')
-    print(f'Trials with one subfolder: {trials_with_one_subfolder}\n')
-    
-
-    # Step 3: Crop data for each phase
-
-    # Plot data before and after downsampling to double check everything is fine
-    # Unit test!!!
-
+    print(f'Trials with one subfolder: {trials_with_one_subfolder}\n')   
     print('done!')
 
 
@@ -777,7 +709,12 @@ def stage_2_transform_data_to_eef_frame():
         # In practice, you would need to implement the actual transformation using the eef pose data
 
         # Cartesian velocities in the base frame
-        cartesian_velocities_in_base_frame = df[['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_angular_x', 'delta_angular_y', 'delta_angular_z']].values
+        # cartesian_velocities_in_base_frame = df[['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_angular_x', 'delta_angular_y', 'delta_angular_z']].values
+        
+        cartesian_velocities_in_base_frame = df[['v_eef_x', 'v_eef_y', 'v_eef_z', 'w_eef_x', 'w_eef_y', 'w_eef_z']].values
+        # Deltas of eef in the base frame
+        deltas_eef_in_base_frame = df[['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z']].values
+
         # End-effector pose in the base frame
         eef_pose_in_base_frame = df[['_pose._position._x', '_pose._position._y', '_pose._position._z',
                        '_pose._orientation._x', '_pose._orientation._y', '_pose._orientation._z', '_pose._orientation._w']].values
@@ -787,10 +724,17 @@ def stage_2_transform_data_to_eef_frame():
         v_eef_list = []
         w_eef_list = []
 
+        delta_linear_eef_list = []
+        delta_angular_eef_list = []
+
         for i,row in df.iterrows():
 
             v_base = cartesian_velocities_in_base_frame[i, :3]
             w_base = cartesian_velocities_in_base_frame[i, 3:]
+
+            delta_linear_base = deltas_eef_in_base_frame[i, :3]
+            delta_angular_base = deltas_eef_in_base_frame[i, 3:]
+
             q_base = eef_pose_in_base_frame[i, 3:]
 
             # Rotation matrix from quaternion   base <- eef
@@ -798,30 +742,43 @@ def stage_2_transform_data_to_eef_frame():
 
             # Inverse rotation matrix : eef <- base
             R_eef_base = R_base_eef.T
+            
             # Transform linear velocity
             v_eef = R_eef_base @ v_base
+            delta_linear_eef = R_eef_base @ delta_linear_base
+
             # Transform angular velocity
             w_eef = R_eef_base @ w_base
+            delta_angular_eef = R_eef_base @ delta_angular_base
 
             v_eef_list.append(v_eef)
             w_eef_list.append(w_eef)
+            delta_linear_eef_list.append(delta_linear_eef)
+            delta_angular_eef_list.append(delta_angular_eef)
 
         v_eef_array = np.vstack(v_eef_list)
         w_eef_array = np.vstack(w_eef_list)
+        delta_linear_eef_array = np.vstack(delta_linear_eef_list)
+        delta_angular_eef_array = np.vstack(delta_angular_eef_list)
 
         v_eef_array_filtered = np.zeros_like(v_eef_array)
         w_eef_array_filtered = np.zeros_like(w_eef_array)
+
+        delta_linear_eef_array_filtered = np.zeros_like(delta_linear_eef_array)
+        delta_angular_eef_array_filtered = np.zeros_like(delta_angular_eef_array)
 
         b, a = butter(N=2, Wn=2, fs=30, btype='low')
         # Step 6: Filter linear and angular speeds    
         for col in range(3):                              
             v_eef_array_filtered[:,col] = filtfilt(b, a, v_eef_array[:,col])
             w_eef_array_filtered[:,col] = filtfilt(b, a, w_eef_array[:,col])        
+            delta_linear_eef_array_filtered[:,col] = filtfilt(b, a, delta_linear_eef_array[:,col])
+            delta_angular_eef_array_filtered[:,col] = filtfilt(b, a, delta_angular_eef_array[:,col])
 
         plot_velocities = False    
 
         if plot_velocities:
-            fig, ax = plt.subplots(2, 1, sharex=True, figsize=(8, 5))
+            fig, ax = plt.subplots(4, 1, sharex=True, figsize=(8, 5))
 
             ax[0].plot(time_vector, v_eef_array[:,0], label='Unfiltered v_eef_x', alpha=0.5, linewidth=1, color='green')
             ax[0].plot(time_vector, v_eef_array_filtered[:,0], label='Filtered v_eef_x', linewidth=1, color='blue')
@@ -840,11 +797,22 @@ def stage_2_transform_data_to_eef_frame():
             plt.show()
 
         # Switch back to DataFrame
-        v_eef_df = pd.DataFrame(v_eef_array_filtered, columns=['v_eef_x', 'v_eef_y', 'v_eef_z'])
-        w_eef_df = pd.DataFrame(w_eef_array_filtered, columns=['w_eef_x', 'w_eef_y', 'w_eef_z'])
+        v_eef_df = pd.DataFrame(v_eef_array_filtered, columns=['v_eef._x._eef_frame',
+                                                               'v_eef._y._eef_frame',
+                                                               'v_eef._z._eef_frame'])
+        w_eef_df = pd.DataFrame(w_eef_array_filtered, columns=['w_eef._x._eef_frame',
+                                                               'w_eef._y._eef_frame',
+                                                               'w_eef._z._eef_frame'])
+
+        delta_linear_eef_df = pd.DataFrame(delta_linear_eef_array_filtered, columns=['Δ_lin_eef._x._eef_frame',
+                                                                                     'Δ_lin_eef._y._eef_frame',
+                                                                                     'Δ_lin_eef._z._eef_frame'])
+        delta_angular_eef_df = pd.DataFrame(delta_angular_eef_array_filtered, columns=['Δ_ori_eef._x._eef_frame',
+                                                                                       'Δ_ori_eef._y._eef_frame',
+                                                                                       'Δ_ori_eef._z._eef_frame'])
 
         # Combine with original DataFrame
-        df_eef_frame = pd.concat([df, v_eef_df, w_eef_df], axis=1)
+        df_eef_frame = pd.concat([df, v_eef_df, w_eef_df, delta_linear_eef_df, delta_angular_eef_df], axis=1)
 
         # Save transformed data to CSV files
         base_filename = os.path.splitext(trial)[0]
@@ -951,7 +919,7 @@ def stage_3_crop_data_to_task_phases():
 
 
     # ========= ONLY HUMAN DEMOS: USEFUL FOR APPROACH PHASE ==========
-    # Reason: Approach phase deosn't need the wrench topics
+    # Reason: Approach phase doesn't need the wrench topics
 
     if platform.system() == "Windows":
         SOURCE_PATH_ONLY_APPROACH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\only_human_demos/with_palm_cam")
@@ -1122,18 +1090,16 @@ def stage_5_fix_hw_issues():
 
 
 
-
 if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
     # stage_2_transform_data_to_eef_frame()
     # stage_3_crop_data_to_task_phases()   
-
-    steps = [4,5,6,7,8,9,10]
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
-    for step in steps:
-        for phase in phases:
-            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=True)  
+   
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    for phase in phases:
+        for step in range(11):
+            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
