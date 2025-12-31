@@ -221,14 +221,16 @@ def zscore_normalize(train_set, test_set, eps=1e-8):
 
 
 class VelocityMLP(nn.Module):
-    def __init__(self, input_dim, output_dim=6):
+    def __init__(self, input_dim, output_dim=6, hidden=128):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(input_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, output_dim)
+            nn.Linear(input_dim, hidden),
+            nn.LayerNorm(hidden),
+            nn.SiLU(),
+            nn.Linear(hidden, hidden),
+            nn.LayerNorm(hidden),
+            nn.SiLU(),
+            nn.Linear(hidden, output_dim)
         )
     
     def forward(self, x):
@@ -423,9 +425,10 @@ def torch_mlp_regressor(regressor, dataset_class):
     ).to(device)
 
     optimizer = torch.optim.Adam(regressor_model.parameters(), lr=1e-3)
-    n_epochs = 500
-    batch_size = 64
-    lambda_smooth = 0.2
+    n_epochs = 250
+    batch_size = 128
+
+    lambda_smooth = 0
 
     train_losses = []
     val_losses = []
@@ -675,6 +678,7 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
         Y_test_seq = torch.tensor(lfd_dataset.Y_test, dtype=torch.float32)
         X_test_t = torch.tensor(lfd_dataset.X_test_norm, dtype=torch.float32)
 
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         regressor_model.eval()
         # X_test_t = torch.tensor(X_test_norm, dtype=torch.float32).to(device)
         with torch.no_grad():
@@ -699,14 +703,14 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
 
 def main():
 
-    regressors = ['rf']
+    regressors = ['mlp_torch']
     # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
     phases = ['phase_1_approach']
 
     for regressor in regressors:
         for phase in phases:
             print(f"================== {phase} ===================")
-            for t in range(3,4):
+            for t in range(4,5):
                 time_steps = str(t) + '_timesteps'
                 print(f"--- {time_steps} ---")                
                 learn(regressor=regressor, phase=phase, time_steps=time_steps)    

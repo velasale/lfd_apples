@@ -284,10 +284,10 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
     print("Video saved:", output_video_path)
 
 
-def infer_actions(regressor='lstm'):
+def infer_actions(regressor='mlp_torch'):
 
-    phase = 'phase_3_pick'
-    timesteps = '0_timesteps'
+    phase = 'phase_1_approach'
+    timesteps = '4_timesteps'
 
     BASE_PATH = '/home/alejo/Documents/DATA'
     model_path = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{phase}/{timesteps}')
