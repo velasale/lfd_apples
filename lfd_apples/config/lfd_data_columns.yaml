@@ -1,19 +1,12 @@
 # Action and state space columns used in all harvesting phases
 
 action_cols:
-  - v_eef_x
-  - v_eef_y
-  - v_eef_z
-  - w_eef_x
-  - w_eef_y
-  - w_eef_z
-  # - delta_pos_x
-  # - delta_pos_y
-  # - delta_pos_z
-  # - delta_angular_x
-  # - delta_angular_y
-  # - delta_angular_z
-  # - delta_ori_w
+  - v_eef._x._eef_frame
+  - v_eef._y._eef_frame
+  - v_eef._z._eef_frame
+  - w_eef._x._eef_frame
+  - w_eef._y._eef_frame
+  - w_eef._z._eef_frame
 
 air_pressure_cols:
   - scA
