@@ -441,5 +441,5 @@ if __name__ == "__main__":
 
     # main()  
 
-    visualize_specific_channel()
+    visualize_specific_channel(channel_number=40)
     
