@@ -117,6 +117,8 @@ def main():
     BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
     lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps)
 
+    # TODO: Create sequences on each trial, before stacking them all together, to keep Temporal Adjacency
+
     # Split Training data into Train and Validation data      
     X_train_final, X_val_arr, Y_train_final, Y_val_arr = train_test_split(
         lfd_dataset.X_train_norm, 

@@ -300,7 +300,7 @@ def infer_actions(regressor='lstm'):
     test_trials_list = df_trials['trial_id'].tolist()
 
     # --- Pick trial ---
-    random_trial = True
+    random_trial = False
     if random_trial:
         random_file = random.choice(test_trials_list)
     else:
@@ -357,8 +357,13 @@ def infer_actions(regressor='lstm'):
     elif regressor == "lstm":
         SEQ_LEN = 6
         BATCH_SIZE = 256
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        lstm_model = LSTMRegressor(input_dim=64, hidden_dim=64, output_dim=6, num_layers=1)
+        lstm_model = LSTMRegressor(input_dim=65, hidden_dim=50, output_dim=6, num_layers=1)
+
+        # Move model to device
+        lstm_model.to(device)
         lstm_model.load_state_dict(torch.load(os.path.join(model_path,"lstm_model.pth")))
 
         # Set to evaluation mode
@@ -373,6 +378,7 @@ def infer_actions(regressor='lstm'):
         X_seq = np.array(X_seq)
 
         # Convert to tensor
+        
         X_tensor = torch.tensor(X_seq, dtype=torch.float32).to(device)
 
         # Predict
