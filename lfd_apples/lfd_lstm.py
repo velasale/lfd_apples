@@ -4,45 +4,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
+import os
+
+import pickle
+
+import matplotlib.pyplot as plt
+import joblib
+import yaml
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 
-
-def load_data():
-
-
-    # Load Data
-    # BASE_DIRECTORY = '/media/alejo/IL_data/04_IL_preprocessed_(memory)'
-    BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
-    BASE_DIRECTORY = os.path.join(BASE_SOURCE_PATH, '05_IL_preprocessed_(memory)')
-    experiment = 'experiment_1_(pull)'    
-   
-    suffix = '_' + experiment + '_' + phase + '_' + time_steps       
-    BASE_PATH = os.path.join(BASE_DIRECTORY, experiment, phase, time_steps)
-
-    DESTINATION_DIRECTORY = os.path.join(BASE_SOURCE_PATH, '06_IL_learning')
-    DESTINATION_PATH = os.path.join(DESTINATION_DIRECTORY, experiment, phase, time_steps)
-    os.makedirs(DESTINATION_PATH, exist_ok=True)
-
-    # Split data into Training trials and Test trials
-    all_data, all_trials_paths = load_data(BASE_PATH)    
-    cols = all_data.shape[1]
-
-    # Load actions
-    data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
-    with open(data_columns_path, "r") as f:
-        cfg = yaml.safe_load(f)
-    
-    n_output_cols = len(cfg['action_cols'])                         # These are the action columns
-    n_input_cols = cols - n_output_cols  
-
-
-
-    data = np.load("lstm_data.npz")
-    X = data["X"]   # (N, D)
-    Y = data["Y"]   # (N, 6)
-    return X, Y
+# Custom imports
+from lfd_apples.lfd_learning import DatasetForLearning, save_model
 
 
 def create_sequences(X, Y, seq_len):
@@ -73,7 +47,7 @@ class LSTMRegressor(nn.Module):
         return self.fc(h_n[-1])
 
 
-def train(model, train_loader, val_loader, epochs=100, lr=1e-3):
+def train(model, train_loader, val_loader, epochs=500, lr=1e-3):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
@@ -132,48 +106,58 @@ def evaluate(model, test_loader):
 
 
 def main():
-    SEQ_LEN = 3
+    SEQ_LEN = 6
     BATCH_SIZE = 256
 
-    X, Y = load_data()
+    phase='phase_1_approach'
+    time_steps='0_timesteps'
 
-    X_train, X_tmp, Y_train, Y_tmp = train_test_split(
-        X, Y, test_size=0.3, shuffle=False
-    )
+    # === Load Data ===
+    print('\nLoading Data ...')
+    BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
+    lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps)
 
-    X_val, X_test, Y_val, Y_test = train_test_split(
-        X_tmp, Y_tmp, test_size=0.5, shuffle=False
-    )
+    # Split Training data into Train and Validation data      
+    X_train_final, X_val_arr, Y_train_final, Y_val_arr = train_test_split(
+        lfd_dataset.X_train_norm, 
+        lfd_dataset.Y_train_norm, 
+        test_size=0.15, 
+        shuffle=True
+    )   
 
-    X_train_s, Y_train_s = create_sequences(X_train, Y_train, SEQ_LEN)
-    X_val_s,   Y_val_s   = create_sequences(X_val,   Y_val,   SEQ_LEN)
-    X_test_s,  Y_test_s  = create_sequences(X_test,  Y_test,  SEQ_LEN)
+    # Create sequences
+    X_train_s, Y_train_s = create_sequences(X_train_final, Y_train_final, SEQ_LEN)
+    X_val_s,   Y_val_s   = create_sequences(X_val_arr, Y_val_arr, SEQ_LEN)
+    X_test_s,  Y_test_s  = create_sequences(lfd_dataset.X_test_norm, lfd_dataset.Y_test_norm, SEQ_LEN)
 
-    train_ds = TensorDataset(
-        torch.tensor(X_train_s, dtype=torch.float32),
-        torch.tensor(Y_train_s, dtype=torch.float32)
-    )
-    val_ds = TensorDataset(
-        torch.tensor(X_val_s, dtype=torch.float32),
-        torch.tensor(Y_val_s, dtype=torch.float32)
-    )
-    test_ds = TensorDataset(
-        torch.tensor(X_test_s, dtype=torch.float32),
-        torch.tensor(Y_test_s, dtype=torch.float32)
-    )
+    # Tensor datasets
+    train_ds = TensorDataset(torch.tensor(X_train_s, dtype=torch.float32),
+                             torch.tensor(Y_train_s, dtype=torch.float32))
+    val_ds   = TensorDataset(torch.tensor(X_val_s, dtype=torch.float32),
+                             torch.tensor(Y_val_s, dtype=torch.float32))
+    test_ds  = TensorDataset(torch.tensor(X_test_s, dtype=torch.float32),
+                             torch.tensor(Y_test_s, dtype=torch.float32))
 
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE)
     test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE)
 
+    # Model
     model = LSTMRegressor(
-        input_dim=X.shape[1],
-        hidden_dim=64,
-        output_dim=Y.shape[1]
+        input_dim=X_train_s.shape[2],   # number of features
+        hidden_dim=50,
+        output_dim=Y_train_s.shape[1]
     )
 
-    train(model, train_loader, val_loader, epochs=100)
+    train(model, train_loader, val_loader, epochs=500)
+
+    model_path = os.path.join(lfd_dataset.DESTINATION_PATH, "lstm_model.pth")    
+    torch.save(model.state_dict(), model_path)
+    # Save model
+    save_model("lstm", model, lfd_dataset)
+
     evaluate(model, test_loader)
+
 
 
 
