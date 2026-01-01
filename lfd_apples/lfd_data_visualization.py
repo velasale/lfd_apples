@@ -1,3 +1,4 @@
+
 import cv2
 import pandas as pd
 import glob
@@ -16,6 +17,7 @@ import torch
 
 # Custom imports
 from lfd_apples.lfd_learning import VelocityMLP  # make sure this class is imported
+from lfd_apples.lfd_lstm import LSTMRegressor, create_sequences
 
 
 def get_paths(trial_num="trial_1"):
@@ -284,10 +286,10 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
     print("Video saved:", output_video_path)
 
 
-def infer_actions(regressor='rf'):
+def infer_actions(regressor='lstm'):
 
-    phase = 'phase_2_contact'
-    timesteps = '10_timesteps'
+    phase = 'phase_1_approach'
+    timesteps = '0_timesteps'
 
     BASE_PATH = '/home/alejo/Documents/DATA'
     model_path = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{phase}/{timesteps}')
@@ -298,11 +300,11 @@ def infer_actions(regressor='rf'):
     test_trials_list = df_trials['trial_id'].tolist()
 
     # --- Pick trial ---
-    random_trial = False
+    random_trial = True
     if random_trial:
         random_file = random.choice(test_trials_list)
     else:
-        trial_number = 35
+        trial_number = 267
         main_folder = '/home/alejo/Documents/DATA/05_IL_preprocessed_(memory)/experiment_1_(pull)'
         random_file = os.path.join(main_folder, phase, timesteps)
         filename = 'trial_' + str(trial_number) + '_downsampled_aligned_data_transformed_(' + phase + ')_(' + timesteps + ').csv'
@@ -351,6 +353,37 @@ def infer_actions(regressor='rf'):
         with torch.no_grad():
             Y_pred = mlp_model(X_tensor).cpu().numpy()
         Y_pred_denorm = Y_pred * Y_std + Y_mean
+    
+    elif regressor == "lstm":
+        SEQ_LEN = 6
+        BATCH_SIZE = 256
+        
+        lstm_model = LSTMRegressor(input_dim=64, hidden_dim=64, output_dim=6, num_layers=1)
+        lstm_model.load_state_dict(torch.load(os.path.join(model_path,"lstm_model.pth")))
+
+        # Set to evaluation mode
+        lstm_model.eval()
+
+        # Create sequence with 
+        X_seq, idx_map = [], []  # keep track of which row each sequence corresponds to
+        for i in range(len(X_norm) - SEQ_LEN + 1):
+            X_seq.append(X_norm[i:i+SEQ_LEN])
+            idx_map.append(i + SEQ_LEN - 1)  # last index of sequence
+
+        X_seq = np.array(X_seq)
+
+        # Convert to tensor
+        X_tensor = torch.tensor(X_seq, dtype=torch.float32).to(device)
+
+        # Predict
+        with torch.no_grad():
+            Y_pred_seq = lstm_model(X_tensor).cpu().numpy()
+
+        # Map predictions back to original row indices
+        Y_pred_denorm = np.zeros((len(X), len(output_cols)))
+        Y_pred_denorm[idx_map, :] = Y_pred_seq * Y_std + Y_mean
+
+
 
     # --- Assign predictions back to dataframe ---
     for i, col in enumerate(output_cols):
@@ -427,7 +460,7 @@ def main():
 if __name__ == '__main__':
 
     # main()
-    # infer_actions()
+    infer_actions()
 
-    important_features(top=10)
+    # important_features(top=10)
 
