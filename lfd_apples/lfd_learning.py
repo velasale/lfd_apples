@@ -410,7 +410,7 @@ def torch_mlp_regressor(regressor, dataset_class):
         lfd.X_train_norm, 
         lfd.Y_train_norm, 
         test_size=0.15, 
-        shuffle=False        
+        shuffle=True        # This influences a lot. Surprisingly
     )
 
     # Convert to torch tensors
@@ -426,10 +426,10 @@ def torch_mlp_regressor(regressor, dataset_class):
     ).to(device)
 
     optimizer = torch.optim.Adam(regressor_model.parameters(), lr=1e-3)
-    n_epochs = 500
-    batch_size = 128
+    n_epochs = 1000
+    batch_size = 64
 
-    lambda_smooth = 0.2
+    lambda_smooth = 0.1
 
     train_losses = []
     val_losses = []
@@ -516,7 +516,7 @@ def save_model(model_name, regressor_model, dataset_class):
         with open(os.path.join(lfd.DESTINATION_PATH, model_filename), "wb") as f:
             joblib.dump(regressor_model, f)
 
-    elif regressor_model == 'mlp_torch':
+    elif regressor_model in ['mlp_torch', 'lstm']:
         # already saved via torch.save inside the mlp_torch block
         pass
 
