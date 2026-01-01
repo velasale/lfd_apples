@@ -353,7 +353,7 @@ def mlp_regressor(regressor, dataset_class):
 
     # Initialize MLP regressor
     regressor_model = MLPRegressor(
-        hidden_layer_sizes=(50,50),  # two hidden layers with 50 neurons each
+        hidden_layer_sizes=(128,128),  # two hidden layers with 50 neurons each
         activation='relu',
         solver='adam',
         learning_rate='adaptive',
@@ -529,7 +529,7 @@ def save_model(model_name, regressor_model, dataset_class):
 
 
 
-def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
+def learn(lfd_dataset, regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
     """
     Docstring for learn
     
@@ -707,17 +707,26 @@ def learn(regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
 def main():
 
     regressors = ['rf', 'mlp','mlp_torch']
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
-    regressors = ['mlp_torch']
-    phases = ['phase_1_approach']
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
 
-    for regressor in regressors:
-        for phase in phases:
-            print(f"================== {phase} ===================")
-            for t in range(10,11):
-                time_steps = str(t) + '_timesteps'
-                print(f"--- {time_steps} ---")                
-                learn(regressor=regressor, phase=phase, time_steps=time_steps)    
+    for phase in phases:
+        print(f"================== {phase} ===================")
+    
+        for t in range(10,11):
+            
+            time_steps = str(t) + '_timesteps'
+            print(f"--- {time_steps} ---")       
+
+            # === Load Data ===
+            print('\nLoading Data ...')
+            BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
+            lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps)
+
+            # This way we make sure that all models use the same train and test set
+            
+            for regressor in regressors:         
+                print(f"--- {regressor} ---")       
+                learn(lfd_dataset, regressor=regressor, phase=phase, time_steps=time_steps)    
 
 
 if __name__ == '__main__':
