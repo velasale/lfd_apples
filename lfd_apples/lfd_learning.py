@@ -31,6 +31,7 @@ class DatasetForLearning():
         self.time_steps = time_steps
         self.BASE_SOURCE_PATH = BASE_SOURCE_PATH
         self.clip = False                            # Clip output data?
+        self.sequence_size = 10
 
         self.define_data_paths()                # Paths to csvs and to store results
         self.load_actions()                     # Data outputs (actions) from yaml file
@@ -108,16 +109,18 @@ class DatasetForLearning():
             self.train_trials =  pd.read_csv(os.path.join(self.DESTINATION_PATH, 'train_trials.csv'))
             self.test_trials = pd.read_csv(os.path.join(self.DESTINATION_PATH, 'test_trials.csv'))
 
+            self.train_trials = self.train_trials.iloc[:,0].tolist()
+            self.test_trials = self.test_trials.iloc[:,0].tolist()
+
         else:
             self.train_trials, self.test_trials = train_test_split(self.csvs_filepaths_list,
                                                                test_size=0.15,
-                                                               shuffle=True)    
-        
-        # Save model's results:       
-        df_train=pd.DataFrame(self.train_trials, columns=['trial_id'])
-        df_train.to_csv(os.path.join(self.DESTINATION_PATH,'train_trials.csv'), index=False)
-        df_test=pd.DataFrame(self.test_trials, columns=['trial_id'])
-        df_test.to_csv(os.path.join(self.DESTINATION_PATH, 'test_trials.csv'), index=False)
+                                                               shuffle=True)            
+            # Save model's results:       
+            df_train=pd.DataFrame(self.train_trials, columns=['trial_id'])
+            df_train.to_csv(os.path.join(self.DESTINATION_PATH,'train_trials.csv'), index=False)
+            df_test=pd.DataFrame(self.test_trials, columns=['trial_id'])
+            df_test.to_csv(os.path.join(self.DESTINATION_PATH, 'test_trials.csv'), index=False)
 
 
     def prepare_data(self):
@@ -128,10 +131,10 @@ class DatasetForLearning():
         :param test_trials_list: Description
         :param n_input_cols: Description
         """
-        
+                
         # Prepare sets of arrays
-        self.X_train, self.Y_train = self.prepare_trial_set(self.train_trials, self.n_input_cols, clip=self.clip)
-        self.X_test, self.Y_test = self.prepare_trial_set(self.test_trials, self.n_input_cols, clip=self.clip)  
+        self.X_train, self.Y_train, self.X_train_seq, self.Y_train_seq = self.prepare_trial_set(self.train_trials, self.n_input_cols, clip=self.clip)
+        self.X_test, self.Y_test,self.X_test_seq, self.Y_test_seq = self.prepare_trial_set(self.test_trials, self.n_input_cols, clip=self.clip)  
         
         # Normalize features
         self.X_train_norm, self.X_test_norm, self.X_train_mean, self.X_train_std = zscore_normalize(self.X_train, self.X_test)
@@ -141,29 +144,47 @@ class DatasetForLearning():
         nan_rows = np.isnan(self.X_train_norm).any(axis=1)
         print(f"Rows with NaNs in X_train_nrom: {np.where(nan_rows)[0]}")
         nan_rows = np.isnan(self.Y_train).any(axis=1)
-        print(f"Rows with NaNs in Y_train: {np.where(nan_rows)[0]}")
+        print(f"Rows with NaNs in Y_train: {np.where(nan_rows)[0]}") 
 
         return self.X_train_norm, self.Y_train_norm, self.X_test_norm, self.Y_test, self.X_train_mean, self.X_train_std, self.Y_train_mean, self.Y_train_std
 
 
     def prepare_trial_set(self, set_csv_list, n_input_cols, clip=False):
-
+        
         # Open csvs, convert int to arrays, and stack
         set_arrays = []
+        set_lstm_X_seqs = []
+        set_lstm_Y_seqs = []
         for trial in set_csv_list:
+
+            file_to_open  = trial
 
             df = pd.read_csv(trial)
             df = df.apply(pd.to_numeric, errors='coerce')
 
             df.drop(columns=['timestamp_vector'], inplace=True)
 
+            # --- Choice 1: Arrays
             arr = df.to_numpy(dtype=np.float64)
             set_arrays.append(arr)
 
-        set_combined = np.vstack(set_arrays)
+            # --- Choice 2: Sequences
+            # For LSTM. They need to be formed before stacking them all across trials
+            lstm_X_array = arr[:, :n_input_cols]
+            lstm_Y_array = arr[:, n_input_cols:]
 
+            lstm_X_seq, lstm_Y_seq = self.create_sequences(lstm_X_array, lstm_Y_array, self.sequence_size)
+            
+            set_lstm_X_seqs.append(lstm_X_seq)
+            set_lstm_Y_seqs.append(lstm_Y_seq)            
+
+
+        set_combined = np.vstack(set_arrays)
         X = set_combined[:, :n_input_cols]
         Y = set_combined[:, n_input_cols:]
+
+        set_lstm_X_combined = np.vstack(set_lstm_X_seqs)
+        set_lstm_y_combined = np.vstack(set_lstm_Y_seqs)            
 
         # Clip actions (outputs) if needed
         # (e.g. Franka Arm joint limits)
@@ -175,8 +196,8 @@ class DatasetForLearning():
 
             Y_clipped[:, :3] = np.clip(Y_clipped[:, :3], -max_linear_velocity, max_linear_velocity)
             Y_clipped[:, 3:] = np.clip(Y_clipped[:, 3:], -max_angular_velocity, max_angular_velocity)
-
-        return X, Y_clipped
+   
+        return X, Y_clipped, set_lstm_X_combined, set_lstm_y_combined
     
 
     def safe_check_output(self):
@@ -213,6 +234,20 @@ class DatasetForLearning():
         plt.savefig(os.path.join(self.DESTINATION_PATH, 'Y_train_normalized_distribution.png'), dpi=300)
         plt.close()
 
+
+    def create_sequences(self, X, Y, seq_len):
+        """
+        X: (N, input_dim)
+        Y: (N, output_dim)
+        Returns:
+            X_seq: (N - seq_len + 1, seq_len, input_dim)
+            Y_seq: (N - seq_len + 1, output_dim)
+        """
+        X_seq, Y_seq = [], []
+        for i in range(len(X) - seq_len + 1):
+            X_seq.append(X[i:i + seq_len])
+            Y_seq.append(Y[i + seq_len - 1])  # predict last step
+        return np.array(X_seq), np.array(Y_seq)
 
 def zscore_normalize(train_set, test_set, eps=1e-8):
     """
@@ -262,20 +297,6 @@ class VelocityLSTM(nn.Module):
         _, (h_n, _) = self.lstm(x)
         return self.fc(h_n[-1])
 
-
-def create_sequences(X, Y, seq_len):
-    """
-    X: (N, input_dim)
-    Y: (N, output_dim)
-    Returns:
-        X_seq: (N - seq_len + 1, seq_len, input_dim)
-        Y_seq: (N - seq_len + 1, output_dim)
-    """
-    X_seq, Y_seq = [], []
-    for i in range(len(X) - seq_len + 1):
-        X_seq.append(X[i:i + seq_len])
-        Y_seq.append(Y[i + seq_len - 1])  # predict last step
-    return np.array(X_seq), np.array(Y_seq)
 
 
 def reshape_for_lstm(X, Y, n_timesteps):

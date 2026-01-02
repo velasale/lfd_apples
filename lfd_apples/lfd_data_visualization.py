@@ -286,10 +286,10 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
     print("Video saved:", output_video_path)
 
 
-def infer_actions(regressor='lstm'):
+def infer_actions(regressor='mlp_torch'):
 
-    phase = 'phase_1_approach'
-    timesteps = '0_timesteps'
+    phase = 'phase_3_pick'
+    timesteps = '10_timesteps'
 
     BASE_PATH = '/home/alejo/Documents/DATA'
     model_path = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{phase}/{timesteps}')
@@ -304,7 +304,7 @@ def infer_actions(regressor='lstm'):
     if random_trial:
         random_file = random.choice(test_trials_list)
     else:
-        trial_number = 267
+        trial_number = 195
         main_folder = '/home/alejo/Documents/DATA/05_IL_preprocessed_(memory)/experiment_1_(pull)'
         random_file = os.path.join(main_folder, phase, timesteps)
         filename = 'trial_' + str(trial_number) + '_downsampled_aligned_data_transformed_(' + phase + ')_(' + timesteps + ').csv'

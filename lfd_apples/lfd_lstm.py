@@ -109,13 +109,12 @@ def main():
     SEQ_LEN = 6
     BATCH_SIZE = 256
 
-    phase='phase_1_approach'
-    time_steps='0_timesteps'
+    phase='phase_1_approach'   
 
     # === Load Data ===
     print('\nLoading Data ...')
     BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
-    lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps)
+    lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps='0_timesteps')
 
     # TODO: Create sequences on each trial, before stacking them all together, to keep Temporal Adjacency
 
