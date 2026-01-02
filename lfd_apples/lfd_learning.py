@@ -99,7 +99,17 @@ class DatasetForLearning():
 
     def split_data(self):
 
-        self.train_trials, self.test_trials = train_test_split(self.csvs_filepaths_list,
+        # Check if there is already a train_list and a test_list
+        csv_files = [p.name for p in Path(self.DESTINATION_PATH).glob("*.csv")]
+
+        if ('test_trials.csv' in csv_files) and ('train_trials.csv' in csv_files):
+            # load files
+
+            self.train_trials =  pd.read_csv(os.path.join(self.DESTINATION_PATH, 'train_trials.csv'))
+            self.test_trials = pd.read_csv(os.path.join(self.DESTINATION_PATH, 'test_trials.csv'))
+
+        else:
+            self.train_trials, self.test_trials = train_test_split(self.csvs_filepaths_list,
                                                                test_size=0.15,
                                                                shuffle=True)    
         
@@ -538,11 +548,7 @@ def learn(lfd_dataset, regressor='mlp', phase='phase_1_approach', time_steps='2_
     :param time_steps: Description
     """
     
-    # === Load Data ===
-    print('\nLoading Data ...')
-    BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
-    lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps)
-
+    
     # === Train Model ===
     print('\nTraining model ...')
     if regressor == 'rf': regressor_model = rf_regressor(regressor, lfd_dataset)              
@@ -712,7 +718,7 @@ def main():
     for phase in phases:
         print(f"================== {phase} ===================")
     
-        for t in range(10,11):
+        for t in range(11):
             
             time_steps = str(t) + '_timesteps'
             print(f"--- {time_steps} ---")       
