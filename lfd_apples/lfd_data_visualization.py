@@ -355,8 +355,7 @@ def infer_actions(regressor='lstm'):
     
     elif regressor == "lstm":
 
-        SEQ_LEN = 20
-        BATCH_SIZE = 64
+        SEQ_LEN = 5
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        
 

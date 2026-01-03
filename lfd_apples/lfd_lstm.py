@@ -100,6 +100,7 @@ def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500
     # Return losses for plotting
     return train_losses, val_losses
 
+
 def evaluate(model, test_loader, Y_train_mean, Y_train_std):
     device = next(model.parameters()).device
     model.eval()
@@ -130,12 +131,9 @@ def evaluate(model, test_loader, Y_train_mean, Y_train_std):
     print("Test MSE per output:", mse)
 
 
-def main():
-    SEQ_LEN = 5
-    BATCH_SIZE = 4
-
-    phase='phase_2_contact'   
-
+def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
+    
+    
     # === Load Data ===
     print('\nLoading Data ...')
     BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
@@ -175,7 +173,7 @@ def main():
     train_losses, val_losses = train(
         model, train_loader, val_loader,
         Y_train_mean, Y_train_std,
-        epochs=100
+        epochs=1000
     )
 
     # Plot loss
@@ -189,12 +187,12 @@ def main():
     plt.grid(True)
 
     # Save plot to file
-    plot_path = os.path.join(lfd_dataset.DESTINATION_PATH, "lstm_loss_plot.png")
+    plot_path = os.path.join(lfd_dataset.DESTINATION_PATH, str(SEQ_LEN) + "_seq_lstm_loss_plot.png")
     plt.savefig(plot_path, dpi=300)
     print(f"Loss plot saved at: {plot_path}")
 
     # Save model
-    model_path = os.path.join(lfd_dataset.DESTINATION_PATH, "lstm_model.pth")    
+    model_path = os.path.join(lfd_dataset.DESTINATION_PATH, str(SEQ_LEN) + "_seq_lstm_model.pth")    
     torch.save(model.state_dict(), model_path)
     save_model("lstm", model, lfd_dataset)
 
@@ -202,8 +200,16 @@ def main():
     evaluate(model, test_loader, Y_train_mean, Y_train_std)
 
 
-
-
 if __name__ == '__main__':
-    main()
+
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    seq_lens = [5, 10, 15, 20]
+
+    for phase in phases:
+        print(f'\n------------------ {phase}-------------------')
+
+        for SEQ_LEN in seq_lens:
+            print(f'\n--- Sequences: {SEQ_LEN} ---')
+
+            lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=32, phase=phase)
     
