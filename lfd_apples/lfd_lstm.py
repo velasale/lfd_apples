@@ -219,7 +219,23 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
     # Save model
     model_path = os.path.join(lfd_dataset.DESTINATION_PATH, str(SEQ_LEN) + "_seq_lstm_model.pth")    
     torch.save(model.state_dict(), model_path)
-    save_model(str(SEQ_LEN) +"_seq_lstm", model, lfd_dataset)
+
+    # Save statistics         
+    model_name = str(SEQ_LEN) +"_seq_lstm"    
+    Xmean_name = model_name + '_Xmean' + lfd_dataset.suffix + '.npy'
+    Xstd_name = model_name + '_Xstd' + lfd_dataset.suffix + '.npy'
+    Ymean_name = model_name + '_Ymean' + lfd_dataset.suffix + '.npy'
+    Ystd_name = model_name + '_Ystd' + lfd_dataset.suffix + '.npy'
+
+    variable_names = [Xmean_name, Xstd_name, Ymean_name, Ystd_name]
+    variable_values = [X_train_mean,
+                       X_train_std,
+                       Y_train_mean,
+                       Y_train_std]
+    
+    for name, value in zip(variable_names, variable_values):
+            np.save(os.path.join(lfd_dataset.DESTINATION_PATH, name), value)
+    
 
     # Evaluate model
     evaluate(model, test_loader, Y_train_mean, Y_train_std)
