@@ -25,13 +25,14 @@ from torch.utils.data import TensorDataset, DataLoader
 
 class DatasetForLearning():
 
-    def __init__(self, BASE_SOURCE_PATH, phase, time_steps):
+    def __init__(self, BASE_SOURCE_PATH, phase, time_steps, SEQ_LENGTH=10):
 
         self.phase = phase
         self.time_steps = time_steps
         self.BASE_SOURCE_PATH = BASE_SOURCE_PATH
         self.clip = False                            # Clip output data?
-        self.sequence_size = 10
+        self.SEQ_LENGTH = SEQ_LENGTH
+        
 
         self.define_data_paths()                # Paths to csvs and to store results
         self.load_actions()                     # Data outputs (actions) from yaml file
@@ -103,24 +104,38 @@ class DatasetForLearning():
         # Check if there is already a train_list and a test_list
         csv_files = [p.name for p in Path(self.DESTINATION_PATH).glob("*.csv")]
 
-        if ('test_trials.csv' in csv_files) and ('train_trials.csv' in csv_files):
+        if ('test_trials.csv' in csv_files) and ('train_trials.csv' in csv_files) and ('val_trials.csv' in csv_files):
             # load files
 
             self.train_trials =  pd.read_csv(os.path.join(self.DESTINATION_PATH, 'train_trials.csv'))
             self.test_trials = pd.read_csv(os.path.join(self.DESTINATION_PATH, 'test_trials.csv'))
+            self.val_trials = pd.read_csv(os.path.join(self.DESTINATION_PATH, 'val_trials.csv'))
 
             self.train_trials = self.train_trials.iloc[:,0].tolist()
             self.test_trials = self.test_trials.iloc[:,0].tolist()
+            self.val_trials = self.val_trials.iloc[:,0].tolist()
 
         else:
+            # Step 1: Split data set into TRAINING and TEST sets
             self.train_trials, self.test_trials = train_test_split(self.csvs_filepaths_list,
                                                                test_size=0.15,
                                                                shuffle=True)            
+            
+            # Step 2: Split TRAINING set into TRAINING and VALIDATION set
+            self.train_trials, self.val_trials = train_test_split(self.train_trials,
+                                                               test_size=0.15,
+                                                               shuffle=True)   
+
+
             # Save model's results:       
             df_train=pd.DataFrame(self.train_trials, columns=['trial_id'])
             df_train.to_csv(os.path.join(self.DESTINATION_PATH,'train_trials.csv'), index=False)
+
             df_test=pd.DataFrame(self.test_trials, columns=['trial_id'])
             df_test.to_csv(os.path.join(self.DESTINATION_PATH, 'test_trials.csv'), index=False)
+
+            df_val=pd.DataFrame(self.val_trials, columns=['trial_id'])
+            df_val.to_csv(os.path.join(self.DESTINATION_PATH, 'val_trials.csv'), index=False)
 
 
     def prepare_data(self):
@@ -133,9 +148,23 @@ class DatasetForLearning():
         """
                 
         # Prepare sets of arrays
-        self.X_train, self.Y_train, self.X_train_seq, self.Y_train_seq = self.prepare_trial_set(self.train_trials, self.n_input_cols, clip=self.clip)
-        self.X_test, self.Y_test,self.X_test_seq, self.Y_test_seq = self.prepare_trial_set(self.test_trials, self.n_input_cols, clip=self.clip)  
+        self.X_train, self.Y_train, self.X_train_seq, self.Y_train_seq = self.prepare_trial_set(
+            self.train_trials,
+            self.n_input_cols,
+            self.SEQ_LENGTH,
+            clip=self.clip)
+        self.X_val, self.Y_val, self.X_val_seq, self.Y_val_seq = self.prepare_trial_set(
+            self.val_trials,
+            self.n_input_cols,
+            self.SEQ_LENGTH,
+            clip=self.clip)  
+        self.X_test, self.Y_test, self.X_test_seq, self.Y_test_seq = self.prepare_trial_set(
+            self.test_trials,
+            self.n_input_cols,
+            self.SEQ_LENGTH,
+            clip=self.clip)  
         
+        # ===== Choice 1: Arrays ========
         # Normalize features
         self.X_train_norm, self.X_test_norm, self.X_train_mean, self.X_train_std = zscore_normalize(self.X_train, self.X_test)
         self.Y_train_norm, self.Y_test_norm, self.Y_train_mean, self.Y_train_std = zscore_normalize(self.Y_train, self.Y_test)    
@@ -146,10 +175,41 @@ class DatasetForLearning():
         nan_rows = np.isnan(self.Y_train).any(axis=1)
         print(f"Rows with NaNs in Y_train: {np.where(nan_rows)[0]}") 
 
+
+        # ==== Choice 2: Tensors ========        
+        # Train tensors
+        X_train_tensor = torch.tensor(self.X_train_seq, dtype=torch.float32)
+        Y_train_tensor = torch.tensor(self.Y_train_seq, dtype=torch.float32)
+
+        self.X_train_tensor_mean = X_train_tensor.mean(dim=(0, 1), keepdims=True)
+        self.X_train_tensor_std = X_train_tensor.std(dim=(0, 1), keepdims=True)
+
+        self.Y_train_tensor_mean = Y_train_tensor.mean(dim=(0, 1), keepdims=True)
+        self.Y_train_tensor_std = Y_train_tensor.std(dim=(0, 1), keepdims=True)
+
+        self.X_train_tensor_norm = (X_train_tensor - self.X_train_tensor_mean) / (self.X_train_tensor_std + 1e-8)
+        self.Y_train_tensor_norm = (Y_train_tensor - self.Y_train_tensor_mean) / (self.Y_train_tensor_std + 1e-8)
+
+        # Val tensors
+        X_val_tensor = torch.tensor(self.X_val_seq, dtype=torch.float32)
+        Y_val_tensor = torch.tensor(self.Y_val_seq, dtype=torch.float32)
+
+        self.X_val_tensor_norm = (X_val_tensor - self.X_train_tensor_mean) / (self.X_train_tensor_std + 1e-8)
+        self.Y_val_tensor_norm = (Y_val_tensor - self.Y_train_tensor_mean) / (self.Y_train_tensor_std + 1e-8)
+
+        # Test tensors     
+        X_test_tensor = torch.tensor(self.X_test_seq, dtype=torch.float32)
+        Y_test_tensor = torch.tensor(self.Y_test_seq, dtype=torch.float32)
+
+        self.X_test_tensor_norm = (X_test_tensor - self.X_train_tensor_mean) / (self.X_train_tensor_std + 1e-8)     
+        self.Y_test_tensor_norm = (Y_test_tensor - self.Y_train_tensor_mean) / (self.Y_train_tensor_std + 1e-8)                               
+        
+
         return self.X_train_norm, self.Y_train_norm, self.X_test_norm, self.Y_test, self.X_train_mean, self.X_train_std, self.Y_train_mean, self.Y_train_std
 
 
-    def prepare_trial_set(self, set_csv_list, n_input_cols, clip=False):
+    @staticmethod
+    def prepare_trial_set(set_csv_list, n_input_cols, SEQ_LENGTH, clip=False):
         
         # Open csvs, convert int to arrays, and stack
         set_arrays = []
@@ -173,7 +233,7 @@ class DatasetForLearning():
             lstm_X_array = arr[:, :n_input_cols]
             lstm_Y_array = arr[:, n_input_cols:]
 
-            lstm_X_seq, lstm_Y_seq = self.create_sequences(lstm_X_array, lstm_Y_array, self.sequence_size)
+            lstm_X_seq, lstm_Y_seq = DatasetForLearning.create_sequences(lstm_X_array, lstm_Y_array, SEQ_LENGTH)
             
             set_lstm_X_seqs.append(lstm_X_seq)
             set_lstm_Y_seqs.append(lstm_Y_seq)            
@@ -235,7 +295,8 @@ class DatasetForLearning():
         plt.close()
 
 
-    def create_sequences(self, X, Y, seq_len):
+    @staticmethod
+    def create_sequences(X, Y, seq_len):
         """
         X: (N, input_dim)
         Y: (N, output_dim)
@@ -248,6 +309,7 @@ class DatasetForLearning():
             X_seq.append(X[i:i + seq_len])
             Y_seq.append(Y[i + seq_len - 1])  # predict last step
         return np.array(X_seq), np.array(Y_seq)
+
 
 def zscore_normalize(train_set, test_set, eps=1e-8):
     """
@@ -281,40 +343,6 @@ class VelocityMLP(nn.Module):
     def forward(self, x):
         return self.net(x)
 
-
-class VelocityLSTM(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
-        super().__init__()
-        self.lstm = nn.LSTM(
-            input_dim,
-            hidden_dim,
-            num_layers=1,
-            batch_first=True
-        )
-        self.fc = nn.Linear(hidden_dim, output_dim)
-
-    def forward(self, x):
-        _, (h_n, _) = self.lstm(x)
-        return self.fc(h_n[-1])
-
-
-
-def reshape_for_lstm(X, Y, n_timesteps):
-    n_samples, n_features = X.shape
-    n_sequences = n_samples // n_timesteps
-    if n_sequences == 0:
-        raise ValueError("Not enough samples for the given number of timesteps")
-
-    X_trimmed = X[:n_sequences * n_timesteps, :]
-    Y_trimmed = Y[:n_sequences * n_timesteps, :]
-
-    # Correct: each sequence has n_timesteps rows of all features
-    X_seq = X_trimmed.reshape(n_sequences, n_timesteps, n_features)
-
-    # Target: last timestep
-    Y_seq = Y_trimmed.reshape(n_sequences, n_timesteps, -1)[:, -1, :]
-
-    return X_seq, Y_seq
 
 
 def smooth_velocity_loss(v_pred, v_gt, lamda_smooth=0.1):
@@ -551,12 +579,22 @@ def save_model(model_name, regressor_model, dataset_class):
         # already saved via torch.save inside the mlp_torch block
         pass
 
-    # Save variables
+    # Save statistics    
     variable_names = [Xmean_name, Xstd_name, Ymean_name, Ystd_name]
-    variable_values = [lfd.X_train_mean, lfd.X_train_std, lfd.Y_train_mean, lfd.Y_train_std]
-
+ 
+    if regressor_model != 'lstm':        
+        variable_values = [lfd.X_train_mean, lfd.X_train_std, lfd.Y_train_mean, lfd.Y_train_std]
+    else:
+        variable_values = [lfd.X_train_tensor_mean,
+                           lfd.X_train_tensor_std,
+                           lfd.Y_train_tensor_mean,
+                           lfd.Y_train_tensor_std]
+    
     for name, value in zip(variable_names, variable_values):
-        np.save(os.path.join(lfd.DESTINATION_PATH, name), value)
+            np.save(os.path.join(lfd.DESTINATION_PATH, name), value)
+
+    
+
 
 
 
@@ -577,130 +615,7 @@ def learn(lfd_dataset, regressor='mlp', phase='phase_1_approach', time_steps='2_
     elif regressor == 'mlp': regressor_model = mlp_regressor(regressor, lfd_dataset)
        
     elif regressor == 'mlp_torch': regressor_model = torch_mlp_regressor(regressor, lfd_dataset)
-
-    elif regressor == 'lstm':
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # ---------------- Hyperparameters ----------------
-        sequence_length = 3        # TUNE THIS
-        batch_size = 128
-        learning_rate = 1e-3
-        num_epochs = 100
-
-         # ---------------- Train / Val split ----------------
-        X_train_final, X_val_arr, Y_train_final, Y_val_arr = train_test_split(
-            X_train_norm,
-            Y_train_norm,
-            test_size=0.15,
-            shuffle=False  # IMPORTANT: keep temporal order
-        )
-
-        # ---------------- Create sequences ----------------
-        X_train_seq, Y_train_seq = create_sequences(
-            X_train_final, Y_train_final, sequence_length
-        )
-        X_val_seq, Y_val_seq = create_sequences(
-            X_val_arr, Y_val_arr, sequence_length
-        )
-        X_test_seq, Y_test_seq = create_sequences(
-            X_test_norm, Y_test, sequence_length
-        )
-
-        print("Train sequences:", X_train_seq.shape)
-        print("Val sequences:", X_val_seq.shape)
-        print("Test sequences:", X_test_seq.shape)
-
-        # ---------------- Torch tensors ----------------
-        X_train_t = torch.tensor(X_train_seq, dtype=torch.float32)
-        Y_train_t = torch.tensor(Y_train_seq, dtype=torch.float32)
-        X_val_t = torch.tensor(X_val_seq, dtype=torch.float32)
-        Y_val_t = torch.tensor(Y_val_seq, dtype=torch.float32)
-        X_test_t = torch.tensor(X_test_seq, dtype=torch.float32)
-
-        # ---------------- DataLoaders ----------------
-        train_loader = DataLoader(
-            TensorDataset(X_train_t, Y_train_t),
-            batch_size=batch_size,
-            shuffle=True
-        )
-
-        val_loader = DataLoader(
-            TensorDataset(X_val_t, Y_val_t),
-            batch_size=batch_size,
-            shuffle=False
-        )
-
-
-        # ---------------- Initialize LSTM model ----------------
-        regressor_model = VelocityLSTM(
-            input_dim=X_train_seq.shape[2],
-            hidden_dim=64,
-            output_dim=Y_train_seq.shape[1]
-        ).to(device)
-
-
-        optimizer = torch.optim.Adam(regressor_model.parameters(), lr=learning_rate)
-        criterion = nn.MSELoss()
-
-        train_losses = []
-        val_losses = []
-
-        for epoch in range(num_epochs):
-
-            # -------- Train --------
-            regressor_model.train()
-            train_loss = 0.0
-
-            for xb, yb in train_loader:
-                xb, yb = xb.to(device), yb.to(device)
-
-                optimizer.zero_grad()
-                preds = regressor_model(xb)
-                loss = criterion(preds, yb)
-                loss.backward()
-                optimizer.step()
-
-                train_loss += loss.item() * xb.size(0)
-
-            train_loss /= len(train_loader.dataset)
-
-            # -------- Validation --------
-            regressor_model.eval()
-            val_loss = 0.0
-
-            with torch.no_grad():
-                for xb, yb in val_loader:
-                    xb, yb = xb.to(device), yb.to(device)
-                    preds = regressor_model(xb)
-                    val_loss += criterion(preds, yb).item() * xb.size(0)
-
-            val_loss /= len(val_loader.dataset)
-
-            train_losses.append(train_loss)
-            val_losses.append(val_loss)
-
-            if epoch % 10 == 0:
-                print(f"[Epoch {epoch:03d}] Train: {train_loss:.6f} | Val: {val_loss:.6f}")
-
-
-         # ---------------- Plot training and validation loss ----------------
-        plt.figure(figsize=(8,5))
-        plt.plot(train_losses, label="Training Loss")
-        plt.plot(val_losses, label="Validation Loss")
-        plt.xlabel("Epoch")
-        plt.ylabel("Loss")
-        plt.title(f"LSTM Training vs Validation Loss\n{suffix}")
-        plt.grid(True)
-        plt.legend()
-        plt.savefig(os.path.join(DESTINATION_PATH, "lstm_torch_loss.png"), dpi=300, bbox_inches="tight")
-        plt.close()
-
-        # ---------------- Save Torch model ----------------
-        torch.save(
-            regressor_model.state_dict(),
-            os.path.join(DESTINATION_PATH, "lstm_torch_model.pt")
-        )
-
+    
     # === Predictions ===       
     print('\nRunning Predictions')
     if regressor in ['mlp_torch', 'lstm']:

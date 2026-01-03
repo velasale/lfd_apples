@@ -16,8 +16,8 @@ import yaml
 import torch
 
 # Custom imports
-from lfd_apples.lfd_learning import VelocityMLP  # make sure this class is imported
-from lfd_apples.lfd_lstm import LSTMRegressor, create_sequences
+from lfd_apples.lfd_learning import VelocityMLP, DatasetForLearning  # make sure this class is imported
+from lfd_apples.lfd_lstm import LSTMRegressor
 
 
 def get_paths(trial_num="trial_1"):
@@ -286,21 +286,20 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
     print("Video saved:", output_video_path)
 
 
-def infer_actions(regressor='mlp_torch'):
+def infer_actions(regressor='lstm'):
 
-    phase = 'phase_3_pick'
-    timesteps = '10_timesteps'
+    phase = 'phase_1_approach'
+    timesteps = '0_timesteps'
 
     BASE_PATH = '/home/alejo/Documents/DATA'
     model_path = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{phase}/{timesteps}')
 
-    # --- Load test trials ---
+    # --- Load Train or Test trial ---
     test_trials_csv = os.path.join(model_path, 'test_trials.csv')
     df_trials = pd.read_csv(test_trials_csv)
     test_trials_list = df_trials['trial_id'].tolist()
 
-    # --- Pick trial ---
-    random_trial = False
+    random_trial = True
     if random_trial:
         random_file = random.choice(test_trials_list)
     else:
@@ -355,12 +354,33 @@ def infer_actions(regressor='mlp_torch'):
         Y_pred_denorm = Y_pred * Y_std + Y_mean
     
     elif regressor == "lstm":
-        SEQ_LEN = 6
-        BATCH_SIZE = 256
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        SEQ_LEN = 20
+        BATCH_SIZE = 64
+
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        
+
+        # Load statistics
+        Y_mean = torch.tensor(
+            np.load(os.path.join(model_path, f"{regressor}_Ymean_experiment_1_(pull)_{phase}_{timesteps}.npy")),
+            dtype=torch.float32,
+            device=device
+        )
+
+        Y_std = torch.tensor(
+            np.load(os.path.join(model_path, f"{regressor}_Ystd_experiment_1_(pull)_{phase}_{timesteps}.npy")),
+            dtype=torch.float32,
+            device=device
+        )
+
         
-        lstm_model = LSTMRegressor(input_dim=65, hidden_dim=50, output_dim=6, num_layers=1)
+        # Model
+        lstm_model = LSTMRegressor(
+            input_dim=65,   # number of features
+            hidden_dim=20,
+            output_dim=6,
+            num_layers=1
+        )
 
         # Move model to device
         lstm_model.to(device)
@@ -369,31 +389,28 @@ def infer_actions(regressor='mlp_torch'):
         # Set to evaluation mode
         lstm_model.eval()
 
-        # Create sequence with 
-        X_seq, idx_map = [], []  # keep track of which row each sequence corresponds to
-        for i in range(len(X_norm) - SEQ_LEN + 1):
-            X_seq.append(X_norm[i:i+SEQ_LEN])
-            idx_map.append(i + SEQ_LEN - 1)  # last index of sequence
+        # Create tensor with sequences        
+        _,_, X_seq, Y_seq = DatasetForLearning.prepare_trial_set([random_file], n_input_cols=65, SEQ_LENGTH=SEQ_LEN, clip=False)
+        X_tensor = torch.tensor(X_seq, dtype=torch.float32)
+        Y_tensor = torch.tensor(Y_seq, dtype=torch.float32)
 
-        X_seq = np.array(X_seq)
-
-        # Convert to tensor
-        
-        X_tensor = torch.tensor(X_seq, dtype=torch.float32).to(device)
-
-        # Predict
-        with torch.no_grad():
-            Y_pred_seq = lstm_model(X_tensor).cpu().numpy()
-
-        # Map predictions back to original row indices
-        Y_pred_denorm = np.zeros((len(X), len(output_cols)))
-        Y_pred_denorm[idx_map, :] = Y_pred_seq * Y_std + Y_mean
+        # Normalize X_tensor
+        X_tensor_norm = (X_tensor - X_mean) / (X_std + 1e-8)
+        Xb = X_tensor_norm.to(device, dtype=torch.float32)   
+        pred_norm = lstm_model(Xb)
+    
+        # Denormalize predictions
+        Y_pred_denorm = pred_norm * Y_std + Y_mean      
 
 
 
     # --- Assign predictions back to dataframe ---
+    Y_pred_denorm = Y_pred_denorm.detach().cpu().numpy()
+    df_predictions = pd.DataFrame()
     for i, col in enumerate(output_cols):
-        df[col] = Y_pred_denorm[:, i]
+        df_predictions[col] = Y_pred_denorm[:, i]
+    
+    df_predictions['timestamp_vector']= df["timestamp_vector"].iloc[SEQ_LEN:]
 
     trial_description = (random_file.split('(pull)')[1]).split('steps/')[1]
     
@@ -403,7 +420,7 @@ def infer_actions(regressor='mlp_torch'):
 
     for i, col in enumerate(output_cols):
         axs[i].plot(df['timestamp_vector'], groundtruth[col], label='Ground Truth')
-        axs[i].plot(df['timestamp_vector'], df[col], label='Predictions')
+        axs[i].plot(df_predictions['timestamp_vector'], df_predictions[col], label='Predictions')
         axs[i].set_title(f'Action {col}')
         axs[i].legend()
         axs[i].grid(True)   

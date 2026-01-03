@@ -19,18 +19,9 @@ from sklearn.metrics import mean_squared_error
 from lfd_apples.lfd_learning import DatasetForLearning, save_model
 
 
-def create_sequences(X, Y, seq_len):
-    X_seq, Y_seq = [], []
-
-    for i in range(len(X) - seq_len + 1):
-        X_seq.append(X[i:i + seq_len])
-        Y_seq.append(Y[i + seq_len - 1])
-
-    return np.array(X_seq), np.array(Y_seq)
-
 
 class LSTMRegressor(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=1):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=2):
         super().__init__()
 
         self.lstm = nn.LSTM(
@@ -47,12 +38,21 @@ class LSTMRegressor(nn.Module):
         return self.fc(h_n[-1])
 
 
-def train(model, train_loader, val_loader, epochs=500, lr=1e-3):
+def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=5e-5):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
+    Y_train_mean = Y_train_mean.to(device)
+    Y_train_std = Y_train_std.to(device)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    #     optimizer, mode='min', factor=0.5, patience=5
+    # )
     criterion = nn.MSELoss()
+
+    train_losses = []
+    val_losses = []
 
     for ep in range(epochs):
         model.train()
@@ -63,6 +63,7 @@ def train(model, train_loader, val_loader, epochs=500, lr=1e-3):
 
             optimizer.zero_grad()
             pred = model(Xb)
+
             loss = criterion(pred, Yb)
             loss.backward()
             optimizer.step()
@@ -70,33 +71,57 @@ def train(model, train_loader, val_loader, epochs=500, lr=1e-3):
             train_loss += loss.item()
 
         train_loss /= len(train_loader)
+        train_losses.append(train_loss)
 
+        # Validation
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
             for Xb, Yb in val_loader:
-                Xb, Yb = Xb.to(device), Yb.to(device)
-                val_loss += criterion(model(Xb), Yb).item()
+                Xb = Xb.to(device).float()
+                Yb = Yb.to(device).float()  # ensure same dtype
+
+                pred = model(Xb)               
+
+                # Ensure shapes match
+                if pred.shape != Yb.shape:
+                    print("Shape mismatch! pred:", pred.shape, "Yb:", Yb.shape)
+
+                val_loss += nn.MSELoss()(pred, Yb).item()
+
+                # scheduler.step(val_loss)
 
         val_loss /= len(val_loader)
+        val_losses.append(val_loss)
 
         if ep % 10 == 0:
             print(f"[Epoch {ep:03d}] Train={train_loss:.4f}  Val={val_loss:.4f}")
 
+    # Return losses for plotting
+    return train_losses, val_losses
 
-def evaluate(model, test_loader):
+def evaluate(model, test_loader, Y_train_mean, Y_train_std):
     device = next(model.parameters()).device
     model.eval()
+
+    Y_train_mean = Y_train_mean.to(device)
+    Y_train_std = Y_train_std.to(device)
 
     Y_true, Y_pred = [], []
 
     with torch.no_grad():
-        for Xb, Yb in test_loader:
+        for Xb, Yb_norm in test_loader:
             Xb = Xb.to(device)
-            pred = model(Xb).cpu().numpy()
+            Yb_norm = Yb_norm.to(device)
 
-            Y_pred.append(pred)
-            Y_true.append(Yb.numpy())
+            pred_norm = model(Xb)
+
+            # Denormalize both
+            pred = pred_norm * Y_train_std + Y_train_mean
+            Yb = Yb_norm * Y_train_std + Y_train_mean
+
+            Y_pred.append(pred.cpu().numpy())
+            Y_true.append(Yb.cpu().numpy())
 
     Y_true = np.vstack(Y_true)
     Y_pred = np.vstack(Y_pred)
@@ -106,61 +131,79 @@ def evaluate(model, test_loader):
 
 
 def main():
-    SEQ_LEN = 6
-    BATCH_SIZE = 256
+    SEQ_LEN = 5
+    BATCH_SIZE = 4
 
-    phase='phase_1_approach'   
+    phase='phase_2_contact'   
 
     # === Load Data ===
     print('\nLoading Data ...')
     BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
-    lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps='0_timesteps')
+    lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps='0_timesteps', SEQ_LENGTH=SEQ_LEN)
 
-    # TODO: Create sequences on each trial, before stacking them all together, to keep Temporal Adjacency
-
-    # Split Training data into Train and Validation data      
-    X_train_final, X_val_arr, Y_train_final, Y_val_arr = train_test_split(
-        lfd_dataset.X_train_norm, 
-        lfd_dataset.Y_train_norm, 
-        test_size=0.15, 
-        shuffle=True
-    )   
-
-    # Create sequences
-    X_train_s, Y_train_s = create_sequences(X_train_final, Y_train_final, SEQ_LEN)
-    X_val_s,   Y_val_s   = create_sequences(X_val_arr, Y_val_arr, SEQ_LEN)
-    X_test_s,  Y_test_s  = create_sequences(lfd_dataset.X_test_norm, lfd_dataset.Y_test_norm, SEQ_LEN)
-
+   
     # Tensor datasets
-    train_ds = TensorDataset(torch.tensor(X_train_s, dtype=torch.float32),
-                             torch.tensor(Y_train_s, dtype=torch.float32))
-    val_ds   = TensorDataset(torch.tensor(X_val_s, dtype=torch.float32),
-                             torch.tensor(Y_val_s, dtype=torch.float32))
-    test_ds  = TensorDataset(torch.tensor(X_test_s, dtype=torch.float32),
-                             torch.tensor(Y_test_s, dtype=torch.float32))
+    train_ds = TensorDataset(lfd_dataset.X_train_tensor_norm, lfd_dataset.Y_train_tensor_norm)
+    val_ds   = TensorDataset(lfd_dataset.X_val_tensor_norm, lfd_dataset.Y_val_tensor_norm)
+    test_ds   = TensorDataset(lfd_dataset.X_test_tensor_norm, lfd_dataset.Y_test_tensor_norm)
 
-    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+    
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=False)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE)
     test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE)
 
+    for Xb, Yb in val_loader:
+        print("Xb shape:", Xb.shape, "dtype:", Xb.dtype)
+        print("Yb shape:", Yb.shape, "dtype:", Yb.dtype)
+        print("Yb min/max:", Yb.min().item(), Yb.max().item())
+        break
+
+    X_train_mean = lfd_dataset.X_train_tensor_mean
+    X_train_std = lfd_dataset.X_train_tensor_std
+
+    Y_train_mean = lfd_dataset.Y_train_tensor_mean
+    Y_train_std = lfd_dataset.Y_train_tensor_std
+
     # Model
     model = LSTMRegressor(
-        input_dim=X_train_s.shape[2],   # number of features
-        hidden_dim=50,
-        output_dim=Y_train_s.shape[1]
+        input_dim=lfd_dataset.X_train_tensor_norm.shape[2],   # number of features
+        hidden_dim=20,
+        output_dim=lfd_dataset.Y_train_tensor_norm.shape[1],
+        num_layers=1
     )
 
-    train(model, train_loader, val_loader, epochs=500)
+    train_losses, val_losses = train(
+        model, train_loader, val_loader,
+        Y_train_mean, Y_train_std,
+        epochs=100
+    )
 
+    # Plot loss
+    plt.figure(figsize=(8,5))
+    plt.plot(train_losses, label="Train Loss")
+    plt.plot(val_losses, label="Validation Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("MSE Loss")
+    plt.title("LSTM Training and Validation Loss")
+    plt.legend()
+    plt.grid(True)
+
+    # Save plot to file
+    plot_path = os.path.join(lfd_dataset.DESTINATION_PATH, "lstm_loss_plot.png")
+    plt.savefig(plot_path, dpi=300)
+    print(f"Loss plot saved at: {plot_path}")
+
+    # Save model
     model_path = os.path.join(lfd_dataset.DESTINATION_PATH, "lstm_model.pth")    
     torch.save(model.state_dict(), model_path)
-    # Save model
     save_model("lstm", model, lfd_dataset)
 
-    evaluate(model, test_loader)
+    # Evaluate model
+    evaluate(model, test_loader, Y_train_mean, Y_train_std)
 
 
 
 
 if __name__ == '__main__':
     main()
+    
