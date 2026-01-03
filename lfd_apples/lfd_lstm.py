@@ -6,6 +6,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 import os
 
+from tqdm import tqdm
 import pickle
 
 import matplotlib.pyplot as plt
@@ -39,6 +40,17 @@ class LSTMRegressor(nn.Module):
 
 
 def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=5e-5):
+    '''
+    Docstring for train
+    
+    :param model: Description
+    :param train_loader: Description
+    :param val_loader: Description
+    :param Y_train_mean: Description
+    :param Y_train_std: Description
+    :param epochs: Description
+    :param lr: Description
+    '''
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
 
@@ -54,48 +66,61 @@ def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500
     train_losses = []
     val_losses = []
 
+    # Adaptive LR scheduler (reduce LR on plateau)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=5, min_lr=lr
+    )
+
+    best_val_loss = float('inf')
+    epochs_no_improve = 0
+    best_model_state = None
+
     for ep in range(epochs):
+        
+        # --- Training ---
         model.train()
         train_loss = 0.0
-
         for Xb, Yb in train_loader:
             Xb, Yb = Xb.to(device), Yb.to(device)
-
             optimizer.zero_grad()
             pred = model(Xb)
-
             loss = criterion(pred, Yb)
             loss.backward()
             optimizer.step()
-
             train_loss += loss.item()
-
         train_loss /= len(train_loader)
         train_losses.append(train_loss)
 
-        # Validation
+        # --- Validation ---
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
             for Xb, Yb in val_loader:
                 Xb = Xb.to(device).float()
                 Yb = Yb.to(device).float()  # ensure same dtype
-
-                pred = model(Xb)               
-
-                # Ensure shapes match
-                if pred.shape != Yb.shape:
-                    print("Shape mismatch! pred:", pred.shape, "Yb:", Yb.shape)
-
+                pred = model(Xb)                           
                 val_loss += nn.MSELoss()(pred, Yb).item()
-
-                # scheduler.step(val_loss)
-
         val_loss /= len(val_loader)
         val_losses.append(val_loss)
 
+        # --- Scheduler step ---
+        scheduler.step(val_loss)
+
+        # --- Early stopping check ---
+        patience = 100
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            epochs_no_improve = 0
+            best_model_state = model.state_dict()  # save best model
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve >= patience:
+                print(f"Early stopping at epoch {ep}. Best val loss: {best_val_loss:.4f}")
+                model.load_state_dict(best_model_state)
+                break
+
         if ep % 10 == 0:
-            print(f"[Epoch {ep:03d}] Train={train_loss:.4f}  Val={val_loss:.4f}")
+            print(f"[Epoch {ep:03d}] Train={train_loss:.4f}  Val={val_loss:.4f}  LR={optimizer.param_groups[0]['lr']:.6f}")
 
     # Return losses for plotting
     return train_losses, val_losses
@@ -165,7 +190,7 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
     # Model
     model = LSTMRegressor(
         input_dim=lfd_dataset.X_train_tensor_norm.shape[2],   # number of features
-        hidden_dim=20,
+        hidden_dim=60,
         output_dim=lfd_dataset.Y_train_tensor_norm.shape[1],
         num_layers=1
     )
@@ -173,7 +198,7 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
     train_losses, val_losses = train(
         model, train_loader, val_loader,
         Y_train_mean, Y_train_std,
-        epochs=1000
+        epochs=500
     )
 
     # Plot loss
@@ -194,7 +219,7 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
     # Save model
     model_path = os.path.join(lfd_dataset.DESTINATION_PATH, str(SEQ_LEN) + "_seq_lstm_model.pth")    
     torch.save(model.state_dict(), model_path)
-    save_model("lstm", model, lfd_dataset)
+    save_model(str(SEQ_LEN) +"_seq_lstm", model, lfd_dataset)
 
     # Evaluate model
     evaluate(model, test_loader, Y_train_mean, Y_train_std)
@@ -202,14 +227,21 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
 
 if __name__ == '__main__':
 
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
-    seq_lens = [5, 10, 15, 20]
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']     
+    seq_lens = [1, 3, 6, 10, 25, 50, 75, 100, 200]
+    phases = ['phase_1_approach']
+
 
     for phase in phases:
         print(f'\n------------------ {phase}-------------------')
 
-        for SEQ_LEN in seq_lens:
+        for SEQ_LEN in tqdm(seq_lens):
+
             print(f'\n--- Sequences: {SEQ_LEN} ---')
 
-            lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=32, phase=phase)
+            if phase !='phase_1_approach' and SEQ_LEN > 50:
+                break                      
+
+            lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=320, phase=phase)
     
+        
