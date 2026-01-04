@@ -60,7 +60,7 @@ class LSTMRegressor(nn.Module):
     
 
 
-def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=5e-5):
+def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=1e-5):
     '''
     Docstring for train
     
@@ -130,7 +130,7 @@ def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500
         scheduler.step(val_loss)
 
         # --- Early stopping check ---
-        patience = 100
+        patience = 50
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             epochs_no_improve = 0
@@ -213,10 +213,10 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
     # Model
     model = LSTMRegressor(
         input_dim=lfd_dataset.X_train_tensor_norm.shape[2],   # number of features
-        hidden_dim=60,
+        hidden_dim=128,
         output_dim=lfd_dataset.Y_train_tensor_norm.shape[1],
         num_layers=2,
-        pooling='mean'
+        pooling='last'
     )
 
     train_losses, val_losses = train(
@@ -284,6 +284,6 @@ if __name__ == '__main__':
             if phase !='phase_1_approach' and SEQ_LEN > 50:
                 break                      
 
-            lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=32, phase=phase)
+            lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=320, phase=phase)
     
         

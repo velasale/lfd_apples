@@ -385,10 +385,10 @@ def infer_actions(regressor='lstm', SEQ_LEN = 10):
         # Model
         lstm_model = LSTMRegressor(
             input_dim=65,   # number of features
-            hidden_dim=60,
+            hidden_dim=128,
             output_dim=6,
             num_layers=2,
-            pooling='last'
+            pooling='mean'
         )
 
         # Move model to device
