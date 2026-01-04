@@ -102,14 +102,17 @@ class DatasetForLearning():
     def split_data(self):
 
         # Check if there is already a train_list and a test_list
-        csv_files = [p.name for p in Path(self.DESTINATION_PATH).glob("*.csv")]
+
+        set_files_folder = Path(self.DESTINATION_PATH).parent.parent
+
+        csv_files = [p.name for p in set_files_folder.glob("*.csv")]
 
         if ('test_trials.csv' in csv_files) and ('train_trials.csv' in csv_files) and ('val_trials.csv' in csv_files):
             # load files
 
-            self.train_trials =  pd.read_csv(os.path.join(self.DESTINATION_PATH, 'train_trials.csv'))
-            self.test_trials = pd.read_csv(os.path.join(self.DESTINATION_PATH, 'test_trials.csv'))
-            self.val_trials = pd.read_csv(os.path.join(self.DESTINATION_PATH, 'val_trials.csv'))
+            self.train_trials =  pd.read_csv(os.path.join(set_files_folder, 'train_trials.csv'))
+            self.test_trials = pd.read_csv(os.path.join(set_files_folder, 'test_trials.csv'))
+            self.val_trials = pd.read_csv(os.path.join(set_files_folder, 'val_trials.csv'))
 
             self.train_trials = self.train_trials.iloc[:,0].tolist()
             self.test_trials = self.test_trials.iloc[:,0].tolist()
@@ -129,13 +132,13 @@ class DatasetForLearning():
 
             # Save model's results:       
             df_train=pd.DataFrame(self.train_trials, columns=['trial_id'])
-            df_train.to_csv(os.path.join(self.DESTINATION_PATH,'train_trials.csv'), index=False)
+            df_train.to_csv(os.path.join(set_files_folder,'train_trials.csv'), index=False)
 
             df_test=pd.DataFrame(self.test_trials, columns=['trial_id'])
-            df_test.to_csv(os.path.join(self.DESTINATION_PATH, 'test_trials.csv'), index=False)
+            df_test.to_csv(os.path.join(set_files_folder, 'test_trials.csv'), index=False)
 
             df_val=pd.DataFrame(self.val_trials, columns=['trial_id'])
-            df_val.to_csv(os.path.join(self.DESTINATION_PATH, 'val_trials.csv'), index=False)
+            df_val.to_csv(os.path.join(set_files_folder, 'val_trials.csv'), index=False)
 
 
     def prepare_data(self):
@@ -590,11 +593,7 @@ def save_model(model_name, regressor_model, dataset_class):
     
     for name, value in zip(variable_names, variable_values):
             np.save(os.path.join(lfd.DESTINATION_PATH, name), value)
-
     
-
-
-
 
 def learn(lfd_dataset, regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
     """
@@ -648,6 +647,9 @@ def main():
 
     regressors = ['rf', 'mlp','mlp_torch']
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+
+    regressors = ['rf']
+    phases = ['phase_1_approach']   
 
     for phase in phases:
         print(f"================== {phase} ===================")
