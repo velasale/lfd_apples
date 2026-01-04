@@ -286,7 +286,7 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
     print("Video saved:", output_video_path)
 
 
-def infer_actions(regressor='lstm', SEQ_LEN = 5):
+def infer_actions(regressor='lstm', SEQ_LEN = 75):
 
     phase = 'phase_1_approach'
     timesteps = '0_timesteps'
@@ -299,11 +299,11 @@ def infer_actions(regressor='lstm', SEQ_LEN = 5):
     df_trials = pd.read_csv(test_trials_csv)
     test_trials_list = df_trials['trial_id'].tolist()
 
-    random_trial = True
+    random_trial = False
     if random_trial:
         random_file = random.choice(test_trials_list)
     else:
-        trial_number = 173
+        trial_number = 280
         main_folder = '/home/alejo/Documents/DATA/05_IL_preprocessed_(memory)/experiment_1_(pull)'
         random_file = os.path.join(main_folder, phase, timesteps)
         filename = 'trial_' + str(trial_number) + '_downsampled_aligned_data_transformed_(' + phase + ')_(' + timesteps + ').csv'
@@ -324,14 +324,15 @@ def infer_actions(regressor='lstm', SEQ_LEN = 5):
     df_inputs = df.drop(columns=['timestamp_vector'] + output_cols)
     X = df_inputs.to_numpy()
 
-    # --- Load normalization stats ---
-    X_mean = np.load(os.path.join(model_path, f"{regressor}_Xmean_experiment_1_(pull)_{phase}_{timesteps}.npy"))
-    X_std  = np.load(os.path.join(model_path, f"{regressor}_Xstd_experiment_1_(pull)_{phase}_{timesteps}.npy"))
-    X_norm = (X - X_mean) / X_std
+    if regressor in ['rf', 'mlp', 'mlp_torch']:
+        # --- Load normalization stats ---
+        X_mean = np.load(os.path.join(model_path, f"{regressor}_Xmean_experiment_1_(pull)_{phase}_{timesteps}.npy"))
+        X_std  = np.load(os.path.join(model_path, f"{regressor}_Xstd_experiment_1_(pull)_{phase}_{timesteps}.npy"))
+        X_norm = (X - X_mean) / X_std
 
-    # --- Load target stats ---
-    Y_mean = np.load(os.path.join(model_path, f"{regressor}_Ymean_experiment_1_(pull)_{phase}_{timesteps}.npy"))
-    Y_std  = np.load(os.path.join(model_path, f"{regressor}_Ystd_experiment_1_(pull)_{phase}_{timesteps}.npy"))
+        # --- Load target stats ---
+        Y_mean = np.load(os.path.join(model_path, f"{regressor}_Ymean_experiment_1_(pull)_{phase}_{timesteps}.npy"))
+        Y_std  = np.load(os.path.join(model_path, f"{regressor}_Ystd_experiment_1_(pull)_{phase}_{timesteps}.npy"))
 
     # --- Predict ---
     if regressor in ['rf', 'mlp']:
