@@ -22,21 +22,42 @@ from lfd_apples.lfd_learning import DatasetForLearning, save_model
 
 
 class LSTMRegressor(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=2):
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers=2, pooling='mean'):
+        """
+        :param input_dim: number of features per timestep
+        :param hidden_dim: hidden size of LSTM
+        :param output_dim: number of outputs
+        :param num_layers: number of LSTM layers
+        :param pooling: 'last' or 'mean' - how to reduce sequence to single output
+        """
         super().__init__()
-
         self.lstm = nn.LSTM(
             input_dim,
             hidden_dim,
             num_layers=num_layers,
             batch_first=True
         )
-
         self.fc = nn.Linear(hidden_dim, output_dim)
+        assert pooling in ['last', 'mean'], "pooling must be 'last' or 'mean'"
+        self.pooling = pooling
 
     def forward(self, x):
-        _, (h_n, _) = self.lstm(x)
-        return self.fc(h_n[-1])
+        """
+        :param x: (batch_size, seq_len, input_dim)
+        :return: (batch_size, output_dim)
+        """
+        out, (h_n, c_n) = self.lstm(x)  # out: (batch, seq_len, hidden_dim)
+
+        if self.pooling == 'last':
+            # Use last timestep output
+            out = out[:, -1, :]
+        elif self.pooling == 'mean':
+            # Average over all timesteps
+            out = out.mean(dim=1)
+
+        return self.fc(out)
+    
+    
 
 
 def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=5e-5):
@@ -53,6 +74,8 @@ def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500
     '''
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
+    print(f"Training on device: {device}")
+
 
     Y_train_mean = Y_train_mean.to(device)
     Y_train_std = Y_train_std.to(device)
@@ -192,7 +215,8 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
         input_dim=lfd_dataset.X_train_tensor_norm.shape[2],   # number of features
         hidden_dim=60,
         output_dim=lfd_dataset.Y_train_tensor_norm.shape[1],
-        num_layers=1
+        num_layers=2,
+        pooling='mean'
     )
 
     train_losses, val_losses = train(
@@ -245,6 +269,8 @@ if __name__ == '__main__':
 
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']     
     seq_lens = [1, 3, 6, 10, 25, 50, 75, 100, 200]
+
+    seq_lens = [10]
     phases = ['phase_1_approach']
 
 
@@ -258,6 +284,6 @@ if __name__ == '__main__':
             if phase !='phase_1_approach' and SEQ_LEN > 50:
                 break                      
 
-            lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=320, phase=phase)
+            lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=32, phase=phase)
     
         

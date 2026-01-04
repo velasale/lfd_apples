@@ -286,7 +286,7 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
     print("Video saved:", output_video_path)
 
 
-def infer_actions(regressor='lstm'):
+def infer_actions(regressor='lstm', SEQ_LEN = 10):
 
     phase = 'phase_1_approach'
     timesteps = '0_timesteps'
@@ -295,7 +295,7 @@ def infer_actions(regressor='lstm'):
     model_path = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{phase}/{timesteps}')
 
     # --- Load Train or Test trial ---
-    test_trials_csv = os.path.join(model_path, 'test_trials.csv')
+    test_trials_csv = os.path.join(model_path, 'train_trials.csv')
     df_trials = pd.read_csv(test_trials_csv)
     test_trials_list = df_trials['trial_id'].tolist()
 
@@ -303,7 +303,7 @@ def infer_actions(regressor='lstm'):
     if random_trial:
         random_file = random.choice(test_trials_list)
     else:
-        trial_number = 195
+        trial_number = 216
         main_folder = '/home/alejo/Documents/DATA/05_IL_preprocessed_(memory)/experiment_1_(pull)'
         random_file = os.path.join(main_folder, phase, timesteps)
         filename = 'trial_' + str(trial_number) + '_downsampled_aligned_data_transformed_(' + phase + ')_(' + timesteps + ').csv'
@@ -353,37 +353,31 @@ def infer_actions(regressor='lstm'):
             Y_pred = mlp_model(X_tensor).cpu().numpy()
         Y_pred_denorm = Y_pred * Y_std + Y_mean
     
-    elif regressor == "lstm":
-
-        SEQ_LEN = 1
+    elif regressor == "lstm":        
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        
 
         # Load statistics
         X_mean = torch.tensor(
             np.load(os.path.join(model_path, str(SEQ_LEN) + f"_seq_{regressor}_Xmean_experiment_1_(pull)_{phase}_{timesteps}.npy")),
-            # np.load(os.path.join(model_path, str(SEQ_LEN) + f"_seq_{regressor}_Ymean_experiment_1_(pull)_{phase}_{timesteps}.npy")),
             dtype=torch.float32,
             device=device
         )
 
         X_std = torch.tensor(
             np.load(os.path.join(model_path, str(SEQ_LEN) + f"_seq_{regressor}_Xstd_experiment_1_(pull)_{phase}_{timesteps}.npy")),
-            # np.load(os.path.join(model_path, str(SEQ_LEN) + f"_seq_{regressor}_Ystd_experiment_1_(pull)_{phase}_{timesteps}.npy")),
             dtype=torch.float32,
             device=device
         )
 
         Y_mean = torch.tensor(
             np.load(os.path.join(model_path, str(SEQ_LEN) + f"_seq_{regressor}_Ymean_experiment_1_(pull)_{phase}_{timesteps}.npy")),
-            # np.load(os.path.join(model_path, str(SEQ_LEN) + f"_seq_{regressor}_Ymean_experiment_1_(pull)_{phase}_{timesteps}.npy")),
             dtype=torch.float32,
             device=device
         )
 
         Y_std = torch.tensor(
             np.load(os.path.join(model_path, str(SEQ_LEN) + f"_seq_{regressor}_Ystd_experiment_1_(pull)_{phase}_{timesteps}.npy")),
-            # np.load(os.path.join(model_path, str(SEQ_LEN) + f"_seq_{regressor}_Ystd_experiment_1_(pull)_{phase}_{timesteps}.npy")),
             dtype=torch.float32,
             device=device
         )      
@@ -421,7 +415,6 @@ def infer_actions(regressor='lstm'):
         Y_pred_denorm = pred_norm * Y_std + Y_mean      
 
 
-
     # --- Assign predictions back to dataframe ---
     Y_pred_denorm = Y_pred_denorm.detach().cpu().numpy()
     df_predictions = pd.DataFrame()
@@ -429,12 +422,13 @@ def infer_actions(regressor='lstm'):
         df_predictions[col] = Y_pred_denorm[:, i]
     
     df_predictions['timestamp_vector']= df["timestamp_vector"].iloc[SEQ_LEN:]
+        
 
+    # --- Plot Predictions ---
     trial_description = (random_file.split('(pull)')[1]).split('steps/')[1]
-    
-
-    # --- Plot Linear Velocities ---
     fig, axs = plt.subplots(6, 1, figsize=(8, 12), sharex=True)    
+
+    if regressor == 'lstm': regressor = str(SEQ_LEN) + "~seq~lstm"
 
     for i, col in enumerate(output_cols):
         axs[i].plot(df['timestamp_vector'], groundtruth[col], label='Ground Truth')
@@ -444,7 +438,7 @@ def infer_actions(regressor='lstm'):
         axs[i].grid(True)   
     plt.xlabel("Timestamp")
     plt.suptitle(f'Model: $\\bf{{{regressor}}}$ \n{trial_description}')
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.95])  # top=0.95 means 5% margin for suptitle
     plt.show()
 
     # --- Optional: Create video overlay ---
@@ -478,13 +472,11 @@ def important_features(top=5):
             phase_df[steps] = sub_df
 
         print(f'\nFeature importance during \033[1m{phase}\033[0m$: \n\n {phase_df}')
-
-                  
+                
 
 
 def main():
-
-    # folder = r"D:\03_IL_preprocessed\experiment_1_(pull)\phase_1_approach"
+    
     folder = '/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_1_approach'
     trials = [f for f in os.listdir(folder) if f.endswith(".csv")]
 
@@ -501,6 +493,7 @@ def main():
 if __name__ == '__main__':
 
     # main()
+
     infer_actions()
 
     # important_features(top=10)

@@ -215,9 +215,7 @@ class DatasetForLearning():
         set_arrays = []
         set_lstm_X_seqs = []
         set_lstm_Y_seqs = []
-        for trial in set_csv_list:
-
-            file_to_open  = trial
+        for trial in set_csv_list:           
 
             df = pd.read_csv(trial)
             df = df.apply(pd.to_numeric, errors='coerce')
