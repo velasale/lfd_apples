@@ -268,10 +268,7 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
 if __name__ == '__main__':
 
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']     
-    seq_lens = [1, 3, 6, 10, 25, 50, 75, 100, 200]
-
-    seq_lens = [10]
-    phases = ['phase_1_approach']
+    seq_lens = [1, 3, 5, 10, 15, 20, 30, 50, 75, 100, 200]  
 
 
     for phase in phases:
@@ -284,6 +281,6 @@ if __name__ == '__main__':
             if phase !='phase_1_approach' and SEQ_LEN > 50:
                 break                      
 
-            lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=320, phase=phase)
+            lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=32, phase=phase)
     
         

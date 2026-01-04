@@ -286,7 +286,7 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
     print("Video saved:", output_video_path)
 
 
-def infer_actions(regressor='lstm', SEQ_LEN = 10):
+def infer_actions(regressor='lstm', SEQ_LEN = 5):
 
     phase = 'phase_1_approach'
     timesteps = '0_timesteps'
@@ -303,7 +303,7 @@ def infer_actions(regressor='lstm', SEQ_LEN = 10):
     if random_trial:
         random_file = random.choice(test_trials_list)
     else:
-        trial_number = 225
+        trial_number = 173
         main_folder = '/home/alejo/Documents/DATA/05_IL_preprocessed_(memory)/experiment_1_(pull)'
         random_file = os.path.join(main_folder, phase, timesteps)
         filename = 'trial_' + str(trial_number) + '_downsampled_aligned_data_transformed_(' + phase + ')_(' + timesteps + ').csv'
@@ -388,7 +388,7 @@ def infer_actions(regressor='lstm', SEQ_LEN = 10):
             hidden_dim=128,
             output_dim=6,
             num_layers=2,
-            pooling='mean'
+            pooling='last'
         )
 
         # Move model to device
@@ -417,12 +417,24 @@ def infer_actions(regressor='lstm', SEQ_LEN = 10):
 
 
     # --- Assign predictions back to dataframe ---
-    Y_pred_denorm = Y_pred_denorm.detach().cpu().numpy()
-    df_predictions = pd.DataFrame()
-    for i, col in enumerate(output_cols):
-        df_predictions[col] = Y_pred_denorm[:, i]
-    
-    df_predictions['timestamp_vector']= df["timestamp_vector"].iloc[SEQ_LEN-1:].reset_index(drop=True)
+    if regressor == 'lstm':
+        Y_pred_denorm = Y_pred_denorm.detach().cpu().numpy()
+
+        df_predictions = pd.DataFrame()
+        for i, col in enumerate(output_cols):
+            df_predictions[col] = Y_pred_denorm[:, i]
+        
+        df_predictions['timestamp_vector']= df["timestamp_vector"].iloc[SEQ_LEN-1:].reset_index(drop=True)
+    else:
+        df_predictions = pd.DataFrame()
+        for i, col in enumerate(output_cols):
+            df_predictions[col] = Y_pred_denorm[:, i]
+
+        n_time_steps = int(timesteps.split('_')[0])
+        
+        df_predictions['timestamp_vector']= df["timestamp_vector"].iloc[n_time_steps:].reset_index(drop=True)
+
+
         
 
     # --- Plot Predictions ---
