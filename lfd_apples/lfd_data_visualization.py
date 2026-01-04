@@ -295,7 +295,7 @@ def infer_actions(regressor='lstm', SEQ_LEN = 10):
     model_path = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{phase}/{timesteps}')
 
     # --- Load Train or Test trial ---
-    test_trials_csv = os.path.join(model_path, 'train_trials.csv')
+    test_trials_csv = os.path.join(model_path, 'test_trials.csv')
     df_trials = pd.read_csv(test_trials_csv)
     test_trials_list = df_trials['trial_id'].tolist()
 
@@ -303,7 +303,7 @@ def infer_actions(regressor='lstm', SEQ_LEN = 10):
     if random_trial:
         random_file = random.choice(test_trials_list)
     else:
-        trial_number = 216
+        trial_number = 225
         main_folder = '/home/alejo/Documents/DATA/05_IL_preprocessed_(memory)/experiment_1_(pull)'
         random_file = os.path.join(main_folder, phase, timesteps)
         filename = 'trial_' + str(trial_number) + '_downsampled_aligned_data_transformed_(' + phase + ')_(' + timesteps + ').csv'
@@ -387,7 +387,8 @@ def infer_actions(regressor='lstm', SEQ_LEN = 10):
             input_dim=65,   # number of features
             hidden_dim=60,
             output_dim=6,
-            num_layers=1
+            num_layers=2,
+            pooling='last'
         )
 
         # Move model to device
@@ -421,7 +422,7 @@ def infer_actions(regressor='lstm', SEQ_LEN = 10):
     for i, col in enumerate(output_cols):
         df_predictions[col] = Y_pred_denorm[:, i]
     
-    df_predictions['timestamp_vector']= df["timestamp_vector"].iloc[SEQ_LEN:]
+    df_predictions['timestamp_vector']= df["timestamp_vector"].iloc[SEQ_LEN-1:].reset_index(drop=True)
         
 
     # --- Plot Predictions ---
