@@ -392,7 +392,7 @@ def rf_regressor(regressor, dataset_class):
     regressor_model.fit(lfd.X_train_norm, lfd.Y_train_norm)
 
     # Review feature importance    
-    filename = 'trial_1_downsampled_aligned_data_transformed_(' + lfd.phase + ')_(' + lfd.time_steps + ').csv'
+    filename = 'trial_1_downsampled_aligned_data_transformed_(' + lfd.phase + ')_(' + lfd.TIME_STEPS + ').csv'
     df = pd.read_csv(os.path.join(lfd.BASE_PATH, filename))
     df = df.iloc[:, :-lfd.n_output_cols]        # simply drop action columns
     df = df.iloc[:, 1:]                         # drop timevector column
@@ -664,7 +664,7 @@ def main():
     for phase in phases:
         print(f"================== {phase} ===================")
     
-        for t in range(1,11):
+        for t in range(11):
             
             time_steps = str(t) + '_timesteps'
             print(f"\n--- {time_steps} ---")       
@@ -677,7 +677,7 @@ def main():
             # This way we make sure that all models use the same train and test set
             
             for regressor in regressors:         
-                print(f"--- {regressor} ---")       
+                print(f"\n--- {regressor} ---")       
                 learn(lfd_dataset, regressor=regressor, phase=phase, time_steps=time_steps)    
 
 
