@@ -671,13 +671,13 @@ def main():
     regressors = ['rf', 'mlp','mlp_torch']
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
 
-    regressors = ['rf']
-    phases = ['phase_1_approach']   
+    regressors = ['rf', 'mlp','mlp_torch']
+    phases = ['phase_2_contact', 'phase_3_pick']
 
     for phase in phases:
         print(f"================== {phase} ===================")
     
-        for t in range(5,11):
+        for t in range(11):
             
             time_steps = str(t) + '_timesteps'
             print(f"\n--- {time_steps} ---")       
@@ -692,7 +692,6 @@ def main():
             for regressor in regressors:         
                 print(f"\n--- {regressor} ---")       
                 learn(lfd_dataset, regressor=regressor, phase=phase, time_steps=time_steps)    
-
 
 
 if __name__ == '__main__':

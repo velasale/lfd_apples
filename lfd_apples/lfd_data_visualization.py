@@ -309,13 +309,13 @@ def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_tri
     return trial_file, pd.read_csv(trial_file)
 
 
-def infer_actions(regressor='rf', SEQ_LEN = 15):
+def infer_actions(regressor='lstm', SEQ_LEN = 20):
     
-    TRIALS_SET = 'test_trials.csv'   
+    TRIALS_SET = 'train_trials.csv'   
     TRIAL_ID = 'random'           # type id or 'random'    
 
     PHASE = 'phase_1_approach'
-    TIMESTEPS = '5_timesteps'    
+    TIMESTEPS = '0_timesteps'    
     BASE_PATH = '/home/alejo/Documents/DATA'
 
     if regressor != 'lstm':
@@ -464,7 +464,7 @@ def infer_actions(regressor='rf', SEQ_LEN = 15):
 
     if regressor == 'lstm': regressor = str(SEQ_LEN) + "~seq~lstm"
    
-    lin_range = 3e-4
+    lin_range = 2e-4
     ang_range = 6e-4
     y_lims = np.array([[-lin_range, lin_range], [-ang_range, ang_range]])
 
@@ -534,7 +534,7 @@ if __name__ == '__main__':
 
     # main()
 
-    infer_actions()
+    # infer_actions()
 
-    # important_features(top=10)
+    important_features(top=10)
 
