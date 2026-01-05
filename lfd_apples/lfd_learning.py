@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 
 class DatasetForLearning():
 
-    def __init__(self, BASE_SOURCE_PATH, phase, time_steps, SEQ_LENGTH=10):
+    def __init__(self, BASE_SOURCE_PATH, phase, time_steps, SEQ_LENGTH=-1):
 
         self.phase = phase
         self.TIME_STEPS = time_steps
@@ -151,7 +151,10 @@ class DatasetForLearning():
         :param test_trials_list: Description
         :param n_input_cols: Description
         """
-                
+
+        print('prepare_data method')
+
+        print('before prepare trial')        
         # Prepare sets of arrays
         self.X_train, self.Y_train, self.X_train_seq, self.Y_train_seq = self.prepare_trial_set(
             self.BASE_PATH,
@@ -173,10 +176,11 @@ class DatasetForLearning():
             self.test_trials,
             self.n_input_cols,
             self.SEQ_LENGTH,
-            clip=self.clip)  
+            clip=self.clip)          
         
         # ===== Choice 1: Arrays ========
         # Normalize features
+        print('before normalization')  
         self.X_train_norm, self.X_test_norm, self.X_train_mean, self.X_train_std = zscore_normalize(self.X_train, self.X_test)
         self.Y_train_norm, self.Y_test_norm, self.Y_train_mean, self.Y_train_std = zscore_normalize(self.Y_train, self.Y_test)    
 
@@ -188,32 +192,34 @@ class DatasetForLearning():
 
 
         # ==== Choice 2: Tensors ========        
-        # Train tensors
-        X_train_tensor = torch.tensor(self.X_train_seq, dtype=torch.float32)
-        Y_train_tensor = torch.tensor(self.Y_train_seq, dtype=torch.float32)
+        if self.SEQ_LENGTH > -1:
+            # Train tensors
+            print('before preparin tensors')  
+            X_train_tensor = torch.tensor(self.X_train_seq, dtype=torch.float32)
+            Y_train_tensor = torch.tensor(self.Y_train_seq, dtype=torch.float32)
 
-        self.X_train_tensor_mean = X_train_tensor.mean(dim=(0, 1), keepdims=True)
-        self.X_train_tensor_std = X_train_tensor.std(dim=(0, 1), keepdims=True)
+            self.X_train_tensor_mean = X_train_tensor.mean(dim=(0, 1), keepdims=True)
+            self.X_train_tensor_std = X_train_tensor.std(dim=(0, 1), keepdims=True)
 
-        self.Y_train_tensor_mean = Y_train_tensor.mean(dim=(0, 1), keepdims=True)
-        self.Y_train_tensor_std = Y_train_tensor.std(dim=(0, 1), keepdims=True)
+            self.Y_train_tensor_mean = Y_train_tensor.mean(dim=(0, 1), keepdims=True)
+            self.Y_train_tensor_std = Y_train_tensor.std(dim=(0, 1), keepdims=True)
 
-        self.X_train_tensor_norm = (X_train_tensor - self.X_train_tensor_mean) / (self.X_train_tensor_std + 1e-8)
-        self.Y_train_tensor_norm = (Y_train_tensor - self.Y_train_tensor_mean) / (self.Y_train_tensor_std + 1e-8)
+            self.X_train_tensor_norm = (X_train_tensor - self.X_train_tensor_mean) / (self.X_train_tensor_std + 1e-8)
+            self.Y_train_tensor_norm = (Y_train_tensor - self.Y_train_tensor_mean) / (self.Y_train_tensor_std + 1e-8)
 
-        # Val tensors
-        X_val_tensor = torch.tensor(self.X_val_seq, dtype=torch.float32)
-        Y_val_tensor = torch.tensor(self.Y_val_seq, dtype=torch.float32)
+            # Val tensors
+            X_val_tensor = torch.tensor(self.X_val_seq, dtype=torch.float32)
+            Y_val_tensor = torch.tensor(self.Y_val_seq, dtype=torch.float32)
 
-        self.X_val_tensor_norm = (X_val_tensor - self.X_train_tensor_mean) / (self.X_train_tensor_std + 1e-8)
-        self.Y_val_tensor_norm = (Y_val_tensor - self.Y_train_tensor_mean) / (self.Y_train_tensor_std + 1e-8)
+            self.X_val_tensor_norm = (X_val_tensor - self.X_train_tensor_mean) / (self.X_train_tensor_std + 1e-8)
+            self.Y_val_tensor_norm = (Y_val_tensor - self.Y_train_tensor_mean) / (self.Y_train_tensor_std + 1e-8)
 
-        # Test tensors     
-        X_test_tensor = torch.tensor(self.X_test_seq, dtype=torch.float32)
-        Y_test_tensor = torch.tensor(self.Y_test_seq, dtype=torch.float32)
+            # Test tensors     
+            X_test_tensor = torch.tensor(self.X_test_seq, dtype=torch.float32)
+            Y_test_tensor = torch.tensor(self.Y_test_seq, dtype=torch.float32)
 
-        self.X_test_tensor_norm = (X_test_tensor - self.X_train_tensor_mean) / (self.X_train_tensor_std + 1e-8)     
-        self.Y_test_tensor_norm = (Y_test_tensor - self.Y_train_tensor_mean) / (self.Y_train_tensor_std + 1e-8)                               
+            self.X_test_tensor_norm = (X_test_tensor - self.X_train_tensor_mean) / (self.X_train_tensor_std + 1e-8)     
+            self.Y_test_tensor_norm = (Y_test_tensor - self.Y_train_tensor_mean) / (self.Y_train_tensor_std + 1e-8)                               
         
 
         return self.X_train_norm, self.Y_train_norm, self.X_test_norm, self.Y_test, self.X_train_mean, self.X_train_std, self.Y_train_mean, self.Y_train_std
@@ -241,21 +247,28 @@ class DatasetForLearning():
 
             # --- Choice 2: Sequences
             # For LSTM. They need to be formed before stacking them all across trials
+            
             lstm_X_array = arr[:, :n_input_cols]
             lstm_Y_array = arr[:, n_input_cols:]
 
-            lstm_X_seq, lstm_Y_seq = DatasetForLearning.create_sequences(lstm_X_array, lstm_Y_array, SEQ_LENGTH)
+            if SEQ_LENGTH > -1:
+                lstm_X_seq, lstm_Y_seq = DatasetForLearning.create_sequences(lstm_X_array, lstm_Y_array, SEQ_LENGTH)
             
-            set_lstm_X_seqs.append(lstm_X_seq)
-            set_lstm_Y_seqs.append(lstm_Y_seq)            
+                set_lstm_X_seqs.append(lstm_X_seq)
+                set_lstm_Y_seqs.append(lstm_Y_seq)            
 
 
         set_combined = np.vstack(set_arrays)
         X = set_combined[:, :n_input_cols]
         Y = set_combined[:, n_input_cols:]
 
-        set_lstm_X_combined = np.vstack(set_lstm_X_seqs)
-        set_lstm_y_combined = np.vstack(set_lstm_Y_seqs)            
+        if SEQ_LENGTH>-1:
+            set_lstm_X_combined = np.vstack(set_lstm_X_seqs)
+            set_lstm_y_combined = np.vstack(set_lstm_Y_seqs)            
+        else:
+            set_lstm_X_combined = []
+            set_lstm_y_combined = []      
+
 
         # Clip actions (outputs) if needed
         # (e.g. Franka Arm joint limits)
@@ -664,7 +677,7 @@ def main():
     for phase in phases:
         print(f"================== {phase} ===================")
     
-        for t in range(11):
+        for t in range(5,11):
             
             time_steps = str(t) + '_timesteps'
             print(f"\n--- {time_steps} ---")       
