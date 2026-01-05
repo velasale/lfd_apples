@@ -103,11 +103,10 @@ class DatasetForLearning():
 
     def split_data(self):
 
+        
         # Check if there is already a train_list and a test_list
-
         set_files_folder = Path(self.DESTINATION_PATH).parent
-
-        csv_files = [p.name for p in set_files_folder.glob("*.csv")]
+        csv_files = [p.name for p in set_files_folder.glob("*.csv")]        
 
         if ('test_trials.csv' in csv_files) and ('train_trials.csv' in csv_files) and ('val_trials.csv' in csv_files):
             # load files
@@ -680,7 +679,7 @@ def main():
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
 
     regressors = ['rf', 'mlp','mlp_torch']
-    phases = ['phase_2_contact', 'phase_3_pick']
+    phases = ['phase_3_pick']
 
 
     for phase in phases:

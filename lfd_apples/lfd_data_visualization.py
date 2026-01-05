@@ -293,7 +293,7 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
 def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_trials.csv'):        
 
     # --- Load Train or Test trial ---
-    trials_csv_list = os.path.join(model_path, "../..", trials_set)
+    trials_csv_list = os.path.join(model_path, "../", trials_set)
     df_trials = pd.read_csv(trials_csv_list)
     trials_list = df_trials['trial_id'].tolist()
     
@@ -309,13 +309,13 @@ def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_tri
     return trial_file, pd.read_csv(trial_file)
 
 
-def infer_actions(regressor='lstm', SEQ_LEN = 20):
+def infer_actions(regressor='mlp', SEQ_LEN = 20):
     
     TRIALS_SET = 'train_trials.csv'   
-    TRIAL_ID = 'random'           # type id or 'random'    
+    TRIAL_ID = 91#'random'           # type id or 'random'    
 
-    PHASE = 'phase_1_approach'
-    TIMESTEPS = '0_timesteps'    
+    PHASE = 'phase_2_contact'
+    TIMESTEPS = '10_timesteps'    
     BASE_PATH = '/home/alejo/Documents/DATA'
 
     if regressor != 'lstm':
@@ -534,7 +534,7 @@ if __name__ == '__main__':
 
     # main()
 
-    # infer_actions()
+    infer_actions()
 
-    important_features(top=10)
+    # important_features(top=10)
 
