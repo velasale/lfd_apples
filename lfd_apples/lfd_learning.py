@@ -2,7 +2,6 @@ import os
 
 import pickle
 
-import matplotlib.pyplot as plt
 import joblib
 import yaml
 
@@ -21,6 +20,9 @@ import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 
+import matplotlib
+matplotlib.use("Agg")  # non-interactive backend
+import matplotlib.pyplot as plt
 
 
 class DatasetForLearning():
@@ -28,11 +30,11 @@ class DatasetForLearning():
     def __init__(self, BASE_SOURCE_PATH, phase, time_steps, SEQ_LENGTH=10):
 
         self.phase = phase
-        self.time_steps = time_steps
+        self.TIME_STEPS = time_steps
         self.BASE_SOURCE_PATH = BASE_SOURCE_PATH
         self.clip = False                            # Clip output data?
         self.SEQ_LENGTH = SEQ_LENGTH
-        
+               
 
         self.define_data_paths()                # Paths to csvs and to store results
         self.load_actions()                     # Data outputs (actions) from yaml file
@@ -47,12 +49,12 @@ class DatasetForLearning():
         BASE_DIRECTORY = os.path.join(self.BASE_SOURCE_PATH, '05_IL_preprocessed_(memory)')
         experiment = 'experiment_1_(pull)'    
     
-        self.suffix = '_' + experiment + '_' + self.phase + '_' + self.time_steps       
-        self.BASE_PATH = os.path.join(BASE_DIRECTORY, experiment, self.phase, self.time_steps)
+        self.suffix = '_' + experiment + '_' + self.phase + '_' + self.TIME_STEPS       
+        self.BASE_PATH = os.path.join(BASE_DIRECTORY, experiment, self.phase, self.TIME_STEPS)
 
         DESTINATION_DIRECTORY = os.path.join(self.BASE_SOURCE_PATH, '06_IL_learning')
 
-        self.DESTINATION_PATH = os.path.join(DESTINATION_DIRECTORY, experiment, self.phase, self.time_steps)
+        self.DESTINATION_PATH = os.path.join(DESTINATION_DIRECTORY, experiment, self.phase, self.TIME_STEPS)
         os.makedirs(self.DESTINATION_PATH, exist_ok=True)
 
 
@@ -152,16 +154,22 @@ class DatasetForLearning():
                 
         # Prepare sets of arrays
         self.X_train, self.Y_train, self.X_train_seq, self.Y_train_seq = self.prepare_trial_set(
+            self.BASE_PATH,
+            self.TIME_STEPS,
             self.train_trials,
             self.n_input_cols,
             self.SEQ_LENGTH,
             clip=self.clip)
         self.X_val, self.Y_val, self.X_val_seq, self.Y_val_seq = self.prepare_trial_set(
+            self.BASE_PATH,
+            self.TIME_STEPS,
             self.val_trials,
             self.n_input_cols,
             self.SEQ_LENGTH,
             clip=self.clip)  
         self.X_test, self.Y_test, self.X_test_seq, self.Y_test_seq = self.prepare_trial_set(
+            self.BASE_PATH,
+            self.TIME_STEPS,
             self.test_trials,
             self.n_input_cols,
             self.SEQ_LENGTH,
@@ -212,15 +220,17 @@ class DatasetForLearning():
 
 
     @staticmethod
-    def prepare_trial_set(set_csv_list, n_input_cols, SEQ_LENGTH, clip=False):
+    def prepare_trial_set(BASE_PATH, TIME_STEPS, set_csv_list, n_input_cols, SEQ_LENGTH, clip=False):
         
         # Open csvs, convert int to arrays, and stack
         set_arrays = []
         set_lstm_X_seqs = []
         set_lstm_Y_seqs = []
-        for trial in set_csv_list:           
+        for trial in set_csv_list:     
 
-            df = pd.read_csv(trial)
+            filepath = os.path.join(BASE_PATH, trial + '_(' + TIME_STEPS + ').csv')      
+
+            df = pd.read_csv(filepath)
             df = df.apply(pd.to_numeric, errors='coerce')
 
             df.drop(columns=['timestamp_vector'], inplace=True)
@@ -654,10 +664,10 @@ def main():
     for phase in phases:
         print(f"================== {phase} ===================")
     
-        for t in range(11):
+        for t in range(1,11):
             
             time_steps = str(t) + '_timesteps'
-            print(f"--- {time_steps} ---")       
+            print(f"\n--- {time_steps} ---")       
 
             # === Load Data ===
             print('\nLoading Data ...')
