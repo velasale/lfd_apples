@@ -687,11 +687,12 @@ def main():
             BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
             lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps)
 
-            # This way we make sure that all models use the same train and test set
+            # This way we make sure that all mfodels use the same train and test set
             
             for regressor in regressors:         
                 print(f"\n--- {regressor} ---")       
                 learn(lfd_dataset, regressor=regressor, phase=phase, time_steps=time_steps)    
+
 
 
 if __name__ == '__main__':
