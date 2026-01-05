@@ -19,6 +19,10 @@ import torch
 from lfd_apples.lfd_learning import VelocityMLP, DatasetForLearning  # make sure this class is imported
 from lfd_apples.lfd_lstm import LSTMRegressor
 
+import matplotlib
+matplotlib.use("TkAgg")  # non-interactive backend
+import matplotlib.pyplot as plt
+
 
 def get_paths(trial_num="trial_1"):
     # Detect OS and set IL_data base directory
@@ -289,29 +293,36 @@ def combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, outpu
 def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_trials.csv'):        
 
     # --- Load Train or Test trial ---
-    trials_csv_list = os.path.join(model_path, trials_set)
+    trials_csv_list = os.path.join(model_path, "../..", trials_set)
     df_trials = pd.read_csv(trials_csv_list)
     trials_list = df_trials['trial_id'].tolist()
     
+    trial_path = model_path.replace('06_IL_learning', '05_IL_preprocessed_(memory)')
     if trial == 'random':
         trial_file = random.choice(trials_list)
-        filename = trial_file.split('steps/')[1]
-    else:               
-        trial_path = model_path.replace('06_IL_learning', '05_IL_preprocessed_(memory)')
+        filename = trial_file + '_(' + timesteps + ').csv'
+        trial_file = os.path.join(trial_path, filename)
+    else:                       
         filename = 'trial_' + str(trial) + '_downsampled_aligned_data_transformed_(' + phase + ')_(' + timesteps + ').csv'
         trial_file = os.path.join(trial_path, filename)
     
     return trial_file, pd.read_csv(trial_file)
 
 
-def infer_actions(regressor='lstm', SEQ_LEN = 10):
+def infer_actions(regressor='rf', SEQ_LEN = 15):
     
     TRIALS_SET = 'test_trials.csv'   
     TRIAL_ID = 'random'           # type id or 'random'    
 
     PHASE = 'phase_1_approach'
-    TIMESTEPS = '0_timesteps'    
+    TIMESTEPS = '5_timesteps'    
     BASE_PATH = '/home/alejo/Documents/DATA'
+
+    if regressor != 'lstm':
+        SEQ_LEN = -1
+    else:
+        TIMESTEPS = '0_timesteps'
+
     MODEL_PATH = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{PHASE}/{TIMESTEPS}')    
 
     # ================================ LOAD TRIAL DATA ===============================
@@ -408,8 +419,10 @@ def infer_actions(regressor='lstm', SEQ_LEN = 10):
         # Set to evaluation mode
         lstm_model.eval()
 
-        # Create tensor with sequences        
-        _,_, X_seq, Y_seq = DatasetForLearning.prepare_trial_set([trial_filename], n_input_cols=65, SEQ_LENGTH=SEQ_LEN, clip=False)
+        # Create tensor with sequences             
+        trial_filename = trial_filename.replace('_(' + TIMESTEPS + ').csv', '')
+
+        _,_, X_seq, Y_seq = DatasetForLearning.prepare_trial_set(MODEL_PATH, TIMESTEPS, [trial_filename], n_input_cols=65, SEQ_LENGTH=SEQ_LEN, clip=False)
         X_tensor = torch.tensor(X_seq, dtype=torch.float32)
         Y_tensor = torch.tensor(Y_seq, dtype=torch.float32)
 
