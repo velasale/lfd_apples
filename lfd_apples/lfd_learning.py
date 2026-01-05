@@ -105,7 +105,7 @@ class DatasetForLearning():
 
         # Check if there is already a train_list and a test_list
 
-        set_files_folder = Path(self.DESTINATION_PATH).parent.parent
+        set_files_folder = Path(self.DESTINATION_PATH).parent
 
         csv_files = [p.name for p in set_files_folder.glob("*.csv")]
 
@@ -130,16 +130,22 @@ class DatasetForLearning():
             self.train_trials, self.val_trials = train_test_split(self.train_trials,
                                                                test_size=0.15,
                                                                shuffle=True)   
-
+            
 
             # Save model's results:       
-            df_train=pd.DataFrame(self.train_trials, columns=['trial_id'])
+            trials_filenames_list = [p.split('timesteps/')[1] for p in self.train_trials]
+            trials_filenames_list = [p.split('_(0_timesteps).csv')[0] for p in trials_filenames_list]
+            df_train=pd.DataFrame(trials_filenames_list, columns=['trial_id'])
             df_train.to_csv(os.path.join(set_files_folder,'train_trials.csv'), index=False)
 
-            df_test=pd.DataFrame(self.test_trials, columns=['trial_id'])
+            trials_filenames_list = [p.split('timesteps/')[1] for p in self.test_trials]
+            trials_filenames_list = [p.split('_(0_timesteps).csv')[0] for p in trials_filenames_list]
+            df_test=pd.DataFrame(trials_filenames_list, columns=['trial_id'])
             df_test.to_csv(os.path.join(set_files_folder, 'test_trials.csv'), index=False)
 
-            df_val=pd.DataFrame(self.val_trials, columns=['trial_id'])
+            trials_filenames_list = [p.split('timesteps/')[1] for p in self.val_trials]
+            trials_filenames_list = [p.split('_(0_timesteps).csv')[0] for p in trials_filenames_list]
+            df_val=pd.DataFrame(trials_filenames_list, columns=['trial_id'])
             df_val.to_csv(os.path.join(set_files_folder, 'val_trials.csv'), index=False)
 
 
@@ -234,6 +240,8 @@ class DatasetForLearning():
         set_lstm_Y_seqs = []
         for trial in set_csv_list:     
 
+            # prefix = '_(' + PHASE + 
+            # trial = trial.replace('_(phase_1_approach)', prefix)    
             filepath = os.path.join(BASE_PATH, trial + '_(' + TIME_STEPS + ').csv')      
 
             df = pd.read_csv(filepath)
@@ -673,6 +681,7 @@ def main():
 
     regressors = ['rf', 'mlp','mlp_torch']
     phases = ['phase_2_contact', 'phase_3_pick']
+
 
     for phase in phases:
         print(f"================== {phase} ===================")
