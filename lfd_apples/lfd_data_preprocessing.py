@@ -165,9 +165,34 @@ def plot_signals_before_and_after(df_before, df_after, signals):
         x_ds = np.arange(len(df_after))
 
     n_signals = len(signals)
-    fig, axes = plt.subplots(n_signals, 1, sharex=True, figsize=(10, 8))                
+    # Decide layout
+    if n_signals <= 3:
+        n_rows = n_signals
+        n_cols = 1
+    else:
+        n_cols = 2
+        n_rows = 3
+
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        sharex=True,
+        figsize=(12, 4 * n_rows)
+        )
     
-    for ax, sig in zip(axes, signals):
+    # Force axes to always be (n_rows, n_cols)
+    if n_rows == 1 and n_cols == 1:
+        axes = np.array([[axes]])
+    elif n_rows == 1:
+        axes = axes[np.newaxis, :]
+    elif n_cols == 1:
+        axes = axes[:, np.newaxis]
+    
+    for i, sig in enumerate(signals):
+        row = i % n_rows
+        col = i // n_rows   
+
+        ax = axes[row, col]
 
         y = np.array(df_before[sig]).flatten()
         y_ds = np.array(df_after[sig]).flatten()
@@ -179,9 +204,14 @@ def plot_signals_before_and_after(df_before, df_after, signals):
         ax.legend()
         ax.grid(True)
 
-    axes[-1].set_xlabel('Elapsed Time')
+        # Hide x tick labels except bottom row
+        if row != n_rows - 1:
+            ax.tick_params(labelbottom=False)
+    
 
     plt.tight_layout()
+
+    plt.show()
 
 
 # ============ Topic-specific downsampling functions ===========
@@ -627,7 +657,7 @@ def stage_1_align_and_downsample():
         raw_ee_pose_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_current_pose.csv")
                
         # Downsample data and align datasets based on the timestamps of in-hand camera images
-        compare_plots = False
+        compare_plots = True
         df = pd.DataFrame()
         df['timestamp_vector'] = get_timestamp_vector_from_images(raw_palm_camera_images_path)
         df_ds_1 = downsample_pressure_and_tof_data(df, raw_pressure_and_tof_path, compare_plots=compare_plots)
@@ -878,7 +908,7 @@ def stage_3_crop_data_to_task_phases():
 
         phase_1_time = 7.0  # in seconds
         idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz
-        phase_1_extra_time_end = 2.0
+        phase_1_extra_time_end = 1.0
         idx_phase_1_end += int(phase_1_extra_time_end * 30)
 
         # Crop data for phase 1
@@ -897,7 +927,7 @@ def stage_3_crop_data_to_task_phases():
 
         idx_phase_3_start = idx_phase_2_end
 
-        phase_2_extra_time_end = 2.0
+        phase_2_extra_time_end = 1.0
         idx_phase_2_end += int(phase_2_extra_time_end * 30)
         # Crop data for phase 2
         df_phase_2 = df.iloc[idx_phase_2_start:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
@@ -1092,14 +1122,14 @@ def stage_5_fix_hw_issues():
 
 if __name__ == '__main__':
 
-    # stage_1_align_and_downsample()
+    stage_1_align_and_downsample()
     # stage_2_transform_data_to_eef_frame()
     # stage_3_crop_data_to_task_phases()   
    
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
-    for phase in phases:
-        for step in range(11):
-            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
+    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    # for phase in phases:
+    #     for step in range(11):
+    #         stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)

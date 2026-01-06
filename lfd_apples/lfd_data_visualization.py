@@ -309,15 +309,16 @@ def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_tri
     return trial_file, pd.read_csv(trial_file)
 
 
-def infer_actions(regressor='lstm', SEQ_LEN = 1):
+def infer_actions(regressor='lstm', SEQ_LEN = 15):
     
-    TRIALS_SET = 'train_trials.csv'   
-    TRIAL_ID = 91 #'random'           # type id or 'random'    
+    TRIALS_SET = 'test_trials.csv'   
+    TRIAL_ID = 173 #'random'           # type id or 'random'    
 
     PHASE = 'phase_1_approach'
     TIMESTEPS = '10_timesteps'    
     BASE_PATH = '/home/alejo/Documents/DATA'
 
+    n_inputs = 65
     num_layers = 3
     hidden_dim = 128
 
@@ -410,7 +411,7 @@ def infer_actions(regressor='lstm', SEQ_LEN = 1):
         
         # Model
         lstm_model = LSTMRegressor(
-            input_dim=65,   # number of features
+            input_dim= n_inputs,   # number of features
             hidden_dim=hidden_dim,
             output_dim=6,
             num_layers=num_layers,
@@ -427,7 +428,7 @@ def infer_actions(regressor='lstm', SEQ_LEN = 1):
         # Create tensor with sequences             
         trial_filename = trial_filename.replace('_(' + TIMESTEPS + ').csv', '')
 
-        _,_, X_seq, Y_seq = DatasetForLearning.prepare_trial_set(MODEL_PATH, TIMESTEPS, [trial_filename], n_input_cols=65, SEQ_LENGTH=SEQ_LEN, clip=False)
+        _,_, X_seq, Y_seq = DatasetForLearning.prepare_trial_set(MODEL_PATH, TIMESTEPS, [trial_filename], n_input_cols=n_inputs, SEQ_LENGTH=SEQ_LEN, clip=False)
         X_tensor = torch.tensor(X_seq, dtype=torch.float32)
         Y_tensor = torch.tensor(Y_seq, dtype=torch.float32)
 
@@ -467,11 +468,14 @@ def infer_actions(regressor='lstm', SEQ_LEN = 1):
     trial_description = trial_filename.split('steps/')[1]
     fig, axs = plt.subplots(3, 2, figsize=(12, 10), sharex=True)
 
-    if regressor == 'lstm': regressor = str(SEQ_LEN) + "~seq~lstm"
+    if regressor == 'lstm': regressor = str(SEQ_LEN) + "_seq_lstm"
    
     lin_range = 2e-4
     ang_range = 6e-4
     y_lims = np.array([[-lin_range, lin_range], [-ang_range, ang_range]])
+
+    model_title = regressor + '_layers:_' + str(num_layers) + '_dim:_' + str(hidden_dim)
+
 
     for i, col in enumerate(output_cols):
         row = i % 3
@@ -484,7 +488,7 @@ def infer_actions(regressor='lstm', SEQ_LEN = 1):
         ax.grid(True)   
         axs[row, col_idx].set_ylim(y_lims[col_idx])
     plt.xlabel("Timestamp")
-    plt.suptitle(f'Model: $\\bf{{{regressor}}}$ \n{trial_description}')
+    plt.suptitle(f'Model: {model_title} \n{trial_description}')
     plt.tight_layout(rect=[0, 0, 1, 0.95])  # top=0.95 means 5% margin for suptitle
     plt.show()
 

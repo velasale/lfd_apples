@@ -222,7 +222,7 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
     train_losses, val_losses = train(
         model, train_loader, val_loader,
         Y_train_mean, Y_train_std,
-        epochs=500
+        epochs=1000
     )
 
     # Plot loss
@@ -271,10 +271,11 @@ if __name__ == '__main__':
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']     
     seq_lens = [1, 3, 5, 10, 15, 20, 30, 50, 75, 100, 200]  
 
-    hidden_dim_list = [128]
+    phases = ['phase_1_approach']
+    hidden_dim_list = [64]
     num_layers_list = [3]
 
-    seq_lens = [15]
+    seq_lens = [1]
 
     for phase in phases:
         print(f'\n------------------ {phase}-------------------')
@@ -294,6 +295,6 @@ if __name__ == '__main__':
 
                     print(f'\n--- Number of Hidden dim: {hidden_dim} ---')
 
-                    lfd_lstm(SEQ_LEN=1, BATCH_SIZE=32, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
+                    lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=32, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
     
         
