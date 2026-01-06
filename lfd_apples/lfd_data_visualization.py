@@ -309,14 +309,17 @@ def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_tri
     return trial_file, pd.read_csv(trial_file)
 
 
-def infer_actions(regressor='mlp', SEQ_LEN = 20):
+def infer_actions(regressor='lstm', SEQ_LEN = 1):
     
     TRIALS_SET = 'train_trials.csv'   
-    TRIAL_ID = 91#'random'           # type id or 'random'    
+    TRIAL_ID = 91 #'random'           # type id or 'random'    
 
-    PHASE = 'phase_2_contact'
+    PHASE = 'phase_1_approach'
     TIMESTEPS = '10_timesteps'    
     BASE_PATH = '/home/alejo/Documents/DATA'
+
+    num_layers = 3
+    hidden_dim = 128
 
     if regressor != 'lstm':
         SEQ_LEN = -1
@@ -376,29 +379,31 @@ def infer_actions(regressor='mlp', SEQ_LEN = 20):
     
     elif regressor == "lstm":        
 
+        prefix = str(num_layers) + '_layers_' + str(hidden_dim) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
+
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        
 
         # Load statistics
         X_mean = torch.tensor(
-            np.load(os.path.join(MODEL_PATH, str(SEQ_LEN) + f"_seq_{regressor}_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            np.load(os.path.join(MODEL_PATH, prefix + f"_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
             dtype=torch.float32,
             device=device
         )
 
         X_std = torch.tensor(
-            np.load(os.path.join(MODEL_PATH, str(SEQ_LEN) + f"_seq_{regressor}_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            np.load(os.path.join(MODEL_PATH, prefix + f"_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
             dtype=torch.float32,
             device=device
         )
 
         Y_mean = torch.tensor(
-            np.load(os.path.join(MODEL_PATH, str(SEQ_LEN) + f"_seq_{regressor}_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            np.load(os.path.join(MODEL_PATH, prefix + f"_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
             dtype=torch.float32,
             device=device
         )
 
         Y_std = torch.tensor(
-            np.load(os.path.join(MODEL_PATH, str(SEQ_LEN) + f"_seq_{regressor}_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            np.load(os.path.join(MODEL_PATH, prefix + f"_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
             dtype=torch.float32,
             device=device
         )      
@@ -406,15 +411,15 @@ def infer_actions(regressor='mlp', SEQ_LEN = 20):
         # Model
         lstm_model = LSTMRegressor(
             input_dim=65,   # number of features
-            hidden_dim=128,
+            hidden_dim=hidden_dim,
             output_dim=6,
-            num_layers=2,
+            num_layers=num_layers,
             pooling='last'
         )
 
         # Move model to device
         lstm_model.to(device)
-        lstm_model.load_state_dict(torch.load(os.path.join(MODEL_PATH, str(SEQ_LEN) + "_seq_lstm_model.pth")))
+        lstm_model.load_state_dict(torch.load(os.path.join(MODEL_PATH, prefix + "model.pth")))
 
         # Set to evaluation mode
         lstm_model.eval()

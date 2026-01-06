@@ -271,19 +271,20 @@ if __name__ == '__main__':
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']     
     seq_lens = [1, 3, 5, 10, 15, 20, 30, 50, 75, 100, 200]  
 
-    hidden_dim_list = [32, 64, 128]
-    num_layers_list = [1, 2, 3]
+    hidden_dim_list = [128]
+    num_layers_list = [3]
 
+    seq_lens = [15]
 
     for phase in phases:
         print(f'\n------------------ {phase}-------------------')
 
         for SEQ_LEN in tqdm(seq_lens):
 
-            # print(f'\n--- Sequences: {SEQ_LEN} ---')
+            print(f'\n--- Sequences: {SEQ_LEN} ---')
 
-            # if phase !='phase_1_approach' and SEQ_LEN > 50:
-            #     break               
+            if phase !='phase_1_approach' and SEQ_LEN > 50:
+                break               
 
             for num_layers in num_layers_list:
 
