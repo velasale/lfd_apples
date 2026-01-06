@@ -179,7 +179,7 @@ def evaluate(model, test_loader, Y_train_mean, Y_train_std):
     print("Test MSE per output:", mse)
 
 
-def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
+def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 64, num_layers = 1):
     
     
     # === Load Data ===
@@ -212,10 +212,10 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
 
     # Model
     model = LSTMRegressor(
-        input_dim=lfd_dataset.X_train_tensor_norm.shape[2],   # number of features
-        hidden_dim=128,
-        output_dim=lfd_dataset.Y_train_tensor_norm.shape[1],
-        num_layers=2,
+        input_dim =lfd_dataset.X_train_tensor_norm.shape[2],   # number of features
+        hidden_dim = hidden_dim,
+        output_dim = lfd_dataset.Y_train_tensor_norm.shape[1],
+        num_layers = num_layers,
         pooling='last'
     )
 
@@ -236,20 +236,21 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach'):
     plt.grid(True)
 
     # Save plot to file
-    plot_path = os.path.join(lfd_dataset.DESTINATION_PATH, str(SEQ_LEN) + "_seq_lstm_loss_plot.png")
+    prefix = str(num_layers) + '_layers_' + str(hidden_dim) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
+
+    plot_path = os.path.join(lfd_dataset.DESTINATION_PATH, prefix + "loss_plot.png")
     plt.savefig(plot_path, dpi=300)
     print(f"Loss plot saved at: {plot_path}")
 
     # Save model
-    model_path = os.path.join(lfd_dataset.DESTINATION_PATH, str(SEQ_LEN) + "_seq_lstm_model.pth")    
+    model_path = os.path.join(lfd_dataset.DESTINATION_PATH, prefix + "model.pth")    
     torch.save(model.state_dict(), model_path)
 
-    # Save statistics         
-    model_name = str(SEQ_LEN) +"_seq_lstm"    
-    Xmean_name = model_name + '_Xmean' + lfd_dataset.suffix + '.npy'
-    Xstd_name = model_name + '_Xstd' + lfd_dataset.suffix + '.npy'
-    Ymean_name = model_name + '_Ymean' + lfd_dataset.suffix + '.npy'
-    Ystd_name = model_name + '_Ystd' + lfd_dataset.suffix + '.npy'
+    # Save statistics             
+    Xmean_name = prefix + '_Xmean' + lfd_dataset.suffix + '.npy'
+    Xstd_name = prefix + '_Xstd' + lfd_dataset.suffix + '.npy'
+    Ymean_name = prefix + '_Ymean' + lfd_dataset.suffix + '.npy'
+    Ystd_name = prefix + '_Ystd' + lfd_dataset.suffix + '.npy'
 
     variable_names = [Xmean_name, Xstd_name, Ymean_name, Ystd_name]
     variable_values = [X_train_mean,
@@ -270,17 +271,28 @@ if __name__ == '__main__':
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']     
     seq_lens = [1, 3, 5, 10, 15, 20, 30, 50, 75, 100, 200]  
 
+    hidden_dim_list = [32, 64, 128]
+    num_layers_list = [1, 2, 3]
+
 
     for phase in phases:
         print(f'\n------------------ {phase}-------------------')
 
         for SEQ_LEN in tqdm(seq_lens):
 
-            print(f'\n--- Sequences: {SEQ_LEN} ---')
+            # print(f'\n--- Sequences: {SEQ_LEN} ---')
 
-            if phase !='phase_1_approach' and SEQ_LEN > 50:
-                break                      
+            # if phase !='phase_1_approach' and SEQ_LEN > 50:
+            #     break               
 
-            lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=32, phase=phase)
+            for num_layers in num_layers_list:
+
+                print(f'\n--- Number of Layers: {num_layers} ---')
+
+                for hidden_dim in hidden_dim_list:
+
+                    print(f'\n--- Number of Hidden dim: {hidden_dim} ---')
+
+                    lfd_lstm(SEQ_LEN=1, BATCH_SIZE=32, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
     
         
