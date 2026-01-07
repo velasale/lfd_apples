@@ -695,11 +695,13 @@ def main():
     regressors = ['rf', 'mlp','mlp_torch']
     phases = ['phase_3_pick']
 
+    time_steps = [0,5,10]
+
 
     for phase in phases:
         print(f"================== {phase} ===================")
     
-        for t in range(11):
+        for t in time_steps:
             
             time_steps = str(t) + '_timesteps'
             print(f"\n--- {time_steps} ---")       

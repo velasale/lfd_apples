@@ -309,7 +309,7 @@ def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_tri
     return trial_file, pd.read_csv(trial_file)
 
 
-def infer_actions(regressor='lstm', SEQ_LEN = 15):
+def infer_actions(regressor='lstm', SEQ_LEN = 1):
     
     TRIALS_SET = 'test_trials.csv'   
     TRIAL_ID = 173 #'random'           # type id or 'random'    
