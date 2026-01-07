@@ -1029,33 +1029,62 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact', keep_acti
         df = pd.read_csv(os.path.join(SOURCE_PATH, trial)) 
         total_rows = df.shape[0]
         
+        df_zero = df.iloc[[0]].copy()
+        df_zero[:] = 0
+
         df_combined = pd.DataFrame()
+        df_padding_combined = pd.DataFrame()
 
         for time_step in range(n_time_steps + 1):
 
-            start_index = n_time_steps - time_step 
-            end_index = total_rows - time_step
-            df_time_step_ith = df.iloc[start_index: end_index]
-            df_time_step_ith = df_time_step_ith.reset_index(drop=True)
+            # # =============== Old Approach - No padding ============
+            # start_index = n_time_steps - time_step 
+            # end_index = total_rows - time_step
+            # df_time_step_ith = df.iloc[start_index: end_index]
+            # df_time_step_ith = df_time_step_ith.reset_index(drop=True)
 
-            # Rename columns of ith timestep dataframe
+            # # Rename columns of ith timestep dataframe
+            # if time_step > 0:
+
+            #     if not keep_actions_in_memory:
+            #         df_time_step_ith = df_time_step_ith.iloc[:, :-6]
+                
+            #     df_time_step_ith.columns = [col + f"_(t_{time_step})" for col in df_time_step_ith.columns]           
+
+            # # Combine dataframes            
+            # df_combined = pd.concat([df_time_step_ith, df_combined], axis=1)
+            # if time_step > 0:
+            #     df_combined = df_combined.drop(f"timestamp_vector_(t_{time_step})", axis=1)
+
+
+            # ============ New Approach - Padding ===============
+            # Create Column for each previous time step
+            start_index = time_step
+            end_index = total_rows - time_step
+            df_padding_time_step_ith = df.iloc[start_index: end_index]
+
+            # Add zeros
+            for pad in range(time_step):                
+                df_padding_time_step_ith = pd.concat([df_zero, df_padding_time_step_ith], ignore_index=True)
+
+            # Rename columns
             if time_step > 0:
 
                 if not keep_actions_in_memory:
-                    df_time_step_ith = df_time_step_ith.iloc[:, :-6]
-                
-                df_time_step_ith.columns = [col + f"_(t_{time_step})" for col in df_time_step_ith.columns]           
-
-            # Combine dataframes            
-            df_combined = pd.concat([df_time_step_ith, df_combined], axis=1)
+                    df_padding_time_step_ith = df_padding_time_step_ith.iloc[:, :-6]                
+                df_padding_time_step_ith.columns = [col + f"_(t_{time_step})" for col in df_padding_time_step_ith.columns]     
+            
+            # Combine Dataframes
+            df_padding_combined = pd.concat([df_padding_time_step_ith, df_padding_combined], axis=1)
             if time_step > 0:
-                df_combined = df_combined.drop(f"timestamp_vector_(t_{time_step})", axis=1)
-        
-        df_combined = df_combined[["timestamp_vector"] + [c for c in df_combined.columns if c != "timestamp_vector"]]
+                df_padding_combined = df_padding_combined.drop(f"timestamp_vector_(t_{time_step})", axis=1)
+            
+        df_padding_combined = df_padding_combined[["timestamp_vector"] + [c for c in df_padding_combined.columns if c != "timestamp_vector"]]        
+        # df_combined = df_combined[["timestamp_vector"] + [c for c in df_combined.columns if c != "timestamp_vector"]]
 
         # Save cropped data to CSV files
         base_filename = os.path.splitext(trial)[0]
-        df_combined.to_csv(os.path.join(DESTINATION_PATH, f"{base_filename}_({n_time_steps}_timesteps).csv"), index=False)
+        df_padding_combined.to_csv(os.path.join(DESTINATION_PATH, f"{base_filename}_({n_time_steps}_timesteps).csv"), index=False)
 
 
 def stage_5_fix_hw_issues():
@@ -1122,14 +1151,14 @@ def stage_5_fix_hw_issues():
 
 if __name__ == '__main__':
 
-    stage_1_align_and_downsample()
+    # stage_1_align_and_downsample()
     # stage_2_transform_data_to_eef_frame()
     # stage_3_crop_data_to_task_phases()   
    
-    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
-    # for phase in phases:
-    #     for step in range(11):
-    #         stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    for phase in phases:
+        for step in range(2, 11):
+            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
