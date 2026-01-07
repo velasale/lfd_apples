@@ -259,8 +259,7 @@ class DatasetForLearning():
             lstm_Y_array = arr[:, n_input_cols:]
 
             if SEQ_LENGTH > -1:
-                lstm_X_seq, lstm_Y_seq = DatasetForLearning.create_sequences(lstm_X_array, lstm_Y_array, SEQ_LENGTH)
-            
+                lstm_X_seq, lstm_Y_seq = DatasetForLearning.create_sequences(lstm_X_array, lstm_Y_array, SEQ_LENGTH)            
                 set_lstm_X_seqs.append(lstm_X_seq)
                 set_lstm_Y_seqs.append(lstm_Y_seq)            
 
@@ -327,19 +326,34 @@ class DatasetForLearning():
 
 
     @staticmethod
-    def create_sequences(X, Y, seq_len):
+    def create_sequences(X, Y, seq_len, padding_value=0.0):
         """
         X: (N, input_dim)
         Y: (N, output_dim)
         Returns:
-            X_seq: (N - seq_len + 1, seq_len, input_dim)
-            Y_seq: (N - seq_len + 1, output_dim)
+            X_seq: (N, seq_len, input_dim)
+            Y_seq: (N, output_dim)
         """
-        X_seq, Y_seq = [], []
-        for i in range(len(X) - seq_len + 1):
-            X_seq.append(X[i:i + seq_len])
-            Y_seq.append(Y[i + seq_len - 1])  # predict last step
-        return np.array(X_seq), np.array(Y_seq)
+
+        N, input_dim = X.shape
+        _, output_dim = Y.shape
+
+        # Pad X on the LEFT along the time dimension
+        X_padded = np.pad(
+            X,
+            pad_width=((seq_len - 1, 0), (0, 0)),
+            mode="constant",
+            constant_values=padding_value
+            )
+
+        X_seq = np.zeros((N, seq_len, input_dim), dtype=X.dtype)
+        Y_seq = np.zeros((N, output_dim), dtype=Y.dtype)
+
+        for i in range(N):
+            X_seq[i] = X_padded[i : i + seq_len]
+            Y_seq[i] = Y[i]  # predict current timestep
+
+        return X_seq, Y_seq
 
 
 def zscore_normalize(train_set, test_set, eps=1e-8):
