@@ -271,10 +271,10 @@ if __name__ == '__main__':
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']     
 
     phases = ['phase_1_approach']
-    hidden_dim_list = [128]
-    num_layers_list = [3]
+    hidden_dim_list = [64, 128, 200]
+    num_layers_list = [2, 3, 4]
 
-    seq_lens = [5,10,15,20]
+    seq_lens = [5, 10, 15, 20]
 
     for phase in phases:
         print(f'\n------------------ {phase}-------------------')
