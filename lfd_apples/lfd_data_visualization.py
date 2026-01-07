@@ -312,7 +312,7 @@ def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_tri
 def infer_actions(regressor='lstm', SEQ_LEN = 1):
     
     TRIALS_SET = 'test_trials.csv'   
-    TRIAL_ID = 173 #'random'           # type id or 'random'    
+    TRIAL_ID = 45 #'random'           # type id or 'random'    
 
     PHASE = 'phase_1_approach'
     TIMESTEPS = '10_timesteps'    
@@ -454,7 +454,8 @@ def infer_actions(regressor='lstm', SEQ_LEN = 1):
         for i, col in enumerate(output_cols):
             df_predictions[col] = Y_pred_denorm[:, i]
         
-        df_predictions['timestamp_vector']= trial_df["timestamp_vector"].iloc[SEQ_LEN-1:].reset_index(drop=True)
+        # df_predictions['timestamp_vector']= trial_df["timestamp_vector"].iloc[SEQ_LEN-1:].reset_index(drop=True)
+        df_predictions['timestamp_vector']= trial_df["timestamp_vector"].reset_index(drop=True)
 
     else:
         df_predictions = pd.DataFrame()
