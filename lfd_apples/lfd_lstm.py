@@ -269,13 +269,12 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
 if __name__ == '__main__':
 
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']     
-    seq_lens = [1, 3, 5, 10, 15, 20, 30, 50, 75, 100, 200]  
 
     phases = ['phase_1_approach']
     hidden_dim_list = [128]
     num_layers_list = [3]
 
-    seq_lens = [1]
+    seq_lens = [5,10,15,20]
 
     for phase in phases:
         print(f'\n------------------ {phase}-------------------')
