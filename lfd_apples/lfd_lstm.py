@@ -272,7 +272,7 @@ if __name__ == '__main__':
     seq_lens = [1, 3, 5, 10, 15, 20, 30, 50, 75, 100, 200]  
 
     phases = ['phase_1_approach']
-    hidden_dim_list = [64]
+    hidden_dim_list = [128]
     num_layers_list = [3]
 
     seq_lens = [1]
@@ -295,6 +295,6 @@ if __name__ == '__main__':
 
                     print(f'\n--- Number of Hidden dim: {hidden_dim} ---')
 
-                    lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=32, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
+                    lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=16, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
     
         
