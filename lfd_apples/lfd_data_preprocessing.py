@@ -893,6 +893,7 @@ def stage_3_crop_data_to_task_phases():
         df = pd.read_csv(os.path.join(SOURCE_PATH, trial))        
                 
         # ------------------------ First: Define cropping indices --------------------------
+        EXTRA_TIME_END = 0.5
 
         # === PHASE 1: APPROACH PHASE ===
         # End of phase 1: defined by tof < 5cm (contact)        
@@ -907,9 +908,8 @@ def stage_3_crop_data_to_task_phases():
         idx_phase_2_start = idx_phase_1_end
 
         phase_1_time = 7.0  # in seconds
-        idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz
-        phase_1_extra_time_end = 1.0
-        idx_phase_1_end += int(phase_1_extra_time_end * 30)
+        idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
+        idx_phase_1_end += int(EXTRA_TIME_END * 30)
 
         # Crop data for phase 1
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]        
@@ -925,10 +925,9 @@ def stage_3_crop_data_to_task_phases():
             trials_without_engagement.append(trial)
             continue  # Skip cropping for this trial
 
-        idx_phase_3_start = idx_phase_2_end
+        idx_phase_3_start = idx_phase_2_end        
+        idx_phase_2_end += int(EXTRA_TIME_END * 30)
 
-        phase_2_extra_time_end = 1.0
-        idx_phase_2_end += int(phase_2_extra_time_end * 30)
         # Crop data for phase 2
         df_phase_2 = df.iloc[idx_phase_2_start:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
         df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
@@ -976,9 +975,8 @@ def stage_3_crop_data_to_task_phases():
             continue
         
         phase_1_time = 7.0  # in seconds
-        idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz
-        phase_1_extra_time_end = 2.0
-        idx_phase_1_end += int(phase_1_extra_time_end * 30)
+        idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
+        idx_phase_1_end += int(EXTRA_TIME_END * 30)
 
         # Crop data for phase 1
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]
@@ -1153,11 +1151,11 @@ if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
     # stage_2_transform_data_to_eef_frame()
-    # stage_3_crop_data_to_task_phases()   
+    stage_3_crop_data_to_task_phases()   
    
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
     for phase in phases:
-        for step in [5,10]:
+        for step in [0,5,10]:
             stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
