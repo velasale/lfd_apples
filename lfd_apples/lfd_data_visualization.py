@@ -450,20 +450,13 @@ def infer_actions(regressor='lstm', SEQ_LEN = 5):
     # --- Move predictions back to dataframe ---
     if regressor == 'lstm':
         Y_pred_denorm = Y_pred_denorm.detach().cpu().numpy()
-        df_predictions = pd.DataFrame()
-        for i, col in enumerate(output_cols):
-            df_predictions[col] = Y_pred_denorm[:, i]
-        
-        # df_predictions['timestamp_vector']= trial_df["timestamp_vector"].iloc[SEQ_LEN-1:].reset_index(drop=True)
-        df_predictions['timestamp_vector']= trial_df["timestamp_vector"].reset_index(drop=True)
 
-    else:
-        df_predictions = pd.DataFrame()
-        for i, col in enumerate(output_cols):
-            df_predictions[col] = Y_pred_denorm[:, i]
+    df_predictions = pd.DataFrame()
+    for i, col in enumerate(output_cols):
+        df_predictions[col] = Y_pred_denorm[:, i]
 
-        n_time_steps = int(TIMESTEPS.split('_')[0])        
-        df_predictions['timestamp_vector']= trial_df["timestamp_vector"].iloc[n_time_steps:].reset_index(drop=True)       
+    n_time_steps = int(TIMESTEPS.split('_')[0])        
+    df_predictions['timestamp_vector']= trial_df["timestamp_vector"].reset_index(drop=True)       
 
     # --- Plot Predictions ---    
     trial_description = trial_filename.split('steps/')[1]
