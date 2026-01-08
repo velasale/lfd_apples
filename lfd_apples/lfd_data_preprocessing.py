@@ -1030,7 +1030,7 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact', keep_acti
         total_rows = df.shape[0]
         
         df_zero = df.iloc[[0]].copy()
-        df_zero[:] = 0
+        df_zero[:] = 0.0
 
         df_combined = pd.DataFrame()
         df_padding_combined = pd.DataFrame()
@@ -1059,9 +1059,9 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact', keep_acti
 
             # ============ New Approach - Padding ===============
             # Create Column for each previous time step
-            start_index = time_step
+            #start_index = time_step
             end_index = total_rows - time_step
-            df_padding_time_step_ith = df.iloc[start_index: end_index]
+            df_padding_time_step_ith = df.iloc[0: end_index]
 
             # Add zeros
             for pad in range(time_step):                
@@ -1157,7 +1157,7 @@ if __name__ == '__main__':
    
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
     for phase in phases:
-        for step in range(2, 11):
+        for step in [5,10]:
             stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
