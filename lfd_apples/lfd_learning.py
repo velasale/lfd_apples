@@ -689,16 +689,16 @@ def learn(lfd_dataset, regressor='mlp', phase='phase_1_approach', time_steps='2_
 
 def main():
 
-    regressors = ['rf', 'mlp','mlp_torch']
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    # regressors = ['rf', 'mlp','mlp_torch']
+    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
 
-    regressors = ['rf', 'mlp','mlp_torch']
-    phases = ['phase_3_pick']
+    regressors = ['rf','mlp','mlp_torch']
+    phases = ['phase_1_approach']
 
-    time_steps = [0,5,10]
-
+    time_steps = [5, 10]
 
     for phase in phases:
+
         print(f"================== {phase} ===================")
     
         for t in time_steps:
