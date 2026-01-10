@@ -102,46 +102,73 @@ def parse_array_string(s):
     return None
 
 
-def resolve_group(cfg, out, group):
+def resolve_group(cfg, group):
+    print(f"\nResolving group: {group}")
+
     parts = group.split(".")
-    
-    # Walk original cfg for structure
     node = cfg
+
     for p in parts:
+        print(f"  -> accessing key: {p}")
+        print(f"     current node type: {type(node)}")
+
+        if not isinstance(node, dict):
+            raise TypeError(
+                f"Node is not a dict while resolving '{group}'. "
+                f"Stopped at '{p}', node={node}"
+            )
+
+        if p not in node:
+            raise KeyError(
+                f"Key '{p}' not found while resolving '{group}'. "
+                f"Available keys: {list(node.keys())}"
+            )
+
         node = node[p]
 
-    # If this is a prefix-based group, use expanded version
-    if isinstance(node, dict) and "prefix" in node:
-        return out[parts[0]]
+    print(f"  -> resolved node type: {type(node)}")
+    print(f"  -> resolved node value: {node}")
 
-    # Otherwise, node must be a list of columns
-    return node
+    # Prefix-based features
+    if isinstance(node, dict) and "prefix" in node:
+        prefix = node["prefix"]
+        count = node["count"]
+        cols = [f"{prefix}{i}" for i in range(count)]
+        print(f"  -> expanded prefix group: {cols[:3]} ...")
+        return cols
+
+    # Normal list
+    if isinstance(node, list):
+        return node
+
+    raise TypeError(
+        f"Group '{group}' resolved to unsupported type: {type(node)}"
+    )
 
 
 
 def get_phase_columns(phase_name):
-
-    data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+    data_columns_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
 
     with open(data_columns_path, "r") as f:
         cfg = yaml.safe_load(f)
 
-    
-    # In hand Camera Feature count
-    out = {}
-    for key, val in cfg.items():
-        if isinstance(val, dict) and "prefix" in val:
-            out[key] = [f"{val['prefix']}{i}" for i in range(val["count"])]
-        else:
-            out[key] = val
-    
+    print("\nTop-level keys in YAML:")
+    print(list(cfg.keys()))
 
+    print(f"\nResolving phase: {phase_name}")
     groups = cfg["phases"][phase_name]
+    print("Groups:", groups)
+
     cols = []
     for group in groups:
-        cols.extend(resolve_group(cfg, out, group))
+        cols.extend(resolve_group(cfg, group))
+
+    print("\nFinal columns:")
+    print(cols)
 
     return cols
+
 
 
 def quat_to_angular_velocity(quaternions, delta_t):
@@ -1189,12 +1216,12 @@ if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
     # stage_2_transform_data_to_eef_frame()
-    stage_3_crop_data_to_task_phases()   
+    # stage_3_crop_data_to_task_phases()   
    
     # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
     phases = ['phase_1_approach']    
     for phase in phases:
-        for step in [0,5,10,15,20]:
+        for step in [0,5,10]:
             stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'

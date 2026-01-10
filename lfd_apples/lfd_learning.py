@@ -242,6 +242,7 @@ class DatasetForLearning():
             # prefix = '_(' + PHASE + 
             # trial = trial.replace('_(phase_1_approach)', prefix)    
             filepath = os.path.join(BASE_PATH, trial + '_(' + TIME_STEPS + ').csv')      
+            # filepath = os.path.join(BASE_PATH, trial)      
 
             df = pd.read_csv(filepath)
             df = df.apply(pd.to_numeric, errors='coerce')
@@ -387,7 +388,6 @@ class VelocityMLP(nn.Module):
     
     def forward(self, x):
         return self.net(x)
-
 
 
 def smooth_velocity_loss(v_pred, v_gt, lamda_smooth=0.1):
@@ -688,15 +688,11 @@ def learn(lfd_dataset, regressor='mlp', phase='phase_1_approach', time_steps='2_
 
 
 def main():
-
-    # regressors = ['rf', 'mlp','mlp_torch']
-    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
-
-    regressors = ['rf','mlp','mlp_torch']
-    phases = ['phase_1_approach']
-
-    time_steps = [5, 10]
-
+    
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    regressors = ['rf','mlp','mlp_torch']    
+    time_steps = [0,5,10,20]
+   
     for phase in phases:
 
         print(f"================== {phase} ===================")

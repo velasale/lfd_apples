@@ -311,12 +311,12 @@ def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_tri
     return trial_file, pd.read_csv(trial_file)
 
 
-def infer_actions(regressor='lstm', SEQ_LEN = 20):
+def infer_actions(regressor='mlp_torch', SEQ_LEN = 20):
     
     TRIALS_SET = 'test_trials.csv'   
-    TRIAL_ID = 'random'           # type id or 'random'    
+    TRIAL_ID = 165 #'random'           # type id or 'random'    
 
-    PHASE = 'phase_3_contact'
+    PHASE = 'phase_1_approach'
     TIMESTEPS = '0_timesteps'    
     BASE_PATH = '/home/alejo/Documents/DATA'
 
@@ -520,13 +520,12 @@ def infer_actions(regressor='lstm', SEQ_LEN = 20):
     # combine_inhand_camera_and_actions(trial_name, images_folder, random_file, output_video_path)  
 
 
-def infer_actions_all_set(regressor='lstm', SEQ_LEN = 1):
+def infer_actions_all_set(regressor='mlp', SEQ_LEN = 1):
     
-    TRIALS_SET = 'test_trials.csv'   
-    TRIAL_ID = 232#'random'           # type id or 'random'    
+    TRIALS_SET = 'test_trials.csv'       
 
     PHASE = 'phase_1_approach'
-    TIMESTEPS = '10_timesteps'    
+    TIMESTEPS = '15_timesteps'    
     BASE_PATH = '/home/alejo/Documents/DATA'
 
     n_inputs = 65
@@ -554,6 +553,7 @@ def infer_actions_all_set(regressor='lstm', SEQ_LEN = 1):
 
         filename = 'trial_' + str(trial) + '_downsampled_aligned_data_transformed_(' + PHASE + ')_(' + TIMESTEPS + ').csv'
         filename = trial + '_(' + TIMESTEPS + ').csv'
+        filename = trial
         trial_filename = os.path.join(trial_path, filename)
         trial_df = pd.read_csv(trial_filename)    
 
@@ -705,13 +705,19 @@ def infer_actions_all_set(regressor='lstm', SEQ_LEN = 1):
             truths_np,
             multioutput="raw_values"
         )
-
         mse_list.append(mse_per_dim.mean())
+
     
+    # mse_array = np.array(mse_list)
+    # mae_array = np.array(mae_list)    
+    # print(f'\n{regressor}')
+    # print(f'Mean MSE across Trials set: {mse_array.mean(axis=0)}')
+    # print(f'Mean MAE across Trials set: {mae_array.mean(axis=0)}')
+    
+   
     print(f'\n{regressor}')
-    print(f'Mean MSE across Trials set: {np.mean(mse_list):.3e}')
-    print(f'Mean MAE across Trials set: {np.mean(mae_list):.3e}')
-     
+    print(f'Mean MSE across Trials set: {np.mean(mse_list)}')
+    print(f'Mean MAE across Trials set: {np.mean(mae_list)}')
 
 def important_features(top=5):
     """Display the top features"""
@@ -760,7 +766,6 @@ def main():
 if __name__ == '__main__':
 
     # main()
-
     infer_actions()
     # infer_actions_all_set()
 

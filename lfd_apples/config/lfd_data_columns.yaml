@@ -74,13 +74,30 @@ joint_states_cols:
 inhand_cam_feature_cols:
   prefix: "f"
   count: 64        # Number of features extracted from in-hand camera images, Layer 15 of Segmentation Network
-
+  # - f11
+  # - f21
+  # - f52
+  # - f23
+  # - f4
+  # - f14
+  # - f60
+  # - f41 
+  # - f19
+  # - f10
+  # - f54
+  # - f34
+  # - f15
+  # - f6
+  # - f55
+  # - f30
+  # - f45
 
 
 phases:
   phase_1_approach:
     - tof_cols
     - inhand_cam_feature_cols
+    - joint_states_cols.pos
     # - ee_pose_cols
     - action_cols
 
@@ -88,6 +105,7 @@ phases:
     - tof_cols
     - air_pressure_cols
     - wrench_cols
+    - joint_states_cols.pos
     # - ee_pose_cols
     - action_cols
 
@@ -95,6 +113,7 @@ phases:
     - tof_cols
     - air_pressure_cols
     - wrench_cols
+    - joint_states_cols.pos
     # - ee_pose_cols
     - action_cols
 
@@ -102,5 +121,6 @@ phases:
     - tof_cols
     - air_pressure_cols
     - wrench_cols
+    - joint_states_cols.pos
     # - ee_pose_cols
     - action_cols
