@@ -1,5 +1,3 @@
-
-
 import os
 import platform
 import pandas as pd
@@ -104,6 +102,23 @@ def parse_array_string(s):
     return None
 
 
+def resolve_group(cfg, out, group):
+    parts = group.split(".")
+    
+    # Walk original cfg for structure
+    node = cfg
+    for p in parts:
+        node = node[p]
+
+    # If this is a prefix-based group, use expanded version
+    if isinstance(node, dict) and "prefix" in node:
+        return out[parts[0]]
+
+    # Otherwise, node must be a list of columns
+    return node
+
+
+
 def get_phase_columns(phase_name):
 
     data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
@@ -122,7 +137,11 @@ def get_phase_columns(phase_name):
     
 
     groups = cfg["phases"][phase_name]
-    return [col for group in groups for col in out[group]]
+    cols = []
+    for group in groups:
+        cols.extend(resolve_group(cfg, out, group))
+
+    return cols
 
 
 def quat_to_angular_velocity(quaternions, delta_t):
@@ -494,9 +513,16 @@ def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
         plot_pressure(df, time_vector='timestamp_vector')        
         print(f'No contact detected in {trial}, skipping cropping.')
         
-        return None
+        return None, None
+    
+    elif len(transition_indices) == 1:
+        # Index of phase 1 end (first drop below threshold)
+        idx_phase_1_end = transition_indices[0]
+        idx_phase_2_start = idx_phase_1_end
 
-    if len(transition_indices) > 1:
+        return idx_phase_1_end, idx_phase_2_start
+
+    elif len(transition_indices) > 1:
 
         # return "Multiple"       # TODO remove this line
 
@@ -513,13 +539,17 @@ def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
         
         chosen_idx = int(user_input)
         idx_phase_1_end = transition_indices[chosen_idx]
-    
-                  
-    if len(transition_indices) == 1:
-        # Index of phase 1 end (first drop below threshold)
-        idx_phase_1_end = transition_indices[0]
 
-    return idx_phase_1_end
+        # Ask the user which contact point to pick
+        # In this case, the index may differ, so it is safe to ask the user when to start phase 2
+        plt.show()
+        user_input = input(f"Enter index (0-{len(transition_indices)-1}) of correct phase 2 start: ")
+        chosen_idx = int(user_input)
+        idx_phase_2_start = transition_indices[chosen_idx]
+    
+        return idx_phase_1_end, idx_phase_2_start 
+
+    
 
 
 def find_end_of_phase_2_contact(df, trial, air_pressure_threshold=600, n_cups=2):
@@ -601,11 +631,11 @@ def stage_1_align_and_downsample():
     # MAIN_DIR = os.path.join("D:")                                     # windows OS
     MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')            # ubuntu OS
     SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
-    # EXPERIMENT = "experiment_1_(pull)"
-    EXPERIMENT = "only_human_demos/with_palm_cam"   
+    EXPERIMENT = "experiment_1_(pull)"
+    # EXPERIMENT = "only_human_demos/with_palm_cam"   
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
 
-    demonstrator = ""  # "human" or "robot"
+    demonstrator = "robot"  # "human" or "robot"
 
     FIXED_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
     INHAND_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
@@ -657,7 +687,7 @@ def stage_1_align_and_downsample():
         raw_ee_pose_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_current_pose.csv")
                
         # Downsample data and align datasets based on the timestamps of in-hand camera images
-        compare_plots = True
+        compare_plots = False
         df = pd.DataFrame()
         df['timestamp_vector'] = get_timestamp_vector_from_images(raw_palm_camera_images_path)
         df_ds_1 = downsample_pressure_and_tof_data(df, raw_pressure_and_tof_path, compare_plots=compare_plots)
@@ -897,7 +927,7 @@ def stage_3_crop_data_to_task_phases():
 
         # === PHASE 1: APPROACH PHASE ===
         # End of phase 1: defined by tof < 5cm (contact)        
-        idx_phase_1_end = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
+        idx_phase_1_end, idx_phase_2_start = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
         if idx_phase_1_end is None:
             trials_without_contact.append(trial)
             continue  # Skip cropping for this trial
@@ -905,7 +935,7 @@ def stage_3_crop_data_to_task_phases():
             trials_with_multiple_contacts.append(trial)
             continue
         
-        idx_phase_2_start = idx_phase_1_end
+        # idx_phase_2_start = idx_phase_1_end
 
         phase_1_time = 7.0  # in seconds
         idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
@@ -936,7 +966,7 @@ def stage_3_crop_data_to_task_phases():
         # === PHASE 3: PICK PHASE ===
         # End of phase 3 defined by Max net Force
         idx_phase_3_end = find_end_of_phase_3_contact(df, trial, total_force_threshold=20)
-        phase_3_extra_time_end = 3.0
+        phase_3_extra_time_end = 1.5
         idx_phase_3_end += int(phase_3_extra_time_end * 30)
 
         # Crop data for phase 3
@@ -966,7 +996,7 @@ def stage_3_crop_data_to_task_phases():
                 
         # ------------------------ First: Define cropping indices --------------------------
         # End of phase 1: defined by tof < 5cm (contact)        
-        idx_phase_1_end = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
+        idx_phase_1_end,_ = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
         if idx_phase_1_end is None:
             trials_without_contact.append(trial)
             continue  # Skip cropping for this trial
@@ -1025,6 +1055,14 @@ def stage_4_short_time_memory(n_time_steps=0, phase='phase_1_contact', keep_acti
 
         print(f'\n Adjusting {trial} with time steps...')
         df = pd.read_csv(os.path.join(SOURCE_PATH, trial)) 
+
+        # # ======= SPECIFIC IMAGE FEATURES ================
+        # # Just leave the inputs and output cols       
+        # phase_1_approach_cols = get_phase_columns("phase_1_approach")
+        # phase_1_approach_cols.insert(0, 'timestamp_vector')
+        # df = df[phase_1_approach_cols].copy()
+        # # ================================================
+
         total_rows = df.shape[0]
         
         df_zero = df.iloc[[0]].copy()
@@ -1153,9 +1191,10 @@ if __name__ == '__main__':
     # stage_2_transform_data_to_eef_frame()
     stage_3_crop_data_to_task_phases()   
    
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    phases = ['phase_1_approach']    
     for phase in phases:
-        for step in [0,5,10]:
+        for step in [0,5,10,15,20]:
             stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
