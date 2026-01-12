@@ -311,13 +311,13 @@ def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_tri
     return trial_file, pd.read_csv(trial_file)
 
 
-def infer_actions(regressor='mlp_torch', SEQ_LEN = 20):
+def infer_actions(regressor='mlp', SEQ_LEN = 20):
     
-    TRIALS_SET = 'test_trials.csv'   
-    TRIAL_ID = 165 #'random'           # type id or 'random'    
+    TRIALS_SET = 'train_trials.csv'   
+    TRIAL_ID = 'random'           # type id or 'random'    
 
     PHASE = 'phase_1_approach'
-    TIMESTEPS = '0_timesteps'    
+    TIMESTEPS = '10_timesteps'    
     BASE_PATH = '/home/alejo/Documents/DATA'
 
     n_inputs = 10
@@ -520,12 +520,12 @@ def infer_actions(regressor='mlp_torch', SEQ_LEN = 20):
     # combine_inhand_camera_and_actions(trial_name, images_folder, random_file, output_video_path)  
 
 
-def infer_actions_all_set(regressor='mlp', SEQ_LEN = 1):
+def infer_actions_all_set(regressor='rf', SEQ_LEN = 1):
     
     TRIALS_SET = 'test_trials.csv'       
 
     PHASE = 'phase_1_approach'
-    TIMESTEPS = '15_timesteps'    
+    TIMESTEPS = '0_timesteps'    
     BASE_PATH = '/home/alejo/Documents/DATA'
 
     n_inputs = 65
@@ -553,7 +553,7 @@ def infer_actions_all_set(regressor='mlp', SEQ_LEN = 1):
 
         filename = 'trial_' + str(trial) + '_downsampled_aligned_data_transformed_(' + PHASE + ')_(' + TIMESTEPS + ').csv'
         filename = trial + '_(' + TIMESTEPS + ').csv'
-        filename = trial
+        # filename = trial
         trial_filename = os.path.join(trial_path, filename)
         trial_df = pd.read_csv(trial_filename)    
 
@@ -718,6 +718,7 @@ def infer_actions_all_set(regressor='mlp', SEQ_LEN = 1):
     print(f'\n{regressor}')
     print(f'Mean MSE across Trials set: {np.mean(mse_list)}')
     print(f'Mean MAE across Trials set: {np.mean(mae_list)}')
+
 
 def important_features(top=5):
     """Display the top features"""

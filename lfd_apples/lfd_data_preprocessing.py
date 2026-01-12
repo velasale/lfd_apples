@@ -146,7 +146,6 @@ def resolve_group(cfg, group):
     )
 
 
-
 def get_phase_columns(phase_name):
     data_columns_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
 
@@ -168,7 +167,6 @@ def get_phase_columns(phase_name):
     print(cols)
 
     return cols
-
 
 
 def quat_to_angular_velocity(quaternions, delta_t):
@@ -201,7 +199,7 @@ def quat_to_angular_velocity(quaternions, delta_t):
     return omega, rotvec_full
 
 
-def plot_signals_before_and_after(df_before, df_after, signals):
+def plot_signals_before_and_after(df_before, df_after, signals, timestamp_vector=np.array([])):
     
     try:
         x = np.array(df_before['elapsed_time']).flatten()
@@ -294,8 +292,10 @@ def downsample_pressure_and_tof_data(df, raw_data_path, compare_plots=True):
     return df_downsampled
 
 
-def reduce_size_inhand_camera_raw_images(raw_data_path, model, layer=15, compare_plots=True):
+def reduce_size_inhand_camera_raw_images(df_with_timestamps, raw_data_path, model, layer=15, compare_plots=True):
     
+    timestamp_vector = df_with_timestamps['timestamp_vector'].values
+
     rows = []
     for fname in sorted(os.listdir(raw_data_path)):
         if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
@@ -333,7 +333,7 @@ def reduce_size_inhand_camera_raw_images(raw_data_path, model, layer=15, compare
 
     if compare_plots: 
         signals = ["f1", "f10", "f20"]
-        plot_signals_before_and_after(df, df_filtered, signals)
+        plot_signals_before_and_after(df, df_filtered, signals, timestamp_vector=timestamp_vector)
 
     return df
       
@@ -714,7 +714,7 @@ def stage_1_align_and_downsample():
         raw_ee_pose_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_current_pose.csv")
                
         # Downsample data and align datasets based on the timestamps of in-hand camera images
-        compare_plots = False
+        compare_plots = True
         df = pd.DataFrame()
         df['timestamp_vector'] = get_timestamp_vector_from_images(raw_palm_camera_images_path)
         df_ds_1 = downsample_pressure_and_tof_data(df, raw_pressure_and_tof_path, compare_plots=compare_plots)
@@ -728,7 +728,7 @@ def stage_1_align_and_downsample():
             df_ds_3 = downsample_robot_joint_states_data(df, raw_joint_states_path, compare_plots=compare_plots)
         
         df_ds_4 = downsample_robot_ee_pose_data(df, raw_ee_pose_path, compare_plots=compare_plots)
-        df_ds_5 = reduce_size_inhand_camera_raw_images(raw_palm_camera_images_path, model=cv_model, layer=15, compare_plots=compare_plots)
+        df_ds_5 = reduce_size_inhand_camera_raw_images(df, raw_palm_camera_images_path, model=cv_model, layer=15, compare_plots=compare_plots)
 
         # Compute ACTIONS based on ee pose
         df_ds_6 = derive_actions_from_ee_pose(df, raw_ee_pose_path, compare_plots=compare_plots)
@@ -1214,15 +1214,15 @@ def stage_5_fix_hw_issues():
 
 if __name__ == '__main__':
 
-    # stage_1_align_and_downsample()
+    stage_1_align_and_downsample()
     # stage_2_transform_data_to_eef_frame()
     # stage_3_crop_data_to_task_phases()   
    
     # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
-    phases = ['phase_1_approach']    
-    for phase in phases:
-        for step in [0,5,10]:
-            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
+    # phases = ['phase_1_approach']    
+    # for phase in phases:
+    #     for step in [0,5,10]:
+    #         stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
