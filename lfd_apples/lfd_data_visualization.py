@@ -520,9 +520,9 @@ def infer_actions(regressor='mlp', SEQ_LEN = 20):
     # combine_inhand_camera_and_actions(trial_name, images_folder, random_file, output_video_path)  
 
 
-def infer_actions_all_set(regressor='rf', SEQ_LEN = 1):
+def infer_actions_all_set(regressor='mlp', SEQ_LEN = 1):
     
-    TRIALS_SET = 'test_trials.csv'       
+    TRIALS_SET = 'train_trials.csv'       
 
     PHASE = 'phase_1_approach'
     TIMESTEPS = '0_timesteps'    
@@ -672,8 +672,6 @@ def infer_actions_all_set(regressor='rf', SEQ_LEN = 1):
             # Denormalize predictions
             Y_pred_denorm = pred_norm * Y_std + Y_mean      
 
-
-
         # =================================== PLOT =======================================
         # --- Move predictions back to dataframe ---
         if regressor == 'lstm':
@@ -682,7 +680,6 @@ def infer_actions_all_set(regressor='rf', SEQ_LEN = 1):
         df_predictions = pd.DataFrame()
         for i, col in enumerate(output_cols):
             df_predictions[col] = Y_pred_denorm[:, i]
-
       
         df_predictions['timestamp_vector']= trial_df["timestamp_vector"].reset_index(drop=True)      
                
@@ -706,15 +703,28 @@ def infer_actions_all_set(regressor='rf', SEQ_LEN = 1):
             multioutput="raw_values"
         )
         mse_list.append(mse_per_dim.mean())
-
     
     # mse_array = np.array(mse_list)
     # mae_array = np.array(mae_list)    
     # print(f'\n{regressor}')
     # print(f'Mean MSE across Trials set: {mse_array.mean(axis=0)}')
-    # print(f'Mean MAE across Trials set: {mae_array.mean(axis=0)}')
+    # print(f'Mean MAE across Trials set: {mae_array.mean(axis=0)}')    
+
+    plt.hist(mse_list, alpha=0.7, color='blue')
+    plt.title(f'{TRIALS_SET} \nMSE Distribution across Trials - {regressor}')
+    plt.xlabel('MSE')
+    plt.ylabel('Frequency')
+    plt.grid(True)
     
-   
+    plt.figure()
+    plt.hist(mae_list, alpha=0.7, color='blue')
+    plt.title(f'{TRIALS_SET} \n MAE Distribution across Trials - {regressor}')
+    plt.xlabel('MAE')
+    plt.ylabel('Frequency')
+    plt.grid(True)
+
+    plt.show()
+
     print(f'\n{regressor}')
     print(f'Mean MSE across Trials set: {np.mean(mse_list)}')
     print(f'Mean MAE across Trials set: {np.mean(mae_list)}')
@@ -767,8 +777,8 @@ def main():
 if __name__ == '__main__':
 
     # main()
-    infer_actions()
-    # infer_actions_all_set()
+    # infer_actions()
+    infer_actions_all_set()
 
     # important_features(top=10)
 
