@@ -35,6 +35,7 @@ setup(
             'lfd_implementation = lfd_apples.lfd_implementation:main',
             'franka_recover = lfd_apples.franka_recover:main',
             'yolo_latent_node = lfd_apples.yolo_latent_node:main',
+            'franka_controllers_file = lfd_apples.franka_controllers_file:main',
         ],
     },
 )
