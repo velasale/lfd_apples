@@ -418,6 +418,27 @@ def visualize_specific_channel(channel_number=23):
     plt.show()
 
 
+def bounding_box_centers(img_cv, model):
+
+    results = model(img_cv, verbose=False)
+
+    best_center = None
+    best_conf = -1.0
+    
+    for result in results:
+
+        for box in result.boxes:
+            conf = box.conf[0].cpu().numpy()
+            if conf > best_conf:
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                cX = int((x1 + x2) / 2)
+                cY = int((y1 + y2) / 2)
+                best_center = [cX, cY]
+                best_conf = conf
+      
+    return best_center
+
+
 
 def main():
   
