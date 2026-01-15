@@ -35,9 +35,12 @@ class LSTMRegressor(nn.Module):
             input_dim,
             hidden_dim,
             num_layers=num_layers,
+            dropout=0.3,
             batch_first=True
         )
-        self.fc = nn.Linear(hidden_dim, output_dim)
+        self.fc_1 = nn.Linear(hidden_dim, hidden_dim // 2)
+        self.fc = nn.Linear(hidden_dim // 2, output_dim)
+        self.relu = nn.ReLU()
         assert pooling in ['last', 'mean'], "pooling must be 'last' or 'mean'"
         self.pooling = pooling
 
@@ -54,13 +57,14 @@ class LSTMRegressor(nn.Module):
         elif self.pooling == 'mean':
             # Average over all timesteps
             out = out.mean(dim=1)
-
+        out = self.fc_1(out)
+        out = self.relu(out)
         return self.fc(out)
     
     
 
 
-def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=1e-5):
+def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=5e-5):
     '''
     Docstring for train
     
@@ -80,7 +84,7 @@ def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500
     Y_train_mean = Y_train_mean.to(device)
     Y_train_std = Y_train_std.to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
     #     optimizer, mode='min', factor=0.5, patience=5
     # )
@@ -130,7 +134,7 @@ def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500
         scheduler.step(val_loss)
 
         # --- Early stopping check ---
-        patience = 50
+        patience = 500
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             epochs_no_improve = 0
@@ -193,7 +197,7 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
     val_ds   = TensorDataset(lfd_dataset.X_val_tensor_norm, lfd_dataset.Y_val_tensor_norm)
     test_ds   = TensorDataset(lfd_dataset.X_test_tensor_norm, lfd_dataset.Y_test_tensor_norm)
 
-    
+     
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=False)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE)
     test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE)
@@ -222,7 +226,7 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
     train_losses, val_losses = train(
         model, train_loader, val_loader,
         Y_train_mean, Y_train_std,
-        epochs=1000
+        epochs=10000
     )
 
     # Plot loss
@@ -268,13 +272,13 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
 
 if __name__ == '__main__':
 
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']     
+    phases = ['phase_3_pick']     
 
-    # phases = ['phase_1_approach']
-    hidden_dim_list = [128]
-    num_layers_list = [2, 3, 4]
+    phases = ['phase_1_approach']
+    hidden_dim_list = [64]
+    num_layers_list = [2]
 
-    seq_lens = [1, 10, 20, 30]
+    seq_lens = [5]
 
     for phase in phases:
         print(f'\n------------------ {phase}-------------------')
@@ -294,6 +298,6 @@ if __name__ == '__main__':
 
                     print(f'\n--- Number of Hidden dim: {hidden_dim} ---')
 
-                    lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=16, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
+                    lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=32, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
     
         
