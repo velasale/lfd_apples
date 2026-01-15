@@ -9,6 +9,8 @@ from controller_manager_msgs.srv import SwitchController, LoadController, ListCo
 import subprocess
 import time
 import os
+import yaml
+from pathlib import Path
 
 import pandas as pd
 
@@ -33,6 +35,8 @@ import cv2
 import pickle
 import joblib
 import numpy as np
+print("NumPy version:", np.__version__)
+
 from scipy.spatial.transform import Rotation as R
 
 import matplotlib.pyplot as plt
@@ -56,6 +60,8 @@ class LFDController(Node):
         # Topic Publishers
         self.vel_pub = self.create_publisher(
             TwistStamped, '/cartesian_velocity_controller/command', 10)
+        self.delta_pub = self.create_publisher(
+            Float32MultiArray, '/cartesian_delta', 10)   
         
         # --- Timer for high-rate velocity ramping ---
         self.timer_period = 0.001  # 500 Hz
@@ -68,7 +74,7 @@ class LFDController(Node):
         self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
         self.current_angular_accel = {'x': 0.0, 'y': 0.0, 'z': 0.0}
 
-        self.SCALING_FACTOR = 1e-3
+        self.SCALING_FACTOR = 1
         self.max_linear_accel   = 0.1 * self.SCALING_FACTOR   # m/s²
         self.max_angular_accel  = 0.2 * self.SCALING_FACTOR    # rad/s²
 
@@ -119,6 +125,10 @@ class LFDController(Node):
         #                        2.7978947162628174,
         #                        -2.0960772037506104]
 
+        self.goal_pose = [-0.031,
+                          0.794,
+                          0.474]
+
         self.disposal_joints_positions = []
 
         # Flags
@@ -131,8 +141,8 @@ class LFDController(Node):
         self.running_lfd_pick = False        
 
         # Thresholds
-        self.tof_threshold = 50                 # units in mm
-        self.air_pressure_threshold = 600       # units in hPa        
+        self.TOF_THRESHOLD = 50                 # units in mm
+        self.AIR_PRESSURE_THRESHOLD = 600       # units in hPa        
 
         # === Space Representation ===
         # State Space 
@@ -146,8 +156,8 @@ class LFDController(Node):
         self.ncols_wrench = 6
         # Action Space
         self.ncols_eef_velocity = 6
+        self.ncols_approach = self.ncols_tof + self.ncols_latent_image + self.ncols_joint_positions
 
-        self.ncols_approach = self.ncols_tof + self.ncols_latent_image
         self.ncols_contact = self.ncols_tof + self.ncols_air_pressure + self.ncols_wrench
         self.ncols_pick = self.ncols_tof + self.ncols_air_pressure + self.ncols_wrench        
 
@@ -163,14 +173,51 @@ class LFDController(Node):
         self.tof = np.zeros(self.ncols_tof)
         self.latent_image = np.zeros(self.ncols_latent_image)        
         self.eef_pose = np.zeros(self.ncols_eef_pose)
+        self.joint_positions = np.zeros(self.ncols_joint_positions)
+
         self.Y = np.zeros(self.ncols_eef_velocity)
         self.Y_base_frame = np.zeros(self.ncols_eef_velocity)
 
 
         # Load learned model
         phase = 'phase_1_approach'
-        model = 'rf'
-        timesteps = '2_timesteps'       
+        model = 'mlp'
+        timesteps = '0_timesteps'               
+        self.load_model(phase, model, timesteps)
+
+        # DataFrame to store normalized states over time
+        self.lfd_states_df = pd.DataFrame()
+        self.lfd_actions_df = pd.DataFrame()      
+
+        # Debugging variables
+        self.DEBUGGING_MODE = False
+        self.DEBUGGING_STEP = 0
+        self.debugging_mode_variables()
+        
+
+    def debugging_mode_variables(self):
+        # --- Data for debugging ---
+        # Replay sequence of actions from a previous demo
+        demos_folder = '/home/alejo/Documents/DATA/05_IL_preprocessed_(memory)/experiment_1_(pull)/phase_1_approach/0_timesteps'
+        demo_trial = 'trial_4_downsampled_aligned_data_transformed_(phase_1_approach)_(0_timesteps).csv'
+        debugging_demo_csv = os.path.join(demos_folder, demo_trial)
+        self.debugging_demo_pd = pd.read_csv(debugging_demo_csv)
+
+        # Load action names from yaml config
+        data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+        with open(data_columns_path, "r") as f:
+            cfg = yaml.safe_load(f)    
+        
+        self.action_cols = cfg['action_cols']       
+        self.n_action_cols = len(self.action_cols)     # These are the ouputs (actions)
+
+        # Load actions
+        self.debugging_actions_pd = self.debugging_demo_pd[self.action_cols]
+
+
+
+    def load_model(self, phase, model, timesteps):        
+
         BASE_DIR = '/home/alejo/Documents/DATA'
         # BASE_DIR = '/media/alejo/IL_data'
         model_path = os.path.join(BASE_DIR, '06_IL_learning/experiment_1_(pull)', phase, timesteps)
@@ -182,11 +229,7 @@ class LFDController(Node):
         self.lfd_X_std = np.load(os.path.join(model_path, model + '_Xstd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
         self.lfd_Y_mean = np.load(os.path.join(model_path, model + '_Ymean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
         self.lfd_Y_std = np.load(os.path.join(model_path, model + '_Ystd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
-
-        # DataFrame to store normalized states over time
-        self.lfd_states_df = pd.DataFrame()
-        self.lfd_actions_df = pd.DataFrame()      
-                   
+                          
     def move_to_home(self):
         self.get_logger().info('Waiting for action server...')
         if not self.action_client.wait_for_server(timeout_sec=5.0):
@@ -416,8 +459,8 @@ class LFDController(Node):
 
         while rclpy.ok() and self.running_lfd_approach:
 
-            if self.tof.item() < self.tof_threshold:
-                self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.tof_threshold}")                
+            if self.tof.item() < self.TOF_THRESHOLD:
+                self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                
                 self.send_stop_message()
                 self.running_lfd_approach = False
 
@@ -472,15 +515,17 @@ class LFDController(Node):
         :type msg: Image
         """
 
-        if self.running_lfd_approach:
+        if self.running_lfd_approach and not self.DEBUGGING_MODE:
             
             # --- Extract latent image ---
             self.latent_image = msg.data
 
             # --- Combine data ---
-            self.t_data = np.concatenate([self.tof, self.latent_image])            
+            self.t_data = np.concatenate([self.tof, self.latent_image, self.joint_states])            
             # Combine data, with past steps            
             self.X = np.concatenate([self.t_2_data, self.t_1_data, self.t_data])
+            self.X = np.concatenate([self.t_data])
+            
             
             # --- Normalize data ---                        
             self.X_norm = (self.X - self.lfd_X_mean) / self.lfd_X_std
@@ -522,7 +567,7 @@ class LFDController(Node):
             self.Y_base_frame = np.array([v_base[0], v_base[1], v_base[2], w_base[0], w_base[1], w_base[2]])
 
             # Scale down the velocities
-            scaling_factor = 1.0
+            scaling_factor = 1       # deltas were obtained at 1khz
             self.Y_base_frame = self.Y_base_frame * scaling_factor       
 
             y = self.Y
@@ -537,10 +582,14 @@ class LFDController(Node):
             y_base = self.Y_base_frame
             self.get_logger().info(f'Target actions in base frame: {y_base}') 
 
+            # Adjust velocities with feedback from goal pose
+
+
             # Send actions (twist)        
-            self.target_cmd.twist.linear.x = float(y_base[0])
-            self.target_cmd.twist.linear.y = float(y_base[1])
-            self.target_cmd.twist.linear.z = float(y_base[2])
+            self.KP = 1000
+            self.target_cmd.twist.linear.x = float(y_base[0]) + self.eef_pos_x_error * self.KP
+            self.target_cmd.twist.linear.y = float(y_base[1]) + self.eef_pos_y_error * self.KP
+            self.target_cmd.twist.linear.z = float(y_base[2]) + self.eef_pos_z_error * self.KP
             self.target_cmd.twist.angular.x = float(y_base[3])
             self.target_cmd.twist.angular.y = float(y_base[4])
             self.target_cmd.twist.angular.z = float(y_base[5])
@@ -555,6 +604,33 @@ class LFDController(Node):
             else:
                 self.t_1_data = self.t_data
                         
+        if self.running_lfd_approach and self.DEBUGGING_MODE:
+
+            # --- Get next action from debugging demo ---
+            # Get current step
+            
+            if self.DEBUGGING_STEP >= len(self.debugging_actions_pd):
+                self.get_logger().info("Debugging demo actions exhausted.")
+                self.send_stop_message()
+                self.running_lfd_approach = False
+                return
+            else:
+            
+                action_row = self.debugging_actions_pd.iloc[self.DEBUGGING_STEP]
+                y = action_row.values
+                
+                self.get_logger().info(f"Debugging mode - Step {self.DEBUGGING_STEP}, Action: {y}")
+
+                # Send actions (twist)        
+                # self.target_cmd.twist.linear.x = float(y[0])
+                # self.target_cmd.twist.linear.y = float(y[1])
+                # self.target_cmd.twist.linear.z = float(y[2])
+                # self.target_cmd.twist.angular.x = float(y[3])
+                # self.target_cmd.twist.angular.y = float(y[4])
+                # self.target_cmd.twist.angular.z = float(y[5])
+            
+                self.DEBUGGING_STEP += 1        
+            
         
     def publish_smoothed_velocity(self):
 
@@ -629,6 +705,10 @@ class LFDController(Node):
                                   self.eef_ori_y,
                                   self.eef_ori_z,
                                   self.eef_ori_w])
+        
+        self.eef_pos_x_error = self.goal_pose[0] - self.eef_pos_x
+        self.eef_pos_y_error = self.goal_pose[1] - self.eef_pos_y
+        self.eef_pos_z_error = self.goal_pose[2] - self.eef_pos_z
 
         # Update sensors average since last action
     
@@ -677,7 +757,8 @@ def main():
     os.makedirs(BAG_FILEPATH, exist_ok=True)
     
     batch_size = 10
-    node.get_logger().info(f"Starting lfd implementation with robot, session of {batch_size} demos.")
+    node.get_logger().info(f"Starting lfd implementation with robot, session of {batch_size} demos.")    
+
 
     for demo in range(batch_size):
 
@@ -720,7 +801,9 @@ def main():
 
         # -------------- Step 2: Run lfd controller ----------------        
         input("\n\033[1;32m4 - Press Enter to start ROBOT lfd implementation.\033[0m\n")        
+        node.DEBUGGING_MODE = True
         node.run_lfd_approach()      
+
 
         # Save states to CSV        
         csv_path = os.path.join(ROBOT_BAG_FILEPATH, 'lfd_recorded_data.csv')
