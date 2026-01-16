@@ -78,7 +78,7 @@ class LFDController(Node):
         self.max_linear_accel   = 0.1 * self.SCALING_FACTOR   # m/s²
         self.max_angular_accel  = 0.2 * self.SCALING_FACTOR    # rad/s²
 
-        self.max_linear_jerk    = 0.5 * self.SCALING_FACTOR    # m/s³
+        self.max_linear_jerk    = 0.1 * self.SCALING_FACTOR    # m/s³
         self.max_angular_jerk   = 1.0 * self.SCALING_FACTOR    # rad/s³   
 
         self.last_cmd_time = self.get_clock().now()
@@ -108,22 +108,22 @@ class LFDController(Node):
         self.trajectory_points = []       
 
         # Home position with eef pose starting on - x
-        self.home_positions = [0.6414350870607822,
-                               -1.5320604540253377,
-                               0.4850253317447517,
-                               -2.474376823551583,
-                               0.9726833812685999,
-                               2.1330229376987626,
-                               -1.0721952822461973]
+        # self.home_positions = [0.6414350870607822,
+        #                        -1.5320604540253377,
+        #                        0.4850253317447517,
+        #                        -2.474376823551583,
+        #                        0.9726833812685999,
+        #                        2.1330229376987626,
+        #                        -1.0721952822461973]
         
         # Home position with eef pose starting on + x
-        # self.home_positions = [1.8144304752349854,
-        #                        -1.0095794200897217,
-        #                        -0.8489214777946472,
-        #                        -2.585618019104004,
-        #                        0.9734971523284912,
-        #                        2.7978947162628174,
-        #                        -2.0960772037506104]
+        self.home_positions = [1.8144304752349854,
+                               -1.0095794200897217,
+                               -0.8489214777946472,
+                               -2.585618019104004,
+                               0.9734971523284912,
+                               2.7978947162628174,
+                               -2.0960772037506104]
 
         self.goal_pose = [-0.031,
                           0.794,
@@ -196,10 +196,11 @@ class LFDController(Node):
         
 
     def debugging_mode_variables(self):
+
         # --- Data for debugging ---
         # Replay sequence of actions from a previous demo
-        demos_folder = '/home/alejo/Documents/DATA/05_IL_preprocessed_(memory)/experiment_1_(pull)/phase_1_approach/0_timesteps'
-        demo_trial = 'trial_4_downsampled_aligned_data_transformed_(phase_1_approach)_(0_timesteps).csv'
+        demos_folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
+        demo_trial = 'trial_1_downsampled_aligned_data.csv'
         debugging_demo_csv = os.path.join(demos_folder, demo_trial)
         self.debugging_demo_pd = pd.read_csv(debugging_demo_csv)
 
@@ -209,11 +210,12 @@ class LFDController(Node):
             cfg = yaml.safe_load(f)    
         
         self.action_cols = cfg['action_cols']       
+
+        self.action_cols = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z']
         self.n_action_cols = len(self.action_cols)     # These are the ouputs (actions)
 
         # Load actions
         self.debugging_actions_pd = self.debugging_demo_pd[self.action_cols]
-
 
 
     def load_model(self, phase, model, timesteps):        
@@ -501,8 +503,6 @@ class LFDController(Node):
         self.tof = float(msg.data[3])
 
         self.tof = np.array([self.tof])
-
-        # Update sensors average since last action
                 
 
     def palm_camera_callback(self, msg: Float32MultiArray):
@@ -621,13 +621,16 @@ class LFDController(Node):
                 
                 self.get_logger().info(f"Debugging mode - Step {self.DEBUGGING_STEP}, Action: {y}")
 
+                # If using deltas, multiply by scaling factor
+                scaling_factor = 1000       # deltas were obtained at 1khz
+
                 # Send actions (twist)        
-                # self.target_cmd.twist.linear.x = float(y[0])
-                # self.target_cmd.twist.linear.y = float(y[1])
-                # self.target_cmd.twist.linear.z = float(y[2])
-                # self.target_cmd.twist.angular.x = float(y[3])
-                # self.target_cmd.twist.angular.y = float(y[4])
-                # self.target_cmd.twist.angular.z = float(y[5])
+                self.target_cmd.twist.linear.x = float(y[0]) * scaling_factor
+                self.target_cmd.twist.linear.y = float(y[1]) * scaling_factor
+                self.target_cmd.twist.linear.z = float(y[2]) * scaling_factor    
+                self.target_cmd.twist.angular.x = float(y[3]) * scaling_factor
+                self.target_cmd.twist.angular.y = float(y[4]) * scaling_factor
+                self.target_cmd.twist.angular.z = float(y[5]) * scaling_factor
             
                 self.DEBUGGING_STEP += 1        
             
@@ -682,7 +685,7 @@ class LFDController(Node):
 
             self.current_angular_accel[axis] = a_new
             setattr(self.current_cmd.twist.angular, axis, v_new)
-
+        
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
         self.vel_pub.publish(self.current_cmd)
 
@@ -802,6 +805,7 @@ def main():
         # -------------- Step 2: Run lfd controller ----------------        
         input("\n\033[1;32m4 - Press Enter to start ROBOT lfd implementation.\033[0m\n")        
         node.DEBUGGING_MODE = True
+        node.DEBUGGING_STEP = 0
         node.run_lfd_approach()      
 
 
