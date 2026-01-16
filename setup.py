@@ -13,9 +13,11 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', ['launch/lfd_gripper.launch.py']),
+        ('share/' + package_name + '/launch', ['launch/lfd_arm.launch.py']),
         ('share/' + package_name + '/resources', glob('lfd_apples/resources/*')),
         # Install data directory (JSONs, etc.)
         (os.path.join('share', package_name, 'data'), glob('lfd_apples/data/*.json')),        
+        ('share/' + package_name + '/config', glob('lfd_apples/config/*.yaml')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
