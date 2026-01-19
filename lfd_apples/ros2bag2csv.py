@@ -181,7 +181,7 @@ def plot_3dpose(df, engagement_time=None, disposal_time=None):
     x = np.array(df['_pose._position._x'].to_list(), dtype=float)
     y = np.array(df['_pose._position._y'].to_list(), dtype=float)
     z = np.array(df['_pose._position._z'].to_list(), dtype=float)      
-    t = np.array(df["elapsed_time"].to_list(), dtype=float)
+    
 
     # Orientation (quaternion)
     qx = np.array(df['_pose._orientation._x'].to_list(), dtype=float)
@@ -193,9 +193,10 @@ def plot_3dpose(df, engagement_time=None, disposal_time=None):
 
     # Split trajectory before and after engagement time
     if engagement_time is not None:
-        mask_before = t < engagement_time
-        mask_between = (t >= engagement_time) & (t < disposal_time)
-        mask_after = t >= disposal_time
+        elapsed_time = np.array(df["elapsed_time"].to_list(), dtype=float)
+        mask_before = elapsed_time < engagement_time
+        mask_between = (elapsed_time >= engagement_time) & (elapsed_time < disposal_time)
+        mask_after = elapsed_time >= disposal_time
 
         ax.plot(x[mask_before], y[mask_before], z[mask_before],
                 label='approach', color='orange', linewidth=2)
