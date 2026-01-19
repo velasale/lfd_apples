@@ -117,22 +117,22 @@ class LFDController(Node):
         self.joint_states = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         self.trajectory_points = []       
 
-        # # Home position with eef pose starting on - x
-        # self.home_positions = [0.6414350870607822,
-        #                        -1.5320604540253377,
-        #                        0.4850253317447517,
-        #                        -2.474376823551583,
-        #                        0.9726833812685999,
-        #                        2.1330229376987626,
-        #                        -1.0721952822461973]
+        # Home position with eef pose starting on - x
+        self.home_positions = [0.6414350870607822,
+                               -1.5320604540253377,
+                               0.4850253317447517,
+                               -2.474376823551583,
+                               0.9726833812685999,
+                               2.1330229376987626,
+                               -1.0721952822461973]
         
-        self.home_positions = [0.999066775911797,
-                               -1.40065131284954,
-                               0.661948245218958,
-                               -2.19926119331373,
-                                0.302544278069388,
-                                2.22893636433158,
-                                1.15896720707006]
+        # self.home_positions = [0.999066775911797,
+        #                        -1.40065131284954,
+        #                        0.661948245218958,
+        #                        -2.19926119331373,
+        #                         0.302544278069388,
+        #                         2.22893636433158,
+        #                         1.15896720707006]
 
 
         # Home position with eef pose starting on + x
@@ -219,7 +219,7 @@ class LFDController(Node):
         # --- Data for debugging ---
         # Replay sequence of actions from a previous demo
         demos_folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
-        demo_trial = 'trial_10_downsampled_aligned_data.csv'
+        demo_trial = 'trial_4_downsampled_aligned_data.csv'
         debugging_demo_csv = os.path.join(demos_folder, demo_trial)
         self.debugging_demo_pd = pd.read_csv(debugging_demo_csv)
 
@@ -480,7 +480,7 @@ class LFDController(Node):
 
         while rclpy.ok() and self.running_lfd_approach:
             
-            # self.tof = np.array([1000])  # Dummy value for testing
+            self.tof = np.array([1000])  # Dummy value for testing
 
             if self.tof.item() < self.TOF_THRESHOLD:
                 self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                
