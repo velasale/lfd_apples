@@ -20,6 +20,8 @@ import torch
 # Custom imports
 from lfd_apples.lfd_learning import VelocityMLP, DatasetForLearning  # make sure this class is imported
 from lfd_apples.lfd_lstm import LSTMRegressor
+from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array, plot_3dpose, fr3_fk, Trial
+from lfd_apples.lfd_data_preprocessing import parse_array_string
 
 import matplotlib
 matplotlib.use("TkAgg")  # non-interactive backend
@@ -759,6 +761,101 @@ def important_features(top=5):
         # print(sub_df)               
 
 
+
+def compare_trajectories():
+
+    """ Compare trajectories from robot trials, and derived from actions """
+
+    # =============== Benchmark: Load Original Trial csv ==============
+    folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
+    file = 'trial_10_downsampled_aligned_data.csv'
+    filepath = os.path.join(folder, file)
+    df_trial = pd.read_csv(filepath)    
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')  
+    max_range = 1.0
+    
+    x = np.array(df_trial['_pose._position._x'].to_list(), dtype=float)
+    y = np.array(df_trial['_pose._position._y'].to_list(), dtype=float)
+    z = np.array(df_trial['_pose._position._z'].to_list(), dtype=float)      
+
+    y_middle = (np.min(y) + np.max(y)) / 2
+    z_middle = (np.min(z) + np.max(z)) / 2
+    ax.set_xlim3d([-0.5, 0.5])
+    ax.set_ylim3d([y_middle - max_range/2, y_middle + max_range/2])
+    ax.set_zlim3d([z_middle - max_range/2, z_middle + max_range/2])
+    
+    ax.plot(x, y, z, label='Original Trial', color='black', linewidth=2)
+
+    ax.set_xlabel('x [m]')
+    ax.set_ylabel('y [m]')
+    ax.set_zlabel('z [m]')
+    ax.set_title('3D End-Effector Position')
+    ax.legend()    
+
+
+
+    # =============== Load Trials with actions applied ================    
+  
+    folder = '/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/trial_1/lfd_bag_main/bag_csvs'
+    file = 'joint_states.csv'
+    raw_data_path = os.path.join(folder, file)
+
+    df_raw = pd.read_csv(raw_data_path)        
+
+    df_raw["_position_as_list"] = df_raw["_position"].apply(parse_array_string)
+    df_raw["_velocity_as_list"] = df_raw["_velocity"].apply(parse_array_string)
+    df_raw["_effort_as_list"] = df_raw["_effort"].apply(parse_array_string)
+
+    # Split that list into multiple independent columns, and just take the first 7 joints
+    pos_expanded = pd.DataFrame(df_raw["_position_as_list"].apply(lambda x: x[:7]).tolist(), columns=["pos_joint_1", "pos_joint_2", "pos_joint_3", "pos_joint_4", "pos_joint_5", "pos_joint_6", "pos_joint_7"])
+    vel_expanded = pd.DataFrame(df_raw["_velocity_as_list"].apply(lambda x: x[:7]).tolist(), columns=["vel_joint_1", "vel_joint_2", "vel_joint_3", "vel_joint_4", "vel_joint_5", "vel_joint_6", "vel_joint_7"])
+    eff_expanded = pd.DataFrame(df_raw["_effort_as_list"].apply(lambda x: x[:7]).tolist(), columns=["eff_joint_1", "eff_joint_2", "eff_joint_3", "eff_joint_4", "eff_joint_5", "eff_joint_6", "eff_joint_7"])  
+
+    # Combine with the rest of the dataframe
+    df_final = pd.concat([df_raw["elapsed_time"], pos_expanded], axis=1)
+    cols = ['pos_joint_1', 'pos_joint_2', 'pos_joint_3', 'pos_joint_4', 'pos_joint_5', 'pos_joint_6', 'pos_joint_7']   
+    for i,row in df_final.iterrows():
+
+        q = row[cols].to_numpy(dtype=float)
+                
+        T, Ts = fr3_fk(q)
+        position = T[:3, 3]
+
+        df_final.loc[i, 'eef_x'] = position[0]
+        df_final.loc[i, 'eef_y'] = position[1]
+        df_final.loc[i, 'eef_z'] = position[2]    
+    
+    max_range = 1.0
+    
+    x = np.array(df_final['eef_x'].to_list(), dtype=float)
+    y = np.array(df_final['eef_y'].to_list(), dtype=float)
+    z = np.array(df_final['eef_z'].to_list(), dtype=float)      
+
+    y_middle = (np.min(y) + np.max(y)) / 2
+    z_middle = (np.min(z) + np.max(z)) / 2
+    ax.set_xlim3d([-0.5, 0.5])
+    ax.set_ylim3d([y_middle - max_range/2, y_middle + max_range/2])
+    ax.set_zlim3d([z_middle - max_range/2, z_middle + max_range/2])
+    
+    ax.plot(x, y, z, label='Trial_replay_with_actions_servoed', color='green', linewidth=2)
+
+    ax.set_xlabel('x [m]')
+    ax.set_ylabel('y [m]')
+    ax.set_zlabel('z [m]')
+    ax.set_title('3D End-Effector Position')
+    ax.legend()    
+
+
+    plt.show()
+    
+
+
+
+
+
+
 def main():
     
     folder = '/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_1_approach'
@@ -777,8 +874,10 @@ def main():
 if __name__ == '__main__':
 
     # main()
-    infer_actions()
+    # infer_actions()
     # infer_actions_all_set()
 
     # important_features(top=10)
+
+    compare_trajectories()
 
