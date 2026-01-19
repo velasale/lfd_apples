@@ -74,7 +74,7 @@ class LFDController(Node):
         self.timer_period = 0.001  # 500 Hz
         self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
-        self.create_timer(0.034, self.incoming_cam_sim)
+        # self.create_timer(0.034, self.incoming_cam_sim)
 
         # --- Velocity ramping variables ---
         self.current_cmd = TwistStamped()
@@ -83,7 +83,7 @@ class LFDController(Node):
         self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
         self.current_angular_accel = {'x': 0.0, 'y': 0.0, 'z': 0.0}
 
-        self.SCALING_FACTOR = 1
+        self.SCALING_FACTOR = 0.5e-3
         self.max_linear_accel   = 0.1 * self.SCALING_FACTOR   # m/s²
         self.max_angular_accel  = 0.2 * self.SCALING_FACTOR    # rad/s²
 
@@ -101,6 +101,7 @@ class LFDController(Node):
         
         # Controller names
         self.arm_controller = 'fr3_arm_controller'
+        self.twist_controller = 'fr3_twist_controller'
         self.gravity_controller = 'gravity_compensation_example_controller'
         self.eef_velocity_controller = 'cartesian_velocity_controller'
 
@@ -479,7 +480,7 @@ class LFDController(Node):
 
         while rclpy.ok() and self.running_lfd_approach:
             
-            self.tof = np.array([1000])  # Dummy value for testing
+            # self.tof = np.array([1000])  # Dummy value for testing
 
             if self.tof.item() < self.TOF_THRESHOLD:
                 self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                
@@ -677,7 +678,7 @@ class LFDController(Node):
                 self.get_logger().info(f"Debugging mode - Step {self.DEBUGGING_STEP}, Action: {y}")
 
                 # If using deltas, multiply by scaling factor
-                scaling_factor = 1e9      # deltas were obtained at 1khz
+                scaling_factor = 1000     # deltas were obtained at 1khz
 
                 # Send actions (twist)        
                 self.target_cmd.twist.linear.x = float(y[0]) * scaling_factor
@@ -741,7 +742,8 @@ class LFDController(Node):
             self.current_angular_accel[axis] = a_new
             setattr(self.current_cmd.twist.angular, axis, v_new)
         
-        self.current_cmd.twist = self.target_cmd.twist
+        self.current_cmd.twist = self.target_cmd.twist  # Uncomments to override smoothing
+
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
         self.servo_pub.publish(self.current_cmd)
 
@@ -846,10 +848,12 @@ def main():
 
         input("\n\033[1;32m - Press ENTER when you are done.\033[0m\n")    
 
-
+       
         # ------------ Step 2: Enable Servo Node Cartesian velocity controller ---------
-        node.swap_controller(node.gravity_controller, node.arm_controller)
-        time.sleep(1.0)    
+        node.swap_controller(node.gravity_controller, node.twist_controller)
+        time.sleep(1.0)  
+
+
         # Enable cartesian velocity controller
         node.get_logger().info("Enabling Servo Nodeo Cartesian velocity controller...")
         req = Trigger.Request()        
@@ -884,6 +888,8 @@ def main():
         input("\n\033[1;32m5 - Press Enter to dispose apple.\033[0m\n")
         # Dispose apple
         
+        node.swap_controller(node.twist_controller, node.arm_controller)
+        time.sleep(1.0)  
 
         # Stop recording
         stop_recording_bagfile(robot_rosbag_list)

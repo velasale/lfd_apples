@@ -32,7 +32,7 @@ scale:
 ## ======================= ServoNode Outputs ================
 # What type of topic does your robot driver expect?
 # Currently supported are std_msgs/Float64MultiArray or trajectory_msgs/JointTrajectory
-command_out_topic: /fr3_arm_controller/joint_trajectory # Publish outgoing commands here
+command_out_topic: /fr3_twist_controller/joint_trajectory # Publish outgoing commands here
 command_out_type: trajectory_msgs/JointTrajectory
 
 publish_joint_positions: true
