@@ -23,7 +23,7 @@ from lfd_apples.lfd_vision import extract_pooled_latent_vector
 # ROS2 imports
 from std_msgs.msg import Int16MultiArray
 from std_msgs.msg import Float32MultiArray
-from std_srvs.srv import SetBool
+from std_srvs.srv import SetBool, Trigger
 from geometry_msgs.msg import PoseStamped, TwistStamped, Twist
 from sensor_msgs.msg import Image
 
@@ -61,11 +61,20 @@ class LFDController(Node):
         self.vel_pub = self.create_publisher(
             TwistStamped, '/cartesian_velocity_controller/command', 10)
         self.delta_pub = self.create_publisher(
-            Float32MultiArray, '/cartesian_delta', 10)   
+            Float32MultiArray, '/cartesian_delta', 10)       
+        self.servo_pub = self.create_publisher(
+            TwistStamped, '/servo_node_lfd/delta_twist_cmds', 10)
+                
+        # Service Clients
+        self.servo_node_client = self.create_client(Trigger, '/servo_node_lfd/start_servo')
+        while not self.servo_node_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().warn('Waiting for servo node service...')
         
         # --- Timer for high-rate velocity ramping ---
         self.timer_period = 0.001  # 500 Hz
         self.create_timer(self.timer_period, self.publish_smoothed_velocity)
+
+        self.create_timer(0.034, self.incoming_cam_sim)
 
         # --- Velocity ramping variables ---
         self.current_cmd = TwistStamped()
@@ -107,7 +116,7 @@ class LFDController(Node):
         self.joint_states = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         self.trajectory_points = []       
 
-        # Home position with eef pose starting on - x
+        # # Home position with eef pose starting on - x
         # self.home_positions = [0.6414350870607822,
         #                        -1.5320604540253377,
         #                        0.4850253317447517,
@@ -116,14 +125,23 @@ class LFDController(Node):
         #                        2.1330229376987626,
         #                        -1.0721952822461973]
         
+        self.home_positions = [0.999066775911797,
+                               -1.40065131284954,
+                               0.661948245218958,
+                               -2.19926119331373,
+                                0.302544278069388,
+                                2.22893636433158,
+                                1.15896720707006]
+
+
         # Home position with eef pose starting on + x
-        self.home_positions = [1.8144304752349854,
-                               -1.0095794200897217,
-                               -0.8489214777946472,
-                               -2.585618019104004,
-                               0.9734971523284912,
-                               2.7978947162628174,
-                               -2.0960772037506104]
+        # self.home_positions = [1.8144304752349854,
+        #                        -1.0095794200897217,
+        #                        -0.8489214777946472,
+        #                        -2.585618019104004,
+        #                        0.9734971523284912,
+        #                        2.7978947162628174,
+        #                        -2.0960772037506104]
 
         self.goal_pose = [-0.031,
                           0.794,
@@ -200,7 +218,7 @@ class LFDController(Node):
         # --- Data for debugging ---
         # Replay sequence of actions from a previous demo
         demos_folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
-        demo_trial = 'trial_1_downsampled_aligned_data.csv'
+        demo_trial = 'trial_10_downsampled_aligned_data.csv'
         debugging_demo_csv = os.path.join(demos_folder, demo_trial)
         self.debugging_demo_pd = pd.read_csv(debugging_demo_csv)
 
@@ -460,6 +478,8 @@ class LFDController(Node):
         self.running_lfd_approach = True
 
         while rclpy.ok() and self.running_lfd_approach:
+            
+            self.tof = np.array([1000])  # Dummy value for testing
 
             if self.tof.item() < self.TOF_THRESHOLD:
                 self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                
@@ -503,7 +523,42 @@ class LFDController(Node):
         self.tof = float(msg.data[3])
 
         self.tof = np.array([self.tof])
+
+    def incoming_cam_sim(self):
+        """
+        Simulate incoming latent image from palm camera by publishing dummy data.
+        This is for testing purposes only.
+        """
+
+        if self.running_lfd_approach and self.DEBUGGING_MODE:
+
+            # --- Get next action from debugging demo ---
+            # Get current step
+            
+            if self.DEBUGGING_STEP >= len(self.debugging_actions_pd):
+                self.get_logger().info("Debugging demo actions exhausted.")
+                self.send_stop_message()
+                self.running_lfd_approach = False
+                return
+            else:
+            
+                action_row = self.debugging_actions_pd.iloc[self.DEBUGGING_STEP]
+                y = action_row.values
                 
+                self.get_logger().info(f"Debugging mode - Step {self.DEBUGGING_STEP}, Action: {y}")
+
+                # If using deltas, multiply by scaling factor
+                scaling_factor = 1000       # deltas were obtained at 1khz
+
+                # Send actions (twist)        
+                self.target_cmd.twist.linear.x = float(y[0]) * scaling_factor
+                self.target_cmd.twist.linear.y = float(y[1]) * scaling_factor
+                self.target_cmd.twist.linear.z = float(y[2]) * scaling_factor    
+                self.target_cmd.twist.angular.x = float(y[3]) * scaling_factor
+                self.target_cmd.twist.angular.y = float(y[4]) * scaling_factor
+                self.target_cmd.twist.angular.z = float(y[5]) * scaling_factor
+            
+                self.DEBUGGING_STEP += 1           
 
     def palm_camera_callback(self, msg: Float32MultiArray):
         """
@@ -622,7 +677,7 @@ class LFDController(Node):
                 self.get_logger().info(f"Debugging mode - Step {self.DEBUGGING_STEP}, Action: {y}")
 
                 # If using deltas, multiply by scaling factor
-                scaling_factor = 1000       # deltas were obtained at 1khz
+                scaling_factor = 1e9      # deltas were obtained at 1khz
 
                 # Send actions (twist)        
                 self.target_cmd.twist.linear.x = float(y[0]) * scaling_factor
@@ -686,8 +741,9 @@ class LFDController(Node):
             self.current_angular_accel[axis] = a_new
             setattr(self.current_cmd.twist.angular, axis, v_new)
         
+        self.current_cmd.twist = self.target_cmd.twist
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
-        self.vel_pub.publish(self.current_cmd)
+        self.servo_pub.publish(self.current_cmd)
 
 
     def eef_pose_callback(self, msg: PoseStamped):
@@ -791,9 +847,15 @@ def main():
         input("\n\033[1;32m - Press ENTER when you are done.\033[0m\n")    
 
 
+        # ------------ Step 2: Enable Servo Node Cartesian velocity controller ---------
+        node.swap_controller(node.gravity_controller, node.arm_controller)
+        time.sleep(1.0)    
         # Enable cartesian velocity controller
-        node.get_logger().info("Switching to Cartesian velocity controller...")
-        node.swap_controller(node.gravity_controller, node.eef_velocity_controller)     
+        node.get_logger().info("Enabling Servo Nodeo Cartesian velocity controller...")
+        req = Trigger.Request()        
+        node.servo_node_client.call_async(req)
+
+        # node.swap_controller(node.gravity_controller, node.eef_velocity_controller)     
         time.sleep(1.0)        
         # node.swap_controller(node.arm_controller, node.eef_velocity_controller)
 
@@ -821,7 +883,7 @@ def main():
         # -------------- Step 3: Dispose apple ----------------
         input("\n\033[1;32m5 - Press Enter to dispose apple.\033[0m\n")
         # Dispose apple
-        node.swap_controller(node.eef_velocity_controller, node.arm_controller)        
+        
 
         # Stop recording
         stop_recording_bagfile(robot_rosbag_list)
