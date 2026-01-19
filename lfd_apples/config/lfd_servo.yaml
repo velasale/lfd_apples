@@ -14,12 +14,12 @@ joint_command_in_topic: ~/delta_joint_cmds # Topic for incoming joint angle comm
 joint_topic: /joint_states
 
 ## Properties of incoming commands
-command_in_type: "unitless" # "unitless"> in the range [-1:1], as if from joystick. "speed_units"> cmds are in m/s and rad/s
+command_in_type: "speed_units" # "unitless"> in the range [-1:1], as if from joystick. "speed_units"> cmds are in m/s and rad/s
 
 ## Scaling of incoming commands
 scale:
   # Scale parameters are only used if command_in_type=="unitless"
-  linear:  2.0  # Max linear velocity. Unit is [m/s]. Only used for Cartesian commands.
+  linear:  1.0  # Max linear velocity. Unit is [m/s]. Only used for Cartesian commands.
   rotational:  2.0 # Max angular velocity. Unit is [rad/s]. Only used for Cartesian commands.
   # Max joint angular/linear velocity. Only used for joint commands on joint_command_in_topic.
   joint: 0.5
