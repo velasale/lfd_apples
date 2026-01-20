@@ -42,6 +42,25 @@ from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 
 
+
+class EMA():
+    '''
+    Exponential Moving Average
+    It is causal, first order low-pass filter
+    '''
+
+    def __init__(self, alpha):
+        self.alpha = alpha
+        self.y = None
+
+    def update(self, x):
+        if self.y is None:
+            self.y = x          # initialize with first sample
+        else:
+            self.y = self.alpha * x + (1.0 - self.alpha) * self.y
+        return self.y
+
+
 class LFDController(Node):
 
     def __init__(self):
@@ -103,8 +122,7 @@ class LFDController(Node):
         self.arm_controller = 'fr3_arm_controller'
         self.twist_controller = 'fr3_twist_controller'
         self.gravity_controller = 'gravity_compensation_example_controller'
-        self.eef_velocity_controller = 'cartesian_velocity_controller'
-
+     
         # Switch controller client
         self.switch_client = self.create_client(SwitchController, '/controller_manager/switch_controller')
         self.switch_client.wait_for_service()
@@ -196,6 +214,13 @@ class LFDController(Node):
 
         self.Y = np.zeros(self.ncols_eef_velocity)
         self.Y_base_frame = np.zeros(self.ncols_eef_velocity)
+
+        # Gripper Signal Variables
+        self.ema_alpha = 0.5
+        self.ema_scA = EMA(self.ema_alpha)
+        self.ema_scB = EMA(self.ema_alpha)
+        self.ema_scC = EMA(self.ema_alpha)
+        self.ema_tof = EMA(self.ema_alpha)
 
 
         # Load learned model
@@ -480,9 +505,9 @@ class LFDController(Node):
 
         while rclpy.ok() and self.running_lfd_approach:
             
-            self.tof = np.array([1000])  # Dummy value for testing
+            # self.tof = np.array([1000])  # Dummy value for testing
 
-            if self.tof.item() < self.TOF_THRESHOLD:
+            if self.tof < self.TOF_THRESHOLD:
                 self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                
                 self.send_stop_message()
                 self.running_lfd_approach = False
@@ -523,7 +548,13 @@ class LFDController(Node):
         self.scC = float(msg.data[2])
         self.tof = float(msg.data[3])
 
-        self.tof = np.array([self.tof])
+        # Apply EMA filtering to match conditions durint model training
+        self.scA = self.ema_scA.update(self.scA)
+        self.scB = self.ema_scB.update(self.scB)
+        self.scC = self.ema_scC.update(self.scC)
+        self.tof = self.ema_tof.update(self.tof)
+
+        self.tof_for_state = np.array([self.tof])
 
     def incoming_cam_sim(self):
         """
@@ -560,6 +591,7 @@ class LFDController(Node):
                 self.target_cmd.twist.angular.z = float(y[5]) * scaling_factor
             
                 self.DEBUGGING_STEP += 1           
+
 
     def palm_camera_callback(self, msg: Float32MultiArray):
         """
@@ -702,47 +734,47 @@ class LFDController(Node):
         if dt <= 0.0:
             return
 
-        # --- Linear axes ---
-        for axis in ['x', 'y', 'z']:
-            v_cur = getattr(self.current_cmd.twist.linear, axis)
-            v_tgt = getattr(self.target_cmd.twist.linear, axis)
-            a_cur = self.current_linear_accel[axis]
+        # # --- Linear axes ---
+        # for axis in ['x', 'y', 'z']:
+        #     v_cur = getattr(self.current_cmd.twist.linear, axis)
+        #     v_tgt = getattr(self.target_cmd.twist.linear, axis)
+        #     a_cur = self.current_linear_accel[axis]
 
-            # Desired acceleration
-            a_des = (v_tgt - v_cur) / dt
-            a_des = np.clip(a_des, -self.max_linear_accel, self.max_linear_accel)
+        #     # Desired acceleration
+        #     a_des = (v_tgt - v_cur) / dt
+        #     a_des = np.clip(a_des, -self.max_linear_accel, self.max_linear_accel)
 
-            # Jerk-limited acceleration update
-            da = a_des - a_cur
-            da = np.clip(da, -self.max_linear_jerk * dt,
-                            self.max_linear_jerk * dt)
+        #     # Jerk-limited acceleration update
+        #     da = a_des - a_cur
+        #     da = np.clip(da, -self.max_linear_jerk * dt,
+        #                     self.max_linear_jerk * dt)
 
-            a_new = a_cur + da
-            v_new = v_cur + a_new * dt
+        #     a_new = a_cur + da
+        #     v_new = v_cur + a_new * dt
 
-            self.current_linear_accel[axis] = a_new
-            setattr(self.current_cmd.twist.linear, axis, v_new)
+        #     self.current_linear_accel[axis] = a_new
+        #     setattr(self.current_cmd.twist.linear, axis, v_new)
 
-        # --- Angular axes ---
-        for axis in ['x', 'y', 'z']:
-            v_cur = getattr(self.current_cmd.twist.angular, axis)
-            v_tgt = getattr(self.target_cmd.twist.angular, axis)
-            a_cur = self.current_angular_accel[axis]
+        # # --- Angular axes ---
+        # for axis in ['x', 'y', 'z']:
+        #     v_cur = getattr(self.current_cmd.twist.angular, axis)
+        #     v_tgt = getattr(self.target_cmd.twist.angular, axis)
+        #     a_cur = self.current_angular_accel[axis]
 
-            a_des = (v_tgt - v_cur) / dt
-            a_des = np.clip(a_des, -self.max_angular_accel, self.max_angular_accel)
+        #     a_des = (v_tgt - v_cur) / dt
+        #     a_des = np.clip(a_des, -self.max_angular_accel, self.max_angular_accel)
 
-            da = a_des - a_cur
-            da = np.clip(da, -self.max_angular_jerk * dt,
-                            self.max_angular_jerk * dt)
+        #     da = a_des - a_cur
+        #     da = np.clip(da, -self.max_angular_jerk * dt,
+        #                     self.max_angular_jerk * dt)
 
-            a_new = a_cur + da
-            v_new = v_cur + a_new * dt
+        #     a_new = a_cur + da
+        #     v_new = v_cur + a_new * dt
 
-            self.current_angular_accel[axis] = a_new
-            setattr(self.current_cmd.twist.angular, axis, v_new)
+        #     self.current_angular_accel[axis] = a_new
+        #     setattr(self.current_cmd.twist.angular, axis, v_new)
         
-        self.current_cmd.twist = self.target_cmd.twist  # Uncomments to override smoothing
+        self.current_cmd.twist = self.target_cmd.twist  # Uncomment to override smoothing
 
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
         self.servo_pub.publish(self.current_cmd)
@@ -823,8 +855,8 @@ def main():
 
     for demo in range(batch_size):
 
-        node.get_logger().info("\033[1;32m ---------- Press Enter to start lfd implementation trial {}/10 ----------\033[0m".format(demo+1))
-        input()  # Wait for user to press Enter
+        node.get_logger().info("\033[1;32m ---------- Press ENTER key to start lfd implementation trial {}/10 ----------\033[0m".format(demo+1))
+        input()  
       
         # ------------ Step 0: Initial configuration ----------------
         TRIAL = find_next_trial_number(BAG_FILEPATH, prefix="trial_")
@@ -832,48 +864,38 @@ def main():
         # HUMAN_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'human')
         ROBOT_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL)              
 
-        save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL)) 
-        
+        save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))         
 
         # ------------ Step 1: Move robot to home position ---------
-        node.get_logger().info("Moving to home position...")
+        node.get_logger().info("STEP1: Arm moving to home position... wait")
         while not node.move_to_home():
             pass
 
-        # Enable freedrive mode and record demonstration                
+        # ------------ Step 2: Allow free drive if needed ---------
         node.swap_controller(node.arm_controller, node.gravity_controller)
-        time.sleep(1.0)        
-        # Start recording                
-        node.get_logger().info("Human Demo. Free-drive arm close to apple.")        
-
-        input("\n\033[1;32m - Press ENTER when you are done.\033[0m\n")    
-
+        time.sleep(1.0)                
+        node.get_logger().info("\n\033[1;32m STEP 2: Free-drive arm until apple in camera FOV. \n\n Press ENTER key when you are done.\033[0m\n")        
+        input()    
        
-        # ------------ Step 2: Enable Servo Node Cartesian velocity controller ---------
+        # ------------ Step 3: Enable Servo Node Cartesian velocity controller ---------
         node.swap_controller(node.gravity_controller, node.twist_controller)
         time.sleep(1.0)  
 
-
-        # Enable cartesian velocity controller
-        node.get_logger().info("Enabling Servo Nodeo Cartesian velocity controller...")
+        node.get_logger().info("Enabling Moveit2 Servo Node for twist controller...")
         req = Trigger.Request()        
         node.servo_node_client.call_async(req)
 
-        # node.swap_controller(node.gravity_controller, node.eef_velocity_controller)     
         time.sleep(1.0)        
-        # node.swap_controller(node.arm_controller, node.eef_velocity_controller)
 
-        # Start recording
-        input("\n\033[1;32m3 - Place apple on the proxy. Press ENTER when done.\033[0m\n")
+        # Start bag recording
+        input("\n\033[1;32m3 - Place apple on the proxy. \n\nPress ENTER key when done.\033[0m\n")
         robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
 
-
-        # -------------- Step 2: Run lfd controller ----------------        
-        input("\n\033[1;32m4 - Press Enter to start ROBOT lfd implementation.\033[0m\n")        
+        # -------------- Step 4: Run lfd controller ----------------        
+        input("\n\033[1;32m4 STEP 4: Press ENTER key to start ROBOT lfd implementation.\033[0m\n")        
         node.DEBUGGING_MODE = True
         node.DEBUGGING_STEP = 0
         node.run_lfd_approach()      
-
 
         # Save states to CSV        
         csv_path = os.path.join(ROBOT_BAG_FILEPATH, 'lfd_recorded_data.csv')
@@ -881,17 +903,15 @@ def main():
         node.get_logger().info(f"LFD approach data saved to {csv_path}")
         csv_path = os.path.join(ROBOT_BAG_FILEPATH, 'lfd_actions.csv')
         node.lfd_actions_df.to_csv(csv_path, index=False, header=False)
-        node.get_logger().info(f"LFD approach actions saved to {csv_path}")        
-        
+        node.get_logger().info(f"LFD approach actions saved to {csv_path}")               
 
-        # -------------- Step 3: Dispose apple ----------------
-        input("\n\033[1;32m5 - Press Enter to dispose apple.\033[0m\n")
-        # Dispose apple
+        # -------------- Step 5: Dispose apple ----------------
+        input("\n\033[1;32m5 STEP 5: Press ENTER key to dispose apple.\033[0m\n")
         
         node.swap_controller(node.twist_controller, node.arm_controller)
         time.sleep(1.0)  
 
-        # Stop recording
+        # Stop bag recording
         stop_recording_bagfile(robot_rosbag_list)
 
         # Check data
