@@ -66,6 +66,48 @@ class LFDController(Node):
     def __init__(self):
         super().__init__('move_to_home_and_freedrive')
 
+        self.initialize_ros_topics()
+        self.initialize_ros_service_clients()
+        self.initialize_ros_controller_properties()      
+        self.initialize_ros_timers()
+        self.initialize_flags()
+
+        self.initialize_state_variables()
+        self.initialize_debugging_mode_variables()        
+        self.initialize_signal_variables_and_thresholds()
+        self.initialize_arm_poses()      
+   
+    
+        # --- Velocity ramping variables ---
+        self.current_cmd = TwistStamped()
+        self.target_cmd = TwistStamped()        
+
+        self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        self.current_angular_accel = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+
+        self.SCALING_FACTOR = 0.5e-3
+        self.max_linear_accel   = 0.1 * self.SCALING_FACTOR   # m/s²
+        self.max_angular_accel  = 0.2 * self.SCALING_FACTOR    # rad/s²
+
+        self.max_linear_jerk    = 0.1 * self.SCALING_FACTOR    # m/s³
+        self.max_angular_jerk   = 1.0 * self.SCALING_FACTOR    # rad/s³   
+
+        self.last_cmd_time = self.get_clock().now()   
+
+        self.joint_names = [f"fr3_joint{i+1}" for i in range(7)]
+        self.joint_states = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        self.trajectory_points = []       
+  
+        # Load learned model
+        phase = 'phase_1_approach'
+        model = 'mlp'
+        timesteps = '0_timesteps'               
+        self.load_model(phase, model, timesteps)              
+        
+
+    # === Initialization functions ===
+    def initialize_ros_topics(self):
+
         # Topic Subscribers
         self.distance_sub = self.create_subscription(
             Int16MultiArray, 'microROS/sensor_data', self.gripper_sensors_callback, 10)
@@ -83,33 +125,17 @@ class LFDController(Node):
             Float32MultiArray, '/cartesian_delta', 10)       
         self.servo_pub = self.create_publisher(
             TwistStamped, '/servo_node_lfd/delta_twist_cmds', 10)
-                
+
+
+    def initialize_ros_service_clients(self):
+
         # Service Clients
         self.servo_node_client = self.create_client(Trigger, '/servo_node_lfd/start_servo')
         while not self.servo_node_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('Waiting for servo node service...')
-        
-        # --- Timer for high-rate velocity ramping ---
-        self.timer_period = 0.001  # 500 Hz
-        self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
-        # self.create_timer(0.034, self.incoming_cam_sim)
 
-        # --- Velocity ramping variables ---
-        self.current_cmd = TwistStamped()
-        self.target_cmd = TwistStamped()        
-
-        self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
-        self.current_angular_accel = {'x': 0.0, 'y': 0.0, 'z': 0.0}
-
-        self.SCALING_FACTOR = 0.5e-3
-        self.max_linear_accel   = 0.1 * self.SCALING_FACTOR   # m/s²
-        self.max_angular_accel  = 0.2 * self.SCALING_FACTOR    # rad/s²
-
-        self.max_linear_jerk    = 0.1 * self.SCALING_FACTOR    # m/s³
-        self.max_angular_jerk   = 1.0 * self.SCALING_FACTOR    # rad/s³   
-
-        self.last_cmd_time = self.get_clock().now()
+    def initialize_ros_controller_properties(self):
 
         # Action Client
         self.action_client = ActionClient(
@@ -131,12 +157,107 @@ class LFDController(Node):
         self.load_client = self.create_client(LoadController, '/controller_manager/load_controller')
         self.load_client.wait_for_service()
 
-        self.joint_names = [f"fr3_joint{i+1}" for i in range(7)]
-        self.joint_states = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        self.trajectory_points = []       
+        # Controller gain for delta
+        # Converts deltas into m/s and rad/s
+        # In our case deltas were obtained for delta_times = 1msec, hence gain = 1/0.001 = 1000
+        self.DELTA_GAIN = 900      
+
+
+    def initialize_state_variables(self):
+        '''
+        Space Representation for lfd inference        
+        '''
+        
+        # State Space 
+        self.ncols_tof = 1
+        self.ncols_latent_image = 64
+        self.ncols_eef_pose = 7        
+        self.ncols_air_pressure = 3
+        self.ncols_joint_positions = 7
+        self.ncols_joint_velocities = 7
+        self.ncols_joint_efforts = 7
+        self.ncols_wrench = 6
+
+        # Action Space
+        self.ncols_eef_velocity = 6
+        self.ncols_approach = self.ncols_tof + self.ncols_latent_image + self.ncols_joint_positions
+
+        self.ncols_contact = self.ncols_tof + self.ncols_air_pressure + self.ncols_wrench
+        self.ncols_pick = self.ncols_tof + self.ncols_air_pressure + self.ncols_wrench        
+
+        self.KEEP_ACTIONS_MEMORY = False
+        previous_timesteps_ncols = self.ncols_approach  
+        if self.KEEP_ACTIONS_MEMORY:
+            previous_timesteps_ncols += self.ncols_eef_velocity  # Add action space dimensions         
+        self.t_2_data = np.zeros(previous_timesteps_ncols)       
+        self.t_1_data = np.zeros(previous_timesteps_ncols)            
+
+        # Initialize state space arrays
+        self.t_data = []
+        self.tof = np.zeros(self.ncols_tof)
+        self.latent_image = np.zeros(self.ncols_latent_image)        
+        self.eef_pose = np.zeros(self.ncols_eef_pose)
+        self.joint_positions = np.zeros(self.ncols_joint_positions)
+
+        self.Y = np.zeros(self.ncols_eef_velocity)
+        self.Y_base_frame = np.zeros(self.ncols_eef_velocity)
+
+        # DataFrames to store normalized states over time
+        self.lfd_states_df = pd.DataFrame()
+        self.lfd_actions_df = pd.DataFrame()      
+
+
+    def initialize_debugging_mode_variables(self):
+        '''
+        These variables are to be used while DEBUG mode is on
+        In this mode, the model is not used, instead a prerecorded demo is replayed
+        
+        :param self: Description
+        '''
+
+        # Debugging variables
+        self.DEBUGGING_MODE = False
+        self.DEBUGGING_STEP = 0
+
+        # --- Data for debugging ---
+        # Replay sequence of actions from a previous demo
+        demos_folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
+        demo_trial = 'trial_4_downsampled_aligned_data.csv'
+        debugging_demo_csv = os.path.join(demos_folder, demo_trial)
+        self.debugging_demo_pd = pd.read_csv(debugging_demo_csv)
+
+        # Load action names from yaml config
+        data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+        with open(data_columns_path, "r") as f:
+            cfg = yaml.safe_load(f)    
+        
+        self.action_cols = cfg['action_cols']       
+
+        self.action_cols = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z']
+        self.n_action_cols = len(self.action_cols)     # These are the ouputs (actions)
+
+        # Load actions
+        self.debugging_actions_pd = self.debugging_demo_pd[self.action_cols]
+
+
+    def initialize_signal_variables_and_thresholds(self):        
+
+        # Thresholds
+        self.TOF_THRESHOLD = 50                 # units in mm
+        self.AIR_PRESSURE_THRESHOLD = 600       # units in hPa        
+       
+        # Gripper Signal Variables
+        self.ema_alpha = 0.5
+        self.ema_scA = EMA(self.ema_alpha)
+        self.ema_scB = EMA(self.ema_alpha)
+        self.ema_scC = EMA(self.ema_alpha)
+        self.ema_tof = EMA(self.ema_alpha)
+
+
+    def initialize_arm_poses(self):
 
         # Home position with eef pose starting on - x
-        self.home_positions = [0.6414350870607822,
+        self.HOME_POSITIONS = [0.6414350870607822,
                                -1.5320604540253377,
                                0.4850253317447517,
                                -2.474376823551583,
@@ -166,8 +287,11 @@ class LFDController(Node):
                           0.794,
                           0.474]
 
-        self.disposal_joints_positions = []
+        self.DISPOSAL_POSITIONS = []
 
+
+    def initialize_flags(self):
+        
         # Flags
         self.approach_accomplished = False
         self.contact_accomplished = False
@@ -177,134 +301,17 @@ class LFDController(Node):
         self.running_lfd_contact = False
         self.running_lfd_pick = False        
 
-        # Thresholds
-        self.TOF_THRESHOLD = 50                 # units in mm
-        self.AIR_PRESSURE_THRESHOLD = 600       # units in hPa        
 
-        # === Space Representation ===
-        # State Space 
-        self.ncols_tof = 1
-        self.ncols_latent_image = 64
-        self.ncols_eef_pose = 7        
-        self.ncols_air_pressure = 3
-        self.ncols_joint_positions = 7
-        self.ncols_joint_velocities = 7
-        self.ncols_joint_efforts = 7
-        self.ncols_wrench = 6
-        # Action Space
-        self.ncols_eef_velocity = 6
-        self.ncols_approach = self.ncols_tof + self.ncols_latent_image + self.ncols_joint_positions
-
-        self.ncols_contact = self.ncols_tof + self.ncols_air_pressure + self.ncols_wrench
-        self.ncols_pick = self.ncols_tof + self.ncols_air_pressure + self.ncols_wrench        
-
-        self.KEEP_ACTIONS_MEMORY = False
-        previous_timesteps_ncols = self.ncols_approach  
-        if self.KEEP_ACTIONS_MEMORY:
-            previous_timesteps_ncols += self.ncols_eef_velocity  # Add action space dimensions         
-        self.t_2_data = np.zeros(previous_timesteps_ncols)       
-        self.t_1_data = np.zeros(previous_timesteps_ncols)            
-
-        # Initialize state space arrays
-        self.t_data = []
-        self.tof = np.zeros(self.ncols_tof)
-        self.latent_image = np.zeros(self.ncols_latent_image)        
-        self.eef_pose = np.zeros(self.ncols_eef_pose)
-        self.joint_positions = np.zeros(self.ncols_joint_positions)
-
-        self.Y = np.zeros(self.ncols_eef_velocity)
-        self.Y_base_frame = np.zeros(self.ncols_eef_velocity)
-
-        # Gripper Signal Variables
-        self.ema_alpha = 0.5
-        self.ema_scA = EMA(self.ema_alpha)
-        self.ema_scB = EMA(self.ema_alpha)
-        self.ema_scC = EMA(self.ema_alpha)
-        self.ema_tof = EMA(self.ema_alpha)
-
-
-        # Load learned model
-        phase = 'phase_1_approach'
-        model = 'mlp'
-        timesteps = '0_timesteps'               
-        self.load_model(phase, model, timesteps)
-
-        # DataFrame to store normalized states over time
-        self.lfd_states_df = pd.DataFrame()
-        self.lfd_actions_df = pd.DataFrame()      
-
-        # Debugging variables
-        self.DEBUGGING_MODE = False
-        self.DEBUGGING_STEP = 0
-        self.debugging_mode_variables()
+    def initialize_ros_timers(self):        
         
+        # --- Timer for high-rate velocity ramping ---
+        self.timer_period = 0.001  # 500 Hz
+        self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
-    def debugging_mode_variables(self):
-
-        # --- Data for debugging ---
-        # Replay sequence of actions from a previous demo
-        demos_folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
-        demo_trial = 'trial_4_downsampled_aligned_data.csv'
-        debugging_demo_csv = os.path.join(demos_folder, demo_trial)
-        self.debugging_demo_pd = pd.read_csv(debugging_demo_csv)
-
-        # Load action names from yaml config
-        data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
-        with open(data_columns_path, "r") as f:
-            cfg = yaml.safe_load(f)    
-        
-        self.action_cols = cfg['action_cols']       
-
-        self.action_cols = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z']
-        self.n_action_cols = len(self.action_cols)     # These are the ouputs (actions)
-
-        # Load actions
-        self.debugging_actions_pd = self.debugging_demo_pd[self.action_cols]
+        # self.create_timer(0.034, self.incoming_cam_sim)
 
 
-    def load_model(self, phase, model, timesteps):        
-
-        BASE_DIR = '/home/alejo/Documents/DATA'
-        # BASE_DIR = '/media/alejo/IL_data'
-        model_path = os.path.join(BASE_DIR, '06_IL_learning/experiment_1_(pull)', phase, timesteps)
-        model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
-        with open(os.path.join(model_path, model_name), "rb") as f:
-            # self.lfd_model = pickle.load(f)
-            self.lfd_model = joblib.load(f)
-        self.lfd_X_mean = np.load(os.path.join(model_path, model + '_Xmean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-        self.lfd_X_std = np.load(os.path.join(model_path, model + '_Xstd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
-        self.lfd_Y_mean = np.load(os.path.join(model_path, model + '_Ymean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-        self.lfd_Y_std = np.load(os.path.join(model_path, model + '_Ystd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
-                          
-    def move_to_home(self):
-        self.get_logger().info('Waiting for action server...')
-        if not self.action_client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error('Action server not available')
-            return False                 
-
-        goal_msg = FollowJointTrajectory.Goal()
-        goal_msg.trajectory.joint_names = self.joint_names
-        point = JointTrajectoryPoint()
-        point.positions = self.home_positions
-        point.time_from_start.sec = 5
-        goal_msg.trajectory.points.append(point)
-
-        self.get_logger().info('Sending trajectory goal...')
-        send_goal_future = self.action_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self, send_goal_future)
-        goal_handle = send_goal_future.result()
-
-        if not goal_handle.accepted:
-            self.get_logger().error('Goal rejected')
-            return False
-
-        self.get_logger().info('Goal accepted, waiting for result...')
-        result_future = goal_handle.get_result_async()
-        rclpy.spin_until_future_complete(self, result_future)
-        result = result_future.result().result
-        self.get_logger().info(f'Motion complete with error code: {result.error_code}')
-        return True
-
+    # === ROS controller functions ===
     def ensure_controller_loaded(self, controller_name):
         """Load a controller if not already loaded."""
         # --- Step 1: check if controller is already loaded
@@ -330,6 +337,7 @@ class LFDController(Node):
         else:
             self.get_logger().error(f"Failed to load controller '{controller_name}'.")
 
+
     def configure_controller(self, controller_name):
         """Configure controller to inactive if it's not already inactive."""
         list_client = self.create_client(ListControllers, '/controller_manager/list_controllers')
@@ -354,7 +362,8 @@ class LFDController(Node):
             self.get_logger().info(f'Controller {controller_name} configured to inactive.')
         except subprocess.CalledProcessError:
             self.get_logger().error(f'Failed to configure {controller_name} to inactive.')
-        
+
+
     def swap_controller(self, stop_controller: str, start_controller: str, settle_time: float = 1.0):
         """
         Safely switch from one ROS2 controller to another (Franka-safe).
@@ -405,6 +414,55 @@ class LFDController(Node):
         self.get_logger().info(f"✅ {start_controller} activated successfully.")
         return True
 
+
+
+
+    def load_model(self, phase, model, timesteps):        
+
+        BASE_DIR = '/home/alejo/Documents/DATA'
+        # BASE_DIR = '/media/alejo/IL_data'
+        model_path = os.path.join(BASE_DIR, '06_IL_learning/experiment_1_(pull)', phase, timesteps)
+        model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
+        with open(os.path.join(model_path, model_name), "rb") as f:
+            # self.lfd_model = pickle.load(f)
+            self.lfd_model = joblib.load(f)
+        self.lfd_X_mean = np.load(os.path.join(model_path, model + '_Xmean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+        self.lfd_X_std = np.load(os.path.join(model_path, model + '_Xstd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
+        self.lfd_Y_mean = np.load(os.path.join(model_path, model + '_Ymean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+        self.lfd_Y_std = np.load(os.path.join(model_path, model + '_Ystd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
+
+
+    def move_to_home(self):
+        self.get_logger().info('Waiting for action server...')
+        if not self.action_client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error('Action server not available')
+            return False                 
+
+        goal_msg = FollowJointTrajectory.Goal()
+        goal_msg.trajectory.joint_names = self.joint_names
+        point = JointTrajectoryPoint()
+        point.positions = self.HOME_POSITIONS
+        point.time_from_start.sec = 5
+        goal_msg.trajectory.points.append(point)
+
+        self.get_logger().info('Sending trajectory goal...')
+        send_goal_future = self.action_client.send_goal_async(goal_msg)
+        rclpy.spin_until_future_complete(self, send_goal_future)
+        goal_handle = send_goal_future.result()
+
+        if not goal_handle.accepted:
+            self.get_logger().error('Goal rejected')
+            return False
+
+        self.get_logger().info('Goal accepted, waiting for result...')
+        result_future = goal_handle.get_result_async()
+        rclpy.spin_until_future_complete(self, result_future)
+        result = result_future.result().result
+        self.get_logger().info(f'Motion complete with error code: {result.error_code}')
+        return True
+
+
+   
     def replay_joints(self, csv_path, downsample_factor=1, speed_factor=1.0, ramp_time=1.0):
 
         self.get_logger().info(f"Loading trajectory from {csv_path}")
@@ -446,7 +504,7 @@ class LFDController(Node):
             current_positions = list(joint_state_msg.position[:7])
             self.get_logger().info("Got current joint state for smooth ramp.")
         except Exception:
-            current_positions = self.home_positions
+            current_positions = self.HOME_POSITIONS
             self.get_logger().warn("Could not get /joint_states, using home positions for ramp.")
 
         first_point_positions = self.trajectory_points[0].positions
@@ -498,6 +556,7 @@ class LFDController(Node):
         result = result_future.result().result
         self.get_logger().info(f"Trajectory execution finished: {result}")
 
+
     def run_lfd_approach(self, n_timesteps=2):       
 
         self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
@@ -518,6 +577,7 @@ class LFDController(Node):
         self.send_stop_message()
         self.running_lfd_approach = False
 
+
     def send_stop_message(self):
         """
         # Ensure a final zero-twist is sent to stop motion
@@ -529,6 +589,7 @@ class LFDController(Node):
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
         self.vel_pub.publish(self.current_cmd)
 
+
     def compute_joint_velocities(self, desired_ee_velocity: np.ndarray, joint_positions: list):
         """
         desired_ee_velocity: 6-element NumPy array
@@ -538,6 +599,7 @@ class LFDController(Node):
         jacobian = fr3_jacobian(joint_positions)
         joint_velocities = np.linalg.pinv(jacobian) @ desired_ee_velocity
         self.get_logger().info(f'Joint velocities: {joint_velocities}')
+
 
     # === Sensor Topics Callback ====
     def gripper_sensors_callback(self, msg: Int16MultiArray):
@@ -555,6 +617,7 @@ class LFDController(Node):
         self.tof = self.ema_tof.update(self.tof)
 
         self.tof_for_state = np.array([self.tof])
+
 
     def incoming_cam_sim(self):
         """
@@ -655,8 +718,8 @@ class LFDController(Node):
             self.Y_base_frame = np.array([v_base[0], v_base[1], v_base[2], w_base[0], w_base[1], w_base[2]])
 
             # Scale down the velocities
-            scaling_factor = 1       # deltas were obtained at 1khz
-            self.Y_base_frame = self.Y_base_frame * scaling_factor       
+            self.DELTA_GAIN = 1       # deltas were obtained at 1khz
+            self.Y_base_frame = self.Y_base_frame * self.DELTA_GAIN       
 
             y = self.Y
             # --- Append as row in DataFrame ---
@@ -673,11 +736,10 @@ class LFDController(Node):
             # Adjust velocities with feedback from goal pose
 
 
-            # Send actions (twist)        
-            self.KP = 1000
-            self.target_cmd.twist.linear.x = float(y_base[0]) + self.eef_pos_x_error * self.KP
-            self.target_cmd.twist.linear.y = float(y_base[1]) + self.eef_pos_y_error * self.KP
-            self.target_cmd.twist.linear.z = float(y_base[2]) + self.eef_pos_z_error * self.KP
+            # Send actions (twist)                   
+            self.target_cmd.twist.linear.x = float(y_base[0]) + self.eef_pos_x_error * self.DELTA_GAIN
+            self.target_cmd.twist.linear.y = float(y_base[1]) + self.eef_pos_y_error * self.DELTA_GAIN
+            self.target_cmd.twist.linear.z = float(y_base[2]) + self.eef_pos_z_error * self.DELTA_GAIN
             self.target_cmd.twist.angular.x = float(y_base[3])
             self.target_cmd.twist.angular.y = float(y_base[4])
             self.target_cmd.twist.angular.z = float(y_base[5])
@@ -709,16 +771,14 @@ class LFDController(Node):
                 
                 self.get_logger().info(f"Debugging mode - Step {self.DEBUGGING_STEP}, Action: {y}")
 
-                # If using deltas, multiply by scaling factor
-                scaling_factor = 1000     # deltas were obtained at 1khz
-
                 # Send actions (twist)        
-                self.target_cmd.twist.linear.x = float(y[0]) * scaling_factor
-                self.target_cmd.twist.linear.y = float(y[1]) * scaling_factor
-                self.target_cmd.twist.linear.z = float(y[2]) * scaling_factor    
-                self.target_cmd.twist.angular.x = float(y[3]) * scaling_factor
-                self.target_cmd.twist.angular.y = float(y[4]) * scaling_factor
-                self.target_cmd.twist.angular.z = float(y[5]) * scaling_factor
+                # If using deltas, multiply by scaling factor to conver to speed units               
+                self.target_cmd.twist.linear.x = float(y[0]) * self.DELTA_GAIN
+                self.target_cmd.twist.linear.y = float(y[1]) * self.DELTA_GAIN
+                self.target_cmd.twist.linear.z = float(y[2]) * self.DELTA_GAIN    
+                self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN
+                self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN
+                self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN
             
                 self.DEBUGGING_STEP += 1        
             
@@ -813,6 +873,7 @@ class LFDController(Node):
         # Dummy callback to ensure joint states are available
 
 
+
 def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
 
     print("Extracting data and generating plots...")
@@ -855,7 +916,7 @@ def main():
 
     for demo in range(batch_size):
 
-        node.get_logger().info("\033[1;32m ---------- Press ENTER key to start lfd implementation trial {}/10 ----------\033[0m".format(demo+1))
+        node.get_logger().info("\033[1;32m\n---------- Press ENTER key to start lfd implementation trial {}/10 ----------\033[0m".format(demo+1))
         input()  
       
         # ------------ Step 0: Initial configuration ----------------
@@ -867,14 +928,14 @@ def main():
         save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))         
 
         # ------------ Step 1: Move robot to home position ---------
-        node.get_logger().info("STEP1: Arm moving to home position... wait")
+        node.get_logger().info("\n\033[1;32m\nSTEP 1: Arm moving to home position... wait\033[0m\n")
         while not node.move_to_home():
             pass
 
         # ------------ Step 2: Allow free drive if needed ---------
         node.swap_controller(node.arm_controller, node.gravity_controller)
         time.sleep(1.0)                
-        node.get_logger().info("\n\033[1;32m STEP 2: Free-drive arm until apple in camera FOV. \n\n Press ENTER key when you are done.\033[0m\n")        
+        node.get_logger().info("\n\033[1;32m\nSTEP 2: Free-drive arm until apple in camera FOV. \nPress ENTER key when you are done.\033[0m\n")        
         input()    
        
         # ------------ Step 3: Enable Servo Node Cartesian velocity controller ---------
@@ -888,11 +949,11 @@ def main():
         time.sleep(1.0)        
 
         # Start bag recording
-        input("\n\033[1;32m3 - Place apple on the proxy. \n\nPress ENTER key when done.\033[0m\n")
+        input("\n\033[1;32m\nSTEP 3: Place apple on the proxy. \nPress ENTER key when done.\033[0m\n")
         robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
 
         # -------------- Step 4: Run lfd controller ----------------        
-        input("\n\033[1;32m4 STEP 4: Press ENTER key to start ROBOT lfd implementation.\033[0m\n")        
+        input("\n\033[1;32m\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\033[0m\n")        
         node.DEBUGGING_MODE = True
         node.DEBUGGING_STEP = 0
         node.run_lfd_approach()      
@@ -906,7 +967,7 @@ def main():
         node.get_logger().info(f"LFD approach actions saved to {csv_path}")               
 
         # -------------- Step 5: Dispose apple ----------------
-        input("\n\033[1;32m5 STEP 5: Press ENTER key to dispose apple.\033[0m\n")
+        input("\n\033[1;32m\nSTEP 5: Press ENTER key to dispose apple.\033[0m\n")
         
         node.swap_controller(node.twist_controller, node.arm_controller)
         time.sleep(1.0)  
