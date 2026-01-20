@@ -13,9 +13,7 @@ joint_command_in_topic: ~/delta_joint_cmds # Topic for incoming joint angle comm
 
 joint_topic: /joint_states
 
-## Properties of incoming commands
 command_in_type: "speed_units" # "unitless"> in the range [-1:1], as if from joystick. "speed_units"> cmds are in m/s and rad/s
-
 ## Scaling of incoming commands
 scale:
   # Scale parameters are only used if command_in_type=="unitless"
