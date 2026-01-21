@@ -768,7 +768,7 @@ def compare_trajectories():
 
     # =============== Benchmark: Load Original Trial csv ==============
     folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
-    file = 'trial_10_downsampled_aligned_data.csv'
+    file = 'trial_55_downsampled_aligned_data.csv'
     filepath = os.path.join(folder, file)
     df_trial = pd.read_csv(filepath)    
 
@@ -798,21 +798,16 @@ def compare_trajectories():
 
     # =============== Load Trials with actions applied ================    
   
-    folder = '/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/trial_1/lfd_bag_main/bag_csvs'
+    folder = '/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/trial_13/lfd_bag_main/bag_csvs'
     file = 'joint_states.csv'
     raw_data_path = os.path.join(folder, file)
 
     df_raw = pd.read_csv(raw_data_path)        
-
     df_raw["_position_as_list"] = df_raw["_position"].apply(parse_array_string)
-    df_raw["_velocity_as_list"] = df_raw["_velocity"].apply(parse_array_string)
-    df_raw["_effort_as_list"] = df_raw["_effort"].apply(parse_array_string)
 
     # Split that list into multiple independent columns, and just take the first 7 joints
     pos_expanded = pd.DataFrame(df_raw["_position_as_list"].apply(lambda x: x[:7]).tolist(), columns=["pos_joint_1", "pos_joint_2", "pos_joint_3", "pos_joint_4", "pos_joint_5", "pos_joint_6", "pos_joint_7"])
-    vel_expanded = pd.DataFrame(df_raw["_velocity_as_list"].apply(lambda x: x[:7]).tolist(), columns=["vel_joint_1", "vel_joint_2", "vel_joint_3", "vel_joint_4", "vel_joint_5", "vel_joint_6", "vel_joint_7"])
-    eff_expanded = pd.DataFrame(df_raw["_effort_as_list"].apply(lambda x: x[:7]).tolist(), columns=["eff_joint_1", "eff_joint_2", "eff_joint_3", "eff_joint_4", "eff_joint_5", "eff_joint_6", "eff_joint_7"])  
-
+ 
     # Combine with the rest of the dataframe
     df_final = pd.concat([df_raw["elapsed_time"], pos_expanded], axis=1)
     cols = ['pos_joint_1', 'pos_joint_2', 'pos_joint_3', 'pos_joint_4', 'pos_joint_5', 'pos_joint_6', 'pos_joint_7']   
@@ -844,7 +839,7 @@ def compare_trajectories():
     ax.set_xlabel('x [m]')
     ax.set_ylabel('y [m]')
     ax.set_zlabel('z [m]')
-    ax.set_title('3D End-Effector Position')
+    ax.set_title(f'{file}\n3D End-Effector Position')
     ax.legend()    
 
 

@@ -78,19 +78,18 @@ class LFDController(Node):
         self.initialize_arm_poses()      
    
     
-        # --- Velocity ramping variables ---
-        self.current_cmd = TwistStamped()
-        self.target_cmd = TwistStamped()        
+        
 
-        self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
-        self.current_angular_accel = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        # self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
+        # self.current_angular_accel = {'x': 0.0, 'y': 0.0, 'z': 0.0}
 
-        self.SCALING_FACTOR = 0.5e-3
-        self.max_linear_accel   = 0.1 * self.SCALING_FACTOR   # m/s²
-        self.max_angular_accel  = 0.2 * self.SCALING_FACTOR    # rad/s²
+        # self.SCALING_FACTOR = 0.5e-3
+        # self.max_linear_accel   = 0.1 * self.SCALING_FACTOR   # m/s²
+        # self.max_angular_accel  = 0.2 * self.SCALING_FACTOR    # rad/s²
 
-        self.max_linear_jerk    = 0.1 * self.SCALING_FACTOR    # m/s³
-        self.max_angular_jerk   = 1.0 * self.SCALING_FACTOR    # rad/s³   
+        # self.max_linear_jerk    = 0.1 * self.SCALING_FACTOR    # m/s³
+        # self.max_angular_jerk   = 1.0 * self.SCALING_FACTOR    # rad/s³   
+
 
         self.last_cmd_time = self.get_clock().now()   
 
@@ -157,10 +156,14 @@ class LFDController(Node):
         self.load_client = self.create_client(LoadController, '/controller_manager/load_controller')
         self.load_client.wait_for_service()
 
+        # --- Velocity ramping variables ---
+        self.current_cmd = TwistStamped()
+        self.target_cmd = TwistStamped()        
+
         # Controller gain for delta
         # Converts deltas into m/s and rad/s
         # In our case deltas were obtained for delta_times = 1msec, hence gain = 1/0.001 = 1000
-        self.DELTA_GAIN = 1000      
+        self.DELTA_GAIN = 1600    
 
 
     def initialize_state_variables(self):
@@ -227,7 +230,7 @@ class LFDController(Node):
 
         # Twist actions given at the eef frame
         eef_demos_folder = '/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)'
-        eef_demo_trial = 'trial_10_downsampled_aligned_data_transformed.csv'
+        eef_demo_trial = 'trial_55_downsampled_aligned_data_transformed.csv'
         
         debugging_demo_csv = os.path.join(eef_demos_folder, eef_demo_trial)
         self.debugging_demo_pd = pd.read_csv(debugging_demo_csv)
@@ -263,24 +266,26 @@ class LFDController(Node):
 
 
     def initialize_arm_poses(self):       
+       
+        # Trial 1 home
+        # self.HOME_POSITIONS = [0.640185356140137,
+        #                             -1.53173422813416,
+        #                        	    0.485948860645294,
+        #                                   -2.47434902191162,
+        #                                       0.969232738018036,
+        #                                           2.13699507713318,
+        #                                               -1.07839667797089]
 
-        self.HOME_POSITIONS = [0.9990667759117966,
-                                -1.4006513128495368,
-                                  0.6619482452189578,
-                                    -2.19926119331373,
-                                      0.3025442780693878,
-                                        2.228936364331582,
-                                          1.158967207070059]   
+        # Trial 55 home
+        self.HOME_POSITIONS = [0.9992572006659161,
+                              -1.400845144436407,
+                               0.6614259188412848,
+                              -2.199365495202297,
+                               0.29483105810589716,
+                               2.2291987889834988,
+                               1.1722636484850655]
 
-        # Home position with eef pose starting on + x
-        # self.home_positions = [1.8144304752349854,
-        #                        -1.0095794200897217,
-        #                        -0.8489214777946472,
-        #                        -2.585618019104004,
-        #                        0.9734971523284912,
-        #                        2.7978947162628174,
-        #                        -2.0960772037506104]
-
+           
         self.goal_pose = [-0.031,
                           0.794,
                           0.474]
@@ -459,7 +464,6 @@ class LFDController(Node):
         result = result_future.result().result
         self.get_logger().info(f'Motion complete with error code: {result.error_code}')
         return True
-
 
    
     def replay_joints(self, csv_path, downsample_factor=1, speed_factor=1.0, ramp_time=1.0):
@@ -645,16 +649,14 @@ class LFDController(Node):
                 self.get_logger().info(f"Debugging mode - Step {self.DEBUGGING_STEP}, Action: {y}")
 
                 # If using deltas, multiply by scaling factor
-                scaling_factor = 1000       # deltas were obtained at 1khz
-
                 # Send actions (twist)        
-                self.target_cmd.twist.linear.x = float(y[0]) * scaling_factor
-                self.target_cmd.twist.linear.y = float(y[1]) * scaling_factor
-                self.target_cmd.twist.linear.z = float(y[2]) * scaling_factor    
-                self.target_cmd.twist.angular.x = float(y[3]) * scaling_factor
-                self.target_cmd.twist.angular.y = float(y[4]) * scaling_factor
-                self.target_cmd.twist.angular.z = float(y[5]) * scaling_factor
-            
+                self.target_cmd.twist.linear.x = float(y[0]) * self.DELTA_GAIN
+                self.target_cmd.twist.linear.y = float(y[1]) * self.DELTA_GAIN
+                self.target_cmd.twist.linear.z = float(y[2]) * self.DELTA_GAIN    
+                self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN
+                self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN
+                self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN
+                            
                 self.DEBUGGING_STEP += 1           
 
 
