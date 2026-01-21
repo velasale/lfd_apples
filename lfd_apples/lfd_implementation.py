@@ -160,7 +160,7 @@ class LFDController(Node):
         # Controller gain for delta
         # Converts deltas into m/s and rad/s
         # In our case deltas were obtained for delta_times = 1msec, hence gain = 1/0.001 = 1000
-        self.DELTA_GAIN = 900      
+        self.DELTA_GAIN = 1000      
 
 
     def initialize_state_variables(self):
@@ -221,9 +221,15 @@ class LFDController(Node):
 
         # --- Data for debugging ---
         # Replay sequence of actions from a previous demo
-        demos_folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
-        demo_trial = 'trial_4_downsampled_aligned_data.csv'
-        debugging_demo_csv = os.path.join(demos_folder, demo_trial)
+        # Twist actions given at the base frame
+        # demos_folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
+        # demo_trial = 'trial_4_downsampled_aligned_data.csv'
+
+        # Twist actions given at the eef frame
+        eef_demos_folder = '/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)'
+        eef_demo_trial = 'trial_10_downsampled_aligned_data_transformed.csv'
+        
+        debugging_demo_csv = os.path.join(eef_demos_folder, eef_demo_trial)
         self.debugging_demo_pd = pd.read_csv(debugging_demo_csv)
 
         # Load action names from yaml config
@@ -233,7 +239,9 @@ class LFDController(Node):
         
         self.action_cols = cfg['action_cols']       
 
-        self.action_cols = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z']
+        # If using actions at the base frame, rename with the following:
+        # self.action_cols = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z']
+
         self.n_action_cols = len(self.action_cols)     # These are the ouputs (actions)
 
         # Load actions
@@ -254,25 +262,15 @@ class LFDController(Node):
         self.ema_tof = EMA(self.ema_alpha)
 
 
-    def initialize_arm_poses(self):
+    def initialize_arm_poses(self):       
 
-        # Home position with eef pose starting on - x
-        self.HOME_POSITIONS = [0.6414350870607822,
-                               -1.5320604540253377,
-                               0.4850253317447517,
-                               -2.474376823551583,
-                               0.9726833812685999,
-                               2.1330229376987626,
-                               -1.0721952822461973]
-        
-        # self.home_positions = [0.999066775911797,
-        #                        -1.40065131284954,
-        #                        0.661948245218958,
-        #                        -2.19926119331373,
-        #                         0.302544278069388,
-        #                         2.22893636433158,
-        #                         1.15896720707006]
-
+        self.HOME_POSITIONS = [0.9990667759117966,
+                                -1.4006513128495368,
+                                  0.6619482452189578,
+                                    -2.19926119331373,
+                                      0.3025442780693878,
+                                        2.228936364331582,
+                                          1.158967207070059]   
 
         # Home position with eef pose starting on + x
         # self.home_positions = [1.8144304752349854,
@@ -308,7 +306,8 @@ class LFDController(Node):
         self.timer_period = 0.001  # 500 Hz
         self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
-        # self.create_timer(0.034, self.incoming_cam_sim)
+        # --- Timer to recreate incoming palm camera with fake hardware ---
+        self.create_timer(0.034, self.incoming_cam_sim)
 
 
     # === ROS controller functions ===
@@ -415,7 +414,7 @@ class LFDController(Node):
         return True
 
 
-
+    # === TBD =====
 
     def load_model(self, phase, model, timesteps):        
 
@@ -557,6 +556,8 @@ class LFDController(Node):
         self.get_logger().info(f"Trajectory execution finished: {result}")
 
 
+
+
     def run_lfd_approach(self, n_timesteps=2):       
 
         self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
@@ -565,6 +566,7 @@ class LFDController(Node):
         while rclpy.ok() and self.running_lfd_approach:
             
             # self.tof = np.array([1000])  # Dummy value for testing
+            self.tof = 1000.0
 
             if self.tof < self.TOF_THRESHOLD:
                 self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                
@@ -779,6 +781,13 @@ class LFDController(Node):
                 self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN
                 self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN
                 self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN
+
+                # self.target_cmd.twist.linear.x = 0.0 #float(y[0]) * self.DELTA_GAIN
+                # self.target_cmd.twist.linear.y = 0.0 #float(y[1]) * self.DELTA_GAIN
+                # self.target_cmd.twist.linear.z = 0.0 #float(y[2]) * self.DELTA_GAIN    
+                # self.target_cmd.twist.angular.x = 0.1 #float(y[3]) * self.DELTA_GAIN
+                # self.target_cmd.twist.angular.y = 0.0 #float(y[4]) * self.DELTA_GAIN
+                # self.target_cmd.twist.angular.z = 0.0 #float(y[5]) * self.DELTA_GAIN
             
                 self.DEBUGGING_STEP += 1        
             
@@ -835,6 +844,7 @@ class LFDController(Node):
         #     setattr(self.current_cmd.twist.angular, axis, v_new)
         
         self.current_cmd.twist = self.target_cmd.twist  # Uncomment to override smoothing
+        self.current_cmd.header.frame_id = "fr3_hand_tcp"
 
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
         self.servo_pub.publish(self.current_cmd)
@@ -932,10 +942,12 @@ def main():
         while not node.move_to_home():
             pass
 
+        input("\n\033[1;32m\nSTEP 2: Place apple on the proxy. \nPress ENTER key when done.\033[0m\n")    
+
         # ------------ Step 2: Allow free drive if needed ---------
         node.swap_controller(node.arm_controller, node.gravity_controller)
         time.sleep(1.0)                
-        node.get_logger().info("\n\033[1;32m\nSTEP 2: Free-drive arm until apple in camera FOV. \nPress ENTER key when you are done.\033[0m\n")        
+        node.get_logger().info("\n\033[1;32m\nSTEP 3: Free-drive arm until apple in camera FOV. \nPress ENTER key when you are done.\033[0m\n")        
         input()    
        
         # ------------ Step 3: Enable Servo Node Cartesian velocity controller ---------
@@ -948,8 +960,7 @@ def main():
 
         time.sleep(1.0)        
 
-        # Start bag recording
-        input("\n\033[1;32m\nSTEP 3: Place apple on the proxy. \nPress ENTER key when done.\033[0m\n")
+        # Start bag recording        
         robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
 
         # -------------- Step 4: Run lfd controller ----------------        
