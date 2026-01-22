@@ -1,7 +1,17 @@
 # Action and state space columns used in all harvesting phases
 
-action_cols:
+action_cols_at_base_frame:
 
+  # Velocities @ base frame
+  - v_eef_x
+  - v_eef_y
+  - v_eef_z
+  - w_eef_x
+  - w_eef_y
+  - w_eef_z
+
+action_cols:
+  # These are the actions used for training the model
   # Velocities
   # - v_eef._x._eef_frame
   # - v_eef._y._eef_frame
@@ -10,7 +20,7 @@ action_cols:
   # - w_eef._y._eef_frame
   # - w_eef._z._eef_frame
 
-  # Deltas
+  # Deltas @ ee frame
   - Δ_lin_eef._x._eef_frame
   - Δ_lin_eef._y._eef_frame
   - Δ_lin_eef._z._eef_frame
