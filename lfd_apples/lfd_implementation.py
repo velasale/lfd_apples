@@ -253,7 +253,7 @@ class LFDController(Node):
         # demo_trial = 'trial_4_downsampled_aligned_data.csv'
 
         # Twist actions given at the eef frame
-        self.DEBUG_TRIAL = 'trial_65'
+        self.DEBUG_TRIAL = 'trial_4'
         eef_demos_folder = '/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)'
         eef_demo_trial = self.DEBUG_TRIAL + '_downsampled_aligned_data_transformed.csv'
         
