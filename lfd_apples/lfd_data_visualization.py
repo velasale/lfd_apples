@@ -767,8 +767,9 @@ def compare_trajectories():
     """ Compare trajectories from robot trials, and derived from actions """
 
     # =============== Benchmark: Load Original Trial csv ==============
+    
     folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
-    file = 'trial_55_downsampled_aligned_data.csv'
+    file = 'trial_65_downsampled_aligned_data.csv'
     filepath = os.path.join(folder, file)
     df_trial = pd.read_csv(filepath)    
 
@@ -779,6 +780,37 @@ def compare_trajectories():
     x = np.array(df_trial['_pose._position._x'].to_list(), dtype=float)
     y = np.array(df_trial['_pose._position._y'].to_list(), dtype=float)
     z = np.array(df_trial['_pose._position._z'].to_list(), dtype=float)      
+  
+    
+
+    def plot_initial_pose(ax, initial_pose):
+        xi = initial_pose['_pose._position._x']
+        yi = initial_pose['_pose._position._y']
+        zi = initial_pose['_pose._position._z']
+        
+        qx = float(initial_pose['_pose._orientation._x'])
+        qy = float(initial_pose['_pose._orientation._y'])
+        qz = float(initial_pose['_pose._orientation._z'])
+        qw = float(initial_pose['_pose._orientation._w'])
+
+        quats = np.array([qx, qy, qz, qw], dtype=float)
+        rot = R.from_quat(quats)
+
+        # Visualize orientation axes at start
+        # Plot unit frames along the path every `step` points
+        scale = 0.25  # length of the axes
+            
+        # Local frame axes
+        x_axis = rot.apply([1, 0, 0]) * scale
+        y_axis = rot.apply([0, 1, 0]) * scale
+        z_axis = rot.apply([0, 0, 1]) * scale
+
+            # Draw quivers
+        ax.quiver(xi, yi, zi, x_axis[0], x_axis[1], x_axis[2], color='r', length=scale)
+        ax.quiver(xi, yi, zi, y_axis[0], y_axis[1], y_axis[2], color='g', length=scale)
+        ax.quiver(xi, yi, zi, z_axis[0], z_axis[1], z_axis[2], color='b', length=scale)
+
+    plot_initial_pose(ax, df_trial.iloc[0])
 
     y_middle = (np.min(y) + np.max(y)) / 2
     z_middle = (np.min(z) + np.max(z)) / 2
@@ -786,12 +818,12 @@ def compare_trajectories():
     ax.set_ylim3d([y_middle - max_range/2, y_middle + max_range/2])
     ax.set_zlim3d([z_middle - max_range/2, z_middle + max_range/2])
     
-    ax.plot(x, y, z, label='Original Trial', color='black', linewidth=2)
+    ax.plot(x, y, z, label='Original Trial Trajectory', color='black', linewidth=2)
 
     ax.set_xlabel('x [m]')
     ax.set_ylabel('y [m]')
     ax.set_zlabel('z [m]')
-    ax.set_title('3D End-Effector Position')
+    ax.set_title(f'{file}\n3D End-Effector Position')
     ax.legend()    
 
 
@@ -805,6 +837,7 @@ def compare_trajectories():
     df_raw = pd.read_csv(raw_data_path)        
     df_raw["_position_as_list"] = df_raw["_position"].apply(parse_array_string)
 
+   
     # Split that list into multiple independent columns, and just take the first 7 joints
     pos_expanded = pd.DataFrame(df_raw["_position_as_list"].apply(lambda x: x[:7]).tolist(), columns=["pos_joint_1", "pos_joint_2", "pos_joint_3", "pos_joint_4", "pos_joint_5", "pos_joint_6", "pos_joint_7"])
  
@@ -822,6 +855,25 @@ def compare_trajectories():
         df_final.loc[i, 'eef_y'] = position[1]
         df_final.loc[i, 'eef_z'] = position[2]    
     
+    # Initial pose
+    first_row = df_final[cols].iloc[0]
+    T, Ts = fr3_fk(first_row)
+    position = T[:3, 3]
+    x0, y0, z0 = position[0], position[1], position[2]
+    rot = R.from_matrix(T[:3, :3])
+    scale = 0.25  # length of the axes
+            
+    # Local frame axes
+    x_axis = rot.apply([1, 0, 0]) * scale
+    y_axis = rot.apply([0, 1, 0]) * scale
+    z_axis = rot.apply([0, 0, 1]) * scale
+
+        # Draw quivers
+    ax.quiver(x0, y0, z0, x_axis[0], x_axis[1], x_axis[2], color='r', length=scale)
+    ax.quiver(x0, y0, z0, y_axis[0], y_axis[1], y_axis[2], color='g', length=scale)
+    ax.quiver(x0, y0, z0, z_axis[0], z_axis[1], z_axis[2], color='b', length=scale)
+
+
     max_range = 1.0
     
     x = np.array(df_final['eef_x'].to_list(), dtype=float)
@@ -839,7 +891,6 @@ def compare_trajectories():
     ax.set_xlabel('x [m]')
     ax.set_ylabel('y [m]')
     ax.set_zlabel('z [m]')
-    ax.set_title(f'{file}\n3D End-Effector Position')
     ax.legend()    
 
 

@@ -17,7 +17,7 @@ import pandas as pd
 # Custom imports
 from lfd_apples.listen_franka import main as listen_main
 from lfd_apples.listen_franka import start_recording_bagfile, stop_recording_bagfile, save_metadata, find_next_trial_number 
-from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array, fr3_jacobian
+from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array, fr3_jacobian, fr3_fk
 from lfd_apples.lfd_vision import extract_pooled_latent_vector
 
 # ROS2 imports
@@ -26,6 +26,9 @@ from std_msgs.msg import Float32MultiArray
 from std_srvs.srv import SetBool, Trigger
 from geometry_msgs.msg import PoseStamped, TwistStamped, Twist
 from sensor_msgs.msg import Image
+from visualization_msgs.msg import Marker
+from geometry_msgs.msg import Point
+
 
 # CV Bridge and YOLO imports
 from cv_bridge import CvBridge
@@ -68,7 +71,8 @@ class LFDController(Node):
 
         self.initialize_ros_topics()
         self.initialize_ros_service_clients()
-        self.initialize_ros_controller_properties()      
+        self.initialize_ros_controller_properties()    
+        self.initialize_rviz_trail()  
         self.initialize_ros_timers()
         self.initialize_flags()
 
@@ -76,10 +80,10 @@ class LFDController(Node):
         self.initialize_debugging_mode_variables()        
         self.initialize_signal_variables_and_thresholds()
         self.initialize_arm_poses()      
-   
-    
         
+        self.initialize_ml_models()
 
+        # --- Velocity ramping variables ---
         # self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
         # self.current_angular_accel = {'x': 0.0, 'y': 0.0, 'z': 0.0}
 
@@ -96,12 +100,7 @@ class LFDController(Node):
         self.joint_names = [f"fr3_joint{i+1}" for i in range(7)]
         self.joint_states = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         self.trajectory_points = []       
-  
-        # Load learned model
-        phase = 'phase_1_approach'
-        model = 'mlp'
-        timesteps = '0_timesteps'               
-        self.load_model(phase, model, timesteps)              
+     
         
 
     # === Initialization functions ===
@@ -124,6 +123,8 @@ class LFDController(Node):
             Float32MultiArray, '/cartesian_delta', 10)       
         self.servo_pub = self.create_publisher(
             TwistStamped, '/servo_node_lfd/delta_twist_cmds', 10)
+        self.tcp_marker_pub = self.create_publisher(
+            Marker, '/lfd/tcp_trail', 10) 
 
 
     def initialize_ros_service_clients(self):
@@ -163,7 +164,30 @@ class LFDController(Node):
         # Controller gain for delta
         # Converts deltas into m/s and rad/s
         # In our case deltas were obtained for delta_times = 1msec, hence gain = 1/0.001 = 1000
-        self.DELTA_GAIN = 1600    
+        self.DELTA_GAIN = 2250
+
+
+    def initialize_rviz_trail(self):
+        self.tcp_trail_marker = Marker()
+        self.tcp_trail_marker.header.frame_id = "fr3_link0"  # base frame
+        self.tcp_trail_marker.ns = "tcp_trail"
+        self.tcp_trail_marker.id = 0
+        self.tcp_trail_marker.type = Marker.POINTS
+        self.tcp_trail_marker.action = Marker.ADD
+
+        # Point size
+        self.tcp_trail_marker.scale.x = 0.01
+        self.tcp_trail_marker.scale.y = 0.01
+
+        # Color (red, opaque)
+        self.tcp_trail_marker.color.g = 1.0
+        self.tcp_trail_marker.color.a = 1.0
+
+        self.tcp_trail_marker.points = []
+
+        # Trail sampling
+        self.trail_step = 0
+        self.TRAIL_EVERY_N_STEPS = 5
 
 
     def initialize_state_variables(self):
@@ -229,8 +253,9 @@ class LFDController(Node):
         # demo_trial = 'trial_4_downsampled_aligned_data.csv'
 
         # Twist actions given at the eef frame
+        self.DEBUG_TRIAL = 'trial_65'
         eef_demos_folder = '/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)'
-        eef_demo_trial = 'trial_55_downsampled_aligned_data_transformed.csv'
+        eef_demo_trial = self.DEBUG_TRIAL + '_downsampled_aligned_data_transformed.csv'
         
         debugging_demo_csv = os.path.join(eef_demos_folder, eef_demo_trial)
         self.debugging_demo_pd = pd.read_csv(debugging_demo_csv)
@@ -265,27 +290,16 @@ class LFDController(Node):
         self.ema_tof = EMA(self.ema_alpha)
 
 
-    def initialize_arm_poses(self):       
-       
-        # Trial 1 home
-        # self.HOME_POSITIONS = [0.640185356140137,
-        #                             -1.53173422813416,
-        #                        	    0.485948860645294,
-        #                                   -2.47434902191162,
-        #                                       0.969232738018036,
-        #                                           2.13699507713318,
-        #                                               -1.07839667797089]
+    def initialize_arm_poses(self):            
+      
+        self.HOME_POSITIONS = self.debugging_demo_pd[['pos_joint_1',
+                                                     'pos_joint_2',
+                                                     'pos_joint_3', 
+                                                     'pos_joint_4',
+                                                     'pos_joint_5',
+                                                     'pos_joint_6',
+                                                     'pos_joint_7']].iloc[0].tolist()
 
-        # Trial 55 home
-        self.HOME_POSITIONS = [0.9992572006659161,
-                              -1.400845144436407,
-                               0.6614259188412848,
-                              -2.199365495202297,
-                               0.29483105810589716,
-                               2.2291987889834988,
-                               1.1722636484850655]
-
-           
         self.goal_pose = [-0.031,
                           0.794,
                           0.474]
@@ -313,6 +327,15 @@ class LFDController(Node):
 
         # --- Timer to recreate incoming palm camera with fake hardware ---
         self.create_timer(0.034, self.incoming_cam_sim)
+
+
+    def initialize_ml_models(self):
+        
+        # Load learned model
+        phase = 'phase_1_approach'
+        model = 'mlp'
+        timesteps = '0_timesteps'               
+        self.load_model(phase, model, timesteps)              
 
 
     # === ROS controller functions ===
@@ -560,12 +583,33 @@ class LFDController(Node):
         self.get_logger().info(f"Trajectory execution finished: {result}")
 
 
+    def update_tcp_trail(self):
+        if not self.running_lfd_approach:
+            return
+
+        self.trail_step += 1
+        if self.trail_step % self.TRAIL_EVERY_N_STEPS != 0:
+            return
+
+        p = Point()
+        p.x = self.eef_pos_x_from_f3k
+        p.y = self.eef_pos_y_from_f3k
+        p.z = self.eef_pos_z_from_f3k
+
+        self.tcp_trail_marker.points.append(p)
+        self.tcp_trail_marker.header.stamp = self.get_clock().now().to_msg()
+
+        self.tcp_marker_pub.publish(self.tcp_trail_marker)
 
 
     def run_lfd_approach(self, n_timesteps=2):       
 
         self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
         self.running_lfd_approach = True
+
+        # Rviz: Clear previous trail       
+        self.tcp_trail_marker.points.clear()
+        self.trail_step = 0
 
         while rclpy.ok() and self.running_lfd_approach:
             
@@ -653,9 +697,9 @@ class LFDController(Node):
                 self.target_cmd.twist.linear.x = float(y[0]) * self.DELTA_GAIN
                 self.target_cmd.twist.linear.y = float(y[1]) * self.DELTA_GAIN
                 self.target_cmd.twist.linear.z = float(y[2]) * self.DELTA_GAIN    
-                self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN
-                self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN
-                self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN
+                self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN 
+                self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN 
+                self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN 
                             
                 self.DEBUGGING_STEP += 1           
 
@@ -863,6 +907,9 @@ class LFDController(Node):
         self.eef_ori_z = msg.pose.orientation.z
         self.eef_ori_w = msg.pose.orientation.w
 
+        
+
+
         self.eef_pose = np.array([self.eef_pos_x,
                                   self.eef_pos_y,
                                   self.eef_pos_z,
@@ -881,6 +928,18 @@ class LFDController(Node):
     def joint_states_callback(self, msg: JointState):
 
         self.joint_states = list(msg.position[:7])
+
+
+        # FK to obtain EEF pose
+        q = self.joint_states #.to_numpy(dtype=float)                
+        T, Ts = fr3_fk(q)
+        position = T[:3, 3]
+        self.eef_pos_x_from_f3k = position[0]
+        self.eef_pos_y_from_f3k = position[1]
+        self.eef_pos_z_from_f3k = position[2]    
+
+        # Update TCP trail
+        self.update_tcp_trail()
 
         # Dummy callback to ensure joint states are available
 
