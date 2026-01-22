@@ -164,7 +164,7 @@ class LFDController(Node):
         # Controller gain for delta
         # Converts deltas into m/s and rad/s
         # In our case deltas were obtained for delta_times = 1msec, hence gain = 1/0.001 = 1000
-        self.DELTA_GAIN = 1000 #2250
+        self.DELTA_GAIN = 2000
 
 
     def initialize_rviz_trail(self):
@@ -326,7 +326,7 @@ class LFDController(Node):
         self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
         # --- Timer to recreate incoming palm camera with fake hardware ---
-        # self.create_timer(0.034, self.incoming_cam_sim)
+        self.create_timer(0.034, self.incoming_cam_sim)
 
 
     def initialize_ml_models(self):
@@ -614,7 +614,7 @@ class LFDController(Node):
         while rclpy.ok() and self.running_lfd_approach:
             
             # self.tof = np.array([1000])  # Dummy value for testing
-            # self.tof = 1000.0
+            self.tof = 1000.0
 
             if self.tof < self.TOF_THRESHOLD:
                 self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                

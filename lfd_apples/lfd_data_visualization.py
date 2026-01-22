@@ -830,7 +830,7 @@ def compare_trajectories():
 
     # =============== Load Trials with actions applied ================    
   
-    folder = '/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/trial_24/lfd_bag_main/bag_csvs'
+    folder = '/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/trial_32/lfd_bag_main/bag_csvs'
     file = 'joint_states.csv'
     raw_data_path = os.path.join(folder, file)
 

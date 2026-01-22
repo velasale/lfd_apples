@@ -774,8 +774,8 @@ def stage_2_transform_data_to_eef_frame():
         SOURCE_PATH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\experiment_1_(pull)")
         DESTINATION_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)\experiment_1_(pull)")
     else:
-        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam')
-        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/only_human_demos/with_palm_cam')
+        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)')
+        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)')
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
@@ -823,6 +823,7 @@ def stage_2_transform_data_to_eef_frame():
             delta_angular_base = deltas_eef_in_base_frame[i, 3:]
 
             q_base = eef_pose_in_base_frame[i, 3:]
+            p_base = eef_pose_in_base_frame[i, :3]
 
             # Rotation matrix from quaternion   base <- eef
             R_base_eef = R.from_quat(q_base).as_matrix()            
@@ -831,9 +832,12 @@ def stage_2_transform_data_to_eef_frame():
             R_eef_base = R_base_eef.T
             
             # Transform linear velocity
+            # v_eef = R_eef_base @ (v_base - np.cross(w_base, p_base))
+            # delta_linear_eef = R_eef_base @ (delta_linear_base - np.cross(delta_angular_base, p_base))
             v_eef = R_eef_base @ v_base
             delta_linear_eef = R_eef_base @ delta_linear_base
 
+            
             # Transform angular velocity
             w_eef = R_eef_base @ w_base
             delta_angular_eef = R_eef_base @ delta_angular_base
@@ -1214,8 +1218,8 @@ def stage_5_fix_hw_issues():
 
 if __name__ == '__main__':
 
-    stage_1_align_and_downsample()
-    # stage_2_transform_data_to_eef_frame()
+    # stage_1_align_and_downsample()
+    stage_2_transform_data_to_eef_frame()
     # stage_3_crop_data_to_task_phases()   
    
     # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
