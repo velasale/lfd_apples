@@ -769,7 +769,7 @@ def compare_trajectories():
     # =============== Benchmark: Load Original Trial csv ==============
     
     folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
-    file = 'trial_15_downsampled_aligned_data.csv'
+    file = 'trial_4_downsampled_aligned_data.csv'
     filepath = os.path.join(folder, file)
     df_trial = pd.read_csv(filepath)    
 
@@ -830,7 +830,7 @@ def compare_trajectories():
 
     # =============== Load Trials with actions applied ================    
   
-    folder = '/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/trial_17/lfd_bag_main/bag_csvs'
+    folder = '/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/trial_24/lfd_bag_main/bag_csvs'
     file = 'joint_states.csv'
     raw_data_path = os.path.join(folder, file)
 

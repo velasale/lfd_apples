@@ -290,8 +290,9 @@ def generate_launch_description():
     )
     use_fake_hardware_arg = DeclareLaunchArgument(
         use_fake_hardware_parameter_name,
-        default_value='true',
+        default_value='false',
         description='Use fake hardware')
+    
     fake_sensor_commands_arg = DeclareLaunchArgument(
         fake_sensor_commands_parameter_name,
         default_value='false',
