@@ -28,6 +28,13 @@ action_cols:
   - Δ_ori_eef._y._eef_frame
   - Δ_ori_eef._z._eef_frame
 
+apple_position_groundtruth:
+  - 'apple._x._base'
+  - 'apple._y._base'
+  - 'apple._z._base'
+  - 'apple._x._ee'
+  - 'apple._y._ee'
+  - 'apple._z._ee'
 
 
 air_pressure_cols:
@@ -109,6 +116,7 @@ phases:
     - inhand_cam_feature_cols
     - joint_states_cols.pos
     # - ee_pose_cols
+    - apple_position_groundtruth
     - action_cols
 
   phase_2_contact:
@@ -117,6 +125,7 @@ phases:
     - wrench_cols
     - joint_states_cols.pos
     # - ee_pose_cols
+    - apple_position_groundtruth
     - action_cols
 
   phase_3_pick:
@@ -125,6 +134,7 @@ phases:
     - wrench_cols
     - joint_states_cols.pos
     # - ee_pose_cols
+    - apple_position_groundtruth
     - action_cols
 
   phase_4_disposal:
