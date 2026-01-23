@@ -27,6 +27,7 @@ import matplotlib
 matplotlib.use("TkAgg")  # Ensures interactive plotting
 import matplotlib.pyplot as plt
 
+
 # ====================== Handy functions =======================
 def rename_folder(SOURCE_PATH, start_index=100):
     """ Rename trials"""
@@ -258,6 +259,37 @@ def plot_signals_before_and_after(df_before, df_after, signals, timestamp_vector
     plt.show()
 
 
+def apple_pose_ground_truth(df, apple_location_index):
+    ''' Get ground truth of apple location
+    '''
+
+    # @ base frame
+    apple_pose_at_base_ground_truth = df.iloc[apple_location_index][['_pose._position._x', '_pose._position._y', '_pose._position._z']]    
+    df['apple._x._base'] = apple_pose_at_base_ground_truth.values[0]
+    df['apple._y._base'] = apple_pose_at_base_ground_truth.values[1]
+    df['apple._z._base'] = apple_pose_at_base_ground_truth.values[2]
+
+    # @ tcp frame    
+    p_apple_base = np.tile(apple_pose_at_base_ground_truth.values, (len(df),1))
+    p_ee_base = df[['_pose._position._x',
+                    '_pose._position._y',
+                    '_pose._position._z']].to_numpy()       # eef position 
+    q_ee_base = df[['_pose._orientation._x',
+                    '_pose._orientation._y',
+                    '_pose._orientation._z',
+                    '_pose._orientation._w']].to_numpy()    # eef orientation
+    delta_base = p_apple_base - p_ee_base
+
+    R_base_ee = R.from_quat(q_ee_base).as_matrix()
+
+    p_apple_ee = np.einsum("nij,nj->ni", R_base_ee.transpose(0, 2, 1), delta_base)
+
+    df[["apple._x._ee", "apple._y._ee", "apple._z._ee"]] = p_apple_ee
+
+
+    return df
+
+
 # ============ Topic-specific downsampling functions ===========
 def downsample_pressure_and_tof_data(df, raw_data_path, compare_plots=True):
     
@@ -463,7 +495,7 @@ def derive_actions_from_ee_pose(reference_df, raw_data_path, sigma=100, compare_
     data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
     with open(data_columns_path, "r") as f:
         cfg = yaml.safe_load(f)    
-    action_columns = cfg["action_cols"]
+    action_columns = cfg["action_cols_at_base_frame"]
 
     # Step 2: Get eef positions and orientations
     positions = df_final[['_pose._position._x', '_pose._position._y', '_pose._position._z']].values
@@ -575,9 +607,7 @@ def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
         idx_phase_2_start = transition_indices[chosen_idx]
     
         return idx_phase_1_end, idx_phase_2_start 
-
     
-
 
 def find_end_of_phase_2_contact(df, trial, air_pressure_threshold=600, n_cups=2):
 
@@ -659,10 +689,10 @@ def stage_1_align_and_downsample():
     MAIN_DIR = os.path.join('/media', 'alejo', 'IL_data')            # ubuntu OS
     SOURCE_DIR = os.path.join(MAIN_DIR, "01_IL_bagfiles")    
     EXPERIMENT = "experiment_1_(pull)"
-    # EXPERIMENT = "only_human_demos/with_palm_cam"   
+    EXPERIMENT = "only_human_demos/with_palm_cam"   
     SOURCE_PATH = os.path.join(SOURCE_DIR, EXPERIMENT)
 
-    demonstrator = "robot"  # "human" or "robot"
+    demonstrator = ""  # "human" or "robot"
 
     FIXED_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_fixed_camera", "camera_frames", "fixed_rgb_camera_image_raw")
     INHAND_CAM_SUBDIR = os.path.join(demonstrator, "lfd_bag_palm_camera", "camera_frames", "gripper_rgb_palm_camera_image_raw")
@@ -714,7 +744,7 @@ def stage_1_align_and_downsample():
         raw_ee_pose_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_current_pose.csv")
                
         # Downsample data and align datasets based on the timestamps of in-hand camera images
-        compare_plots = True
+        compare_plots = False
         df = pd.DataFrame()
         df['timestamp_vector'] = get_timestamp_vector_from_images(raw_palm_camera_images_path)
         df_ds_1 = downsample_pressure_and_tof_data(df, raw_pressure_and_tof_path, compare_plots=compare_plots)
@@ -774,8 +804,8 @@ def stage_2_transform_data_to_eef_frame():
         SOURCE_PATH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\experiment_1_(pull)")
         DESTINATION_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)\experiment_1_(pull)")
     else:
-        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)')
-        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)')
+        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam')
+        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/only_human_demos/with_palm_cam')
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
@@ -832,8 +862,6 @@ def stage_2_transform_data_to_eef_frame():
             R_eef_base = R_base_eef.T
             
             # Transform linear velocity
-            # v_eef = R_eef_base @ (v_base - np.cross(w_base, p_base))
-            # delta_linear_eef = R_eef_base @ (delta_linear_base - np.cross(delta_angular_base, p_base))
             v_eef = R_eef_base @ v_base
             delta_linear_eef = R_eef_base @ delta_linear_base
 
@@ -966,6 +994,9 @@ def stage_3_crop_data_to_task_phases():
             trials_with_multiple_contacts.append(trial)
             continue
         
+        # Get apple pose @ base and @tcp frame   
+        df = apple_pose_ground_truth(df, idx_phase_1_end)
+
         # idx_phase_2_start = idx_phase_1_end
 
         phase_1_time = 7.0  # in seconds
@@ -1035,6 +1066,9 @@ def stage_3_crop_data_to_task_phases():
             trials_with_multiple_contacts.append(trial)
             continue
         
+        # Get apple pose @ base and @tcp frame   
+        df = apple_pose_ground_truth(df, idx_phase_1_end)
+
         phase_1_time = 7.0  # in seconds
         idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
         idx_phase_1_end += int(EXTRA_TIME_END * 30)
@@ -1219,8 +1253,8 @@ def stage_5_fix_hw_issues():
 if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
-    stage_2_transform_data_to_eef_frame()
-    # stage_3_crop_data_to_task_phases()   
+    # stage_2_transform_data_to_eef_frame()
+    stage_3_crop_data_to_task_phases()   
    
     # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
     # phases = ['phase_1_approach']    
