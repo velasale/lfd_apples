@@ -322,7 +322,7 @@ class LFDController(Node):
         # demo_trial = 'trial_4_downsampled_aligned_data.csv'        
 
         # Twist actions given at the eef frame
-        self.DEBUG_TRIAL = 'trial_4'
+        self.DEBUG_TRIAL = 'trial_50'
 
         # 1 - Approach Phase
         approach_eef_demos_folder = '/home/alejo/Documents/DATA/04_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_1_approach'
@@ -681,9 +681,9 @@ class LFDController(Node):
             return
 
         p = Point()
-        p.x = self.eef_pos_x_from_f3k
-        p.y = self.eef_pos_y_from_f3k
-        p.z = self.eef_pos_z_from_f3k
+        p.x = self.eef_pos_x_from_fk
+        p.y = self.eef_pos_y_from_fk
+        p.z = self.eef_pos_z_from_fk
 
         self.tcp_trail_marker.points.append(p)
         self.tcp_trail_marker.header.stamp = self.get_clock().now().to_msg()
@@ -696,6 +696,8 @@ class LFDController(Node):
         self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
         self.running_lfd_approach = True
         self.lfd_approach = True
+        self.sum_pos_x_error = 0.0
+        self.sum_pos_y_error = 0.0
 
         # Rviz: Clear previous trail       
         self.tcp_trail_marker.points.clear()
@@ -787,12 +789,24 @@ class LFDController(Node):
                     self.get_logger().info(f"Approach Debugging mode - Step {self.APPROACH_DEBUGGING_STEP}, Action: {y}")
 
                     # If using deltas, multiply by scaling factor
-                    # Send actions (twist)        
-                    self.position_kp = 0.5
-                    self.position_kp_z = 0.05
-                    self.target_cmd.twist.linear.x = float(y[0]) * self.DELTA_GAIN + self.position_kp * self.eef_pos_x_error
-                    self.target_cmd.twist.linear.y = float(y[1]) * self.DELTA_GAIN + self.position_kp * self.eef_pos_y_error
-                    self.target_cmd.twist.linear.z = float(y[2]) * self.DELTA_GAIN + self.position_kp_z * self.eef_pos_z_error   
+                    # Send actions (twist)                            
+                    self.position_kp = 2.0
+                    self.position_ki = 0.01
+                    self.position_kp_z = 0.1
+
+                    self.sum_pos_x_error += self.eef_pos_x_error
+                    self.sum_pos_y_error += self.eef_pos_y_error
+                    self.get_logger().info(f"apple pose tcp: {self.p_apple_tcp}")
+
+                    self.target_cmd.twist.linear.x = float(y[0]) * self.DELTA_GAIN \
+                                                        + self.position_kp * self.eef_pos_x_error \
+                                                        + self.position_ki * self.sum_pos_x_error
+                    self.target_cmd.twist.linear.y = float(y[1]) * self.DELTA_GAIN \
+                                                        + self.position_kp * self.eef_pos_y_error \
+                                                        + self.position_ki * self.sum_pos_y_error
+                    self.target_cmd.twist.linear.z = float(y[2]) * self.DELTA_GAIN \
+                                                        + self.position_kp_z * self.eef_pos_z_error   
+                    
                     self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN 
                     self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN 
                     self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN 
@@ -1081,25 +1095,27 @@ class LFDController(Node):
 
         self.joint_states = list(msg.position[:7])
 
-
-        # FK to obtain EEF pose
+        # FK to obtain EEF pose at the base frame
         q = self.joint_states #.to_numpy(dtype=float)                
         T, Ts = fr3_fk(q)
-        position = T[:3, 3]
-        self.eef_pos_x_from_f3k = position[0]
-        self.eef_pos_y_from_f3k = position[1]
-        self.eef_pos_z_from_f3k = position[2]    
+        p_tcp_base = T[:3, 3]
+        R_base_tcp = T[:3, :3]
+        
+        self.eef_pos_x_from_fk = p_tcp_base[0]
+        self.eef_pos_y_from_fk = p_tcp_base[1]
+        self.eef_pos_z_from_fk = p_tcp_base[2]    
 
         # Update TCP trail
         self.update_tcp_trail()
 
+        # Apple position in TCP frame
+        self.p_apple_tcp = R_base_tcp.T @ (self.apple_pose_base - p_tcp_base)
+
         # Update distance from known target location
-        self.eef_pos_x_error = self.apple_pose_tcp[0]
-        self.eef_pos_y_error = self.apple_pose_tcp[1] 
-        self.eef_pos_z_error = self.apple_pose_tcp[2]
+        self.eef_pos_x_error = self.p_apple_tcp[0]
+        self.eef_pos_y_error = self.p_apple_tcp[1]
+        self.eef_pos_z_error = self.p_apple_tcp[2]
 
-
-        # Dummy callback to ensure joint states are available
 
 
 
