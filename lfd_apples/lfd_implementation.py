@@ -125,6 +125,8 @@ class LFDController(Node):
             TwistStamped, '/servo_node_lfd/delta_twist_cmds', 10)
         self.tcp_marker_pub = self.create_publisher(
             Marker, '/lfd/tcp_trail', 10) 
+        self.apple_marker_pub = self.create_publisher(
+            Marker, '/lfd/apple', 10) 
 
 
     def initialize_ros_service_clients(self):
@@ -176,8 +178,8 @@ class LFDController(Node):
         self.tcp_trail_marker.action = Marker.ADD
 
         # Point size
-        self.tcp_trail_marker.scale.x = 0.01
-        self.tcp_trail_marker.scale.y = 0.01
+        self.tcp_trail_marker.scale.x = 0.005
+        self.tcp_trail_marker.scale.y = 0.005
 
         # Color (red, opaque)
         self.tcp_trail_marker.color.g = 1.0
@@ -187,7 +189,72 @@ class LFDController(Node):
 
         # Trail sampling
         self.trail_step = 0
-        self.TRAIL_EVERY_N_STEPS = 5
+        self.TRAIL_EVERY_N_STEPS = 2
+    
+
+    def place_rviz_apple(self):
+
+        # ======================= SHAPE =======================
+        self.apple_marker = Marker()
+
+        self.apple_marker.header.frame_id = "fr3_link0"
+        self.apple_marker.header.stamp = self.get_clock().now().to_msg()
+        self.apple_marker.ns = 'apple'
+        self.apple_marker.id = 0
+        self.apple_marker.type = Marker.SPHERE
+        self.apple_marker.action = Marker.ADD
+
+        self.apple_marker.pose.position.x = float(self.apple_pose_base.values[0])
+        self.apple_marker.pose.position.y = float(self.apple_pose_base.values[1])
+        self.apple_marker.pose.position.z = float(self.apple_pose_base.values[2])
+
+        self.apple_marker.pose.orientation.w = 1.0
+
+        # Sphere size (diameter!)
+        self.apple_marker.scale.x = 0.08
+        self.apple_marker.scale.y = 0.08
+        self.apple_marker.scale.z = 0.08
+
+        # Color (red apple)
+        self.apple_marker.color.r = 1.0
+        self.apple_marker.color.g = 0.0
+        self.apple_marker.color.b = 0.0
+        self.apple_marker.color.a = 1.0
+
+        # ======================== TEXT ======================
+        text_marker = Marker()
+
+        text_marker.header.frame_id = 'fr3_link0'
+        text_marker.header.stamp = self.get_clock().now().to_msg()
+
+        text_marker.ns = 'trial_id'
+        text_marker.id = 1
+
+        text_marker.type = Marker.TEXT_VIEW_FACING
+        text_marker.action = Marker.ADD
+
+        # Position: slightly above the apple
+        text_marker.pose.position.x = self.apple_marker.pose.position.x
+        text_marker.pose.position.y = self.apple_marker.pose.position.y
+        text_marker.pose.position.z = self.apple_marker.pose.position.z + 0.06
+
+        text_marker.pose.orientation.w = 1.0
+
+        # Text content
+        text_marker.text = self.DEBUG_TRIAL
+
+        # Text height (meters, NOT scale.x/y)
+        text_marker.scale.z = 0.05
+
+        # Color (white text)
+        text_marker.color.r = 1.0
+        text_marker.color.g = 1.0
+        text_marker.color.b = 1.0
+        text_marker.color.a = 1.0
+
+        # ===================== PUBLISH MARKERS =====================
+        self.apple_marker_pub.publish(self.apple_marker)
+        self.apple_marker_pub.publish(text_marker)
 
 
     def initialize_state_variables(self):
@@ -244,21 +311,41 @@ class LFDController(Node):
 
         # Debugging variables
         self.DEBUGGING_MODE = False
-        self.DEBUGGING_STEP = 0
+        self.APPROACH_DEBUGGING_STEP = 0
+        self.CONTACT_DEBUGGING_STEP = 0
+        self.PICK_DEBUGGING_STEP = 0
 
         # --- Data for debugging ---
         # Replay sequence of actions from a previous demo
         # Twist actions given at the base frame
         # demos_folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
-        # demo_trial = 'trial_4_downsampled_aligned_data.csv'
+        # demo_trial = 'trial_4_downsampled_aligned_data.csv'        
 
         # Twist actions given at the eef frame
         self.DEBUG_TRIAL = 'trial_4'
-        eef_demos_folder = '/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)'
-        eef_demo_trial = self.DEBUG_TRIAL + '_downsampled_aligned_data_transformed.csv'
-        
-        debugging_demo_csv = os.path.join(eef_demos_folder, eef_demo_trial)
-        self.debugging_demo_pd = pd.read_csv(debugging_demo_csv)
+
+        # 1 - Approach Phase
+        approach_eef_demos_folder = '/home/alejo/Documents/DATA/04_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_1_approach'
+        approach_eef_demo_trial = self.DEBUG_TRIAL + '_downsampled_aligned_data_transformed_(phase_1_approach).csv'        
+        approach_debugging_demo_csv = os.path.join(approach_eef_demos_folder, approach_eef_demo_trial)
+        self.approach_debugging_demo_pd = pd.read_csv(approach_debugging_demo_csv)
+
+        # 2 - Near-Contact Phase
+        contact_eef_demos_folder = '/home/alejo/Documents/DATA/04_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_2_contact'
+        contact_eef_demo_trial = self.DEBUG_TRIAL + '_downsampled_aligned_data_transformed_(phase_2_contact).csv'        
+        contact_debugging_demo_csv = os.path.join(contact_eef_demos_folder, contact_eef_demo_trial)
+        self.contact_debugging_demo_pd = pd.read_csv(contact_debugging_demo_csv)
+
+        # 3 - Pick Phase
+        pick_eef_demos_folder = '/home/alejo/Documents/DATA/04_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_3_pick'
+        pick_eef_demo_trial = self.DEBUG_TRIAL + '_downsampled_aligned_data_transformed_(phase_3_pick).csv'        
+        pick_debugging_demo_csv = os.path.join(pick_eef_demos_folder, pick_eef_demo_trial)
+        self.pick_debugging_demo_pd = pd.read_csv(pick_debugging_demo_csv)
+
+        # Load apple pose
+        self.apple_pose_base = self.approach_debugging_demo_pd[['apple._x._base', 'apple._y._base', 'apple._z._base']].iloc[0]
+        self.apple_pose_tcp = self.approach_debugging_demo_pd[['apple._x._ee', 'apple._y._ee', 'apple._z._ee']].iloc[0]
+        self.place_rviz_apple()
 
         # Load action names from yaml config
         data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
@@ -273,7 +360,9 @@ class LFDController(Node):
         self.n_action_cols = len(self.action_cols)     # These are the ouputs (actions)
 
         # Load actions
-        self.debugging_actions_pd = self.debugging_demo_pd[self.action_cols]
+        self.approach_debugging_actions_pd = self.approach_debugging_demo_pd[self.action_cols]
+        self.contact_debugging_actions_pd = self.contact_debugging_demo_pd[self.action_cols]
+        self.pick_debugging_actions_pd = self.pick_debugging_demo_pd[self.action_cols]
 
 
     def initialize_signal_variables_and_thresholds(self):        
@@ -292,7 +381,7 @@ class LFDController(Node):
 
     def initialize_arm_poses(self):            
       
-        self.HOME_POSITIONS = self.debugging_demo_pd[['pos_joint_1',
+        self.HOME_POSITIONS = self.approach_debugging_demo_pd[['pos_joint_1',
                                                      'pos_joint_2',
                                                      'pos_joint_3', 
                                                      'pos_joint_4',
@@ -606,6 +695,7 @@ class LFDController(Node):
 
         self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
         self.running_lfd_approach = True
+        self.lfd_approach = True
 
         # Rviz: Clear previous trail       
         self.tcp_trail_marker.points.clear()
@@ -678,31 +768,94 @@ class LFDController(Node):
         if self.running_lfd_approach and self.DEBUGGING_MODE:
 
             # --- Get next action from debugging demo ---
-            # Get current step
             
-            if self.DEBUGGING_STEP >= len(self.debugging_actions_pd):
-                self.get_logger().info("Debugging demo actions exhausted.")
-                self.send_stop_message()
-                self.running_lfd_approach = False
-                return
-            else:
-            
-                action_row = self.debugging_actions_pd.iloc[self.DEBUGGING_STEP]
-                y = action_row.values
+            # ============= APPROACH =============
+            if self.lfd_approach:
+
+                if self.APPROACH_DEBUGGING_STEP >= len(self.approach_debugging_actions_pd):
+                    self.get_logger().info("Debugging demo actions exhausted.")
+                    self.send_stop_message()
+                    # self.running_lfd_approach = False
+                    self.lfd_approach = False
+                    self.lfd_contact = True
+                    return
+                else:
                 
-                self.get_logger().info(f"Debugging mode - Step {self.DEBUGGING_STEP}, Action: {y}")
+                    action_row = self.approach_debugging_actions_pd.iloc[self.APPROACH_DEBUGGING_STEP]
+                    y = action_row.values
+                    
+                    self.get_logger().info(f"Approach Debugging mode - Step {self.APPROACH_DEBUGGING_STEP}, Action: {y}")
 
-                # If using deltas, multiply by scaling factor
-                # Send actions (twist)        
-                self.target_cmd.twist.linear.x = float(y[0]) * self.DELTA_GAIN
-                self.target_cmd.twist.linear.y = float(y[1]) * self.DELTA_GAIN
-                self.target_cmd.twist.linear.z = float(y[2]) * self.DELTA_GAIN    
-                self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN 
-                self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN 
-                self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN 
-                            
-                self.DEBUGGING_STEP += 1           
+                    # If using deltas, multiply by scaling factor
+                    # Send actions (twist)        
+                    self.position_kp = 0.5
+                    self.position_kp_z = 0.05
+                    self.target_cmd.twist.linear.x = float(y[0]) * self.DELTA_GAIN + self.position_kp * self.eef_pos_x_error
+                    self.target_cmd.twist.linear.y = float(y[1]) * self.DELTA_GAIN + self.position_kp * self.eef_pos_y_error
+                    self.target_cmd.twist.linear.z = float(y[2]) * self.DELTA_GAIN + self.position_kp_z * self.eef_pos_z_error   
+                    self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN 
+                                
+                    self.APPROACH_DEBUGGING_STEP += 1           
 
+            # ============= CONTACT =============
+            elif self.lfd_contact:
+            
+                if self.CONTACT_DEBUGGING_STEP >= len(self.contact_debugging_actions_pd) and self.lfd_contact:
+                    self.get_logger().info("Debugging demo actions exhausted.")
+                    self.send_stop_message()
+                    # self.running_lfd_approach = False                
+                    self.lfd_contact = False
+                    self.lfd_pick = True
+                    return
+                else:
+                
+                    action_row = self.contact_debugging_actions_pd.iloc[self.CONTACT_DEBUGGING_STEP]
+                    y = action_row.values
+                    
+                    self.get_logger().info(f"Contact Debugging mode - Step {self.CONTACT_DEBUGGING_STEP}, Action: {y}")
+
+                    # If using deltas, multiply by scaling factor
+                    # Send actions (twist)                           
+                    self.target_cmd.twist.linear.x = float(y[0]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.linear.y = float(y[1]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.linear.z = float(y[2]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN 
+                                
+                    self.CONTACT_DEBUGGING_STEP += 1          
+
+            # ============= PICK =============
+            elif self.lfd_pick:
+
+                if self.PICK_DEBUGGING_STEP >= len(self.pick_debugging_actions_pd):
+                    self.get_logger().info("Debugging demo actions exhausted.")
+                    self.send_stop_message()
+                    self.running_lfd_approach = False                
+                    self.lfd_pick = False
+                
+                    return
+                else:
+                
+                    action_row = self.pick_debugging_actions_pd.iloc[self.PICK_DEBUGGING_STEP]
+                    y = action_row.values
+                    
+                    self.get_logger().info(f"Pick Debugging mode - Step {self.PICK_DEBUGGING_STEP}, Action: {y}")
+
+                    # If using deltas, multiply by scaling factor
+                    # Send actions (twist)                           
+                    self.target_cmd.twist.linear.x = float(y[0]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.linear.y = float(y[1]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.linear.z = float(y[2]) * self.DELTA_GAIN  
+                    self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN 
+                                
+                    self.PICK_DEBUGGING_STEP += 1          
+            
+            
 
     def palm_camera_callback(self, msg: Float32MultiArray):
         """
@@ -807,17 +960,17 @@ class LFDController(Node):
             # --- Get next action from debugging demo ---
             # Get current step
             
-            if self.DEBUGGING_STEP >= len(self.debugging_actions_pd):
+            if self.APPROACH_DEBUGGING_STEP >= len(self.approach_debugging_actions_pd):
                 self.get_logger().info("Debugging demo actions exhausted.")
                 self.send_stop_message()
                 self.running_lfd_approach = False
                 return
             else:
             
-                action_row = self.debugging_actions_pd.iloc[self.DEBUGGING_STEP]
+                action_row = self.approach_debugging_actions_pd.iloc[self.APPROACH_DEBUGGING_STEP]
                 y = action_row.values
                 
-                self.get_logger().info(f"Debugging mode - Step {self.DEBUGGING_STEP}, Action: {y}")
+                self.get_logger().info(f"Debugging mode - Step {self.APPROACH_DEBUGGING_STEP}, Action: {y}")
 
                 # Send actions (twist)        
                 # If using deltas, multiply by scaling factor to conver to speed units               
@@ -835,7 +988,7 @@ class LFDController(Node):
                 # self.target_cmd.twist.angular.y = 0.0 #float(y[4]) * self.DELTA_GAIN
                 # self.target_cmd.twist.angular.z = 0.0 #float(y[5]) * self.DELTA_GAIN
             
-                self.DEBUGGING_STEP += 1        
+                self.APPROACH_DEBUGGING_STEP += 1        
             
         
     def publish_smoothed_velocity(self):
@@ -906,8 +1059,7 @@ class LFDController(Node):
         self.eef_ori_y = msg.pose.orientation.y
         self.eef_ori_z = msg.pose.orientation.z
         self.eef_ori_w = msg.pose.orientation.w
-
-        
+       
 
 
         self.eef_pose = np.array([self.eef_pos_x,
@@ -918,9 +1070,9 @@ class LFDController(Node):
                                   self.eef_ori_z,
                                   self.eef_ori_w])
         
-        self.eef_pos_x_error = self.goal_pose[0] - self.eef_pos_x
-        self.eef_pos_y_error = self.goal_pose[1] - self.eef_pos_y
-        self.eef_pos_z_error = self.goal_pose[2] - self.eef_pos_z
+        # self.eef_pos_x_error = self.goal_pose[0] - self.eef_pos_x
+        # self.eef_pos_y_error = self.goal_pose[1] - self.eef_pos_y
+        # self.eef_pos_z_error = self.goal_pose[2] - self.eef_pos_z
 
         # Update sensors average since last action
     
@@ -940,6 +1092,12 @@ class LFDController(Node):
 
         # Update TCP trail
         self.update_tcp_trail()
+
+        # Update distance from known target location
+        self.eef_pos_x_error = self.apple_pose_tcp[0]
+        self.eef_pos_y_error = self.apple_pose_tcp[1] 
+        self.eef_pos_z_error = self.apple_pose_tcp[2]
+
 
         # Dummy callback to ensure joint states are available
 
@@ -1028,7 +1186,7 @@ def main():
         # -------------- Step 4: Run lfd controller ----------------        
         input("\n\033[1;32m\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\033[0m\n")        
         node.DEBUGGING_MODE = True
-        node.DEBUGGING_STEP = 0
+        node.APPROACH_DEBUGGING_STEP = 0
         node.run_lfd_approach()      
 
         # Save states to CSV        
