@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from ament_index_python.packages import get_package_share_directory
 import numpy as np
+import math
 
 # ROS2 imports
 from sensor_msgs.msg import Image
@@ -19,6 +20,23 @@ from hampel import hampel
 
 # Custom Imports
 from lfd_apples.lfd_vision import extract_pooled_latent_vector, bounding_box_centers
+
+
+
+def transform_point_image_to_frame(px, py, tx, ty, theta):
+    c = math.cos(theta)
+    s = math.sin(theta)
+
+    T_FI = np.array([
+        [ c,  s, -(c*tx + s*ty)],
+        [-s,  c,  (s*tx - c*ty)],
+        [ 0,  0,  1]
+    ])
+
+    p_I = np.array([px, py, 1.0])
+
+    p_F = T_FI @ p_I
+    return int(p_F[0]), int(p_F[1])
 
 
 class YoloLatentVector(Node):
@@ -82,9 +100,39 @@ class YoloLatentVector(Node):
         img_w = msg.width
         img_h = msg.height            
 
-        # Draw Crosshair at image center
-        cv2.line(raw_image, (img_w//2 - 10, img_h//2), (img_w//2 + 10, img_h//2), color=(0, 255, 0), thickness=1)
-        cv2.line(raw_image, (img_w//2, img_h//2-10), (img_w//2, img_h//2+10), color=(0, 255, 0), thickness=1)
+        # --- Draw Crosshair at image center
+        # Transform from Image cFrame to TCP cframe
+        cx, cy = img_w // 2, img_h // 2
+        length = 80
+        angle = math.radians(45)
+        dx = int(length * math.cos(angle))
+        dy = int(length * math.sin(angle))
+        label_offset_x = 10
+        label_offset_y = 5
+
+        # X axis (45°)
+        x1 = (cx - dx, cy - dy)
+        x2 = (cx + dx, cy + dy)
+        
+        cv2.line(raw_image, x1, x2, color=(0, 255, 0), thickness=1)
+        # X-axis label (placed past positive direction)
+        cv2.putText(raw_image, "X axis",
+                    (x2[0] + label_offset_x, x2[1] - label_offset_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    (0, 255, 0), 1, cv2.LINE_AA)
+
+        # Y axis (-45°)
+        y1 = (cx + dx, cy - dy)
+        y2 = (cx -+ dx, cy + dy)
+
+        cv2.line(raw_image, y1, y2, color=(0, 255, 0), thickness=1)
+
+        # Y-axis label
+        cv2.putText(raw_image, "Y axis",
+                    (y2[0] + label_offset_x, y2[1] + label_offset_y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    (0, 255, 0), 1, cv2.LINE_AA)
+
 
         if publish_latent_vector:
             # --- Extract Latent Features ---        
@@ -112,10 +160,7 @@ class YoloLatentVector(Node):
                 raw_image,
                 self.yolo_model)                                     
                     
-            if bbox_center:
-
-                bbox_center[0] = int(bbox_center[0] - img_w/2)
-                bbox_center[1] = int(bbox_center[1] - img_h/2)                
+            if bbox_center:                                             
 
                 # Book keeping
                 self.bbox_cxs.append(bbox_center[0])
@@ -128,6 +173,7 @@ class YoloLatentVector(Node):
 
                     # Hampel Filter
                     filtered_cx = int(hampel(np.array(self.bbox_cxs), window_size=5, n_sigma=1.0).filtered_data[-1].item())
+                    # Invert y from camera sensor to real world
                     filtered_cy  = - int(hampel(np.array(self.bbox_cys), window_size=5, n_sigma=1.0).filtered_data[-1].item())
 
                     # # Moving Average Filter                   
@@ -136,24 +182,26 @@ class YoloLatentVector(Node):
 
                     bbox_center = [filtered_cx, filtered_cy]
 
-                else:
-                    filtered_cx = int(bbox_center[0])
-                    filtered_cy = - int(bbox_center[1])             # Invert Y axis for robot frame      
+                # Bounding Box center at Image frame:
+                self.get_logger().info(f"BBox center at Image frame: {bbox_center}\n")               
+                cx_img_frame = int(bbox_center[0])
+                cy_img_frame = - int(bbox_center[1])             # Invert Y axis back for img frame 
+                cv2.circle(raw_image, (cx_img_frame, cy_img_frame), radius=5, color=(0, 0, 255), thickness=-1)
+                cv2.putText(raw_image, f"Bbox center at img frame: ({cx_img_frame},{cy_img_frame})", (20,20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+
+                # Bounding Box center at TCP frame:
+                cx_tcp_frame, cy_tcp_frame = transform_point_image_to_frame(cx_img_frame, cy_img_frame, img_w/2, img_h/2, theta=angle)               
+                self.get_logger().info(f"Bbox center @ tcp frame: {cx_tcp_frame}, {cy_tcp_frame}\n")       
+                cv2.putText(raw_image, f"({cx_tcp_frame},{cy_tcp_frame})", (cx_img_frame, cy_img_frame),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)              
                 
-                # Draw a circle at the bounding box center                
-                img_cx = int(filtered_cx + img_w/2)
-                img_cy = int(- filtered_cy + img_h/2)              # Invert Y axis for image frame
-
-                cv2.circle(raw_image, (img_cx, img_cy), radius=5, color=(0, 0, 255), thickness=-1)  # red dot
-                cv2.putText(raw_image, f"Center: ({filtered_cx},{filtered_cy})", (img_cx + 10, img_cy - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)                
-
             else:            
                 self.get_logger().warn(f"No bounding boxes dectected")
                 bbox_center = [-1, -1]            
 
             bbox_center_msg = Int16MultiArray()
-            bbox_center_msg.data = bbox_center
+            bbox_center_msg.data = [cx_tcp_frame, cy_tcp_frame]
             # # bbox_center_msg.data = centers_array.flatten().tolist()
             self.bbox_center_pub.publish(bbox_center_msg)
         
