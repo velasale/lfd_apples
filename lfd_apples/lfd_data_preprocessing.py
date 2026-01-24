@@ -9,7 +9,7 @@ import numpy as np
 from tqdm import tqdm
 from hampel import hampel
 
-from lfd_vision import extract_pooled_latent_vector
+from lfd_vision import extract_pooled_latent_vector, bounding_box_centers
 from ultralytics import YOLO
 import cv2
 
@@ -328,7 +328,8 @@ def reduce_size_inhand_camera_raw_images(df_with_timestamps, raw_data_path, mode
     
     timestamp_vector = df_with_timestamps['timestamp_vector'].values
 
-    rows = []
+    latent_vector_rows = []
+    bbox_rows = []
     for fname in sorted(os.listdir(raw_data_path)):
         if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
             continue
@@ -340,34 +341,61 @@ def reduce_size_inhand_camera_raw_images(df_with_timestamps, raw_data_path, mode
             print(f"Could not read {image_path}, skipping.")
             continue
 
+        # Pooled Latent Vector
         pooled_vector, feat_map = extract_pooled_latent_vector(
             img_cv,
             model,
             layer_index=layer
         )        
+        # build row: first filename, then 64 feature values
+        latent_row = [fname] + pooled_vector.tolist()       
+        latent_vector_rows.append(latent_row)
+
+
+        # Bounding Box Center
+        bbox = bounding_box_centers(
+            img_cv,
+            model
+        )
         
-        # build row: first filename, then 256 feature values
-        row = [fname] + pooled_vector.tolist()
-        rows.append(row)
+        if bbox:
+            previous_bbox = bbox
+        else:
+            # In case that there is no bbox, and avoid sudden jumps, keep the previous one
+            bbox = previous_bbox
 
-        # print(fname, pooled_vector.shape)
-    
-    feature_dim = len(rows[0]) - 1  # typically 256
-    columns = ["filename"] + [f"f{i}" for i in range(feature_dim)]
-    df = pd.DataFrame(rows, columns=columns)
-    df.drop(columns=["filename"], inplace=True)   
+        bbox_rows.append(bbox)       
+        
+    # Latent Vector DF
+    feature_dim = len(latent_vector_rows[0]) - 1 # typically 64 , subtracting bbox and filename
+    columns = ["filename"] + [f"f{i}" for i in range(feature_dim)] 
+    df_latent = pd.DataFrame(latent_vector_rows, columns=columns)
+    df_latent.drop(columns=["filename"], inplace=True)   
 
-    df_filtered = pd.DataFrame(
-        gaussian_filter1d(df, sigma=2, axis=0),
+    df_latent_vector_filtered = pd.DataFrame(
+        gaussian_filter1d(df_latent, sigma=2, axis=0),
         columns = [f"f{i}" for i in range(feature_dim)],
-        index=df.index
+        index=df_latent.index
         )
 
+    # BBOX DF
+    bbox_columns = ["bbox._x._img_frame"] + ["bbox._y._img_frame"]
+    df_bbox = pd.DataFrame(bbox_rows, columns=bbox_columns)
+    df_bbox_filtered = df_bbox.copy()
+
+    df_bbox_filtered["bbox._x._img_frame"] = hampel(df_bbox["bbox._x._img_frame"], window_size=5, n_sigma=1.0).filtered_data
+    df_bbox_filtered["bbox._y._img_frame"] = hampel(df_bbox["bbox._y._img_frame"], window_size=5, n_sigma=1.0).filtered_data
+
+    df_filtered = pd.concat([df_latent_vector_filtered, df_bbox_filtered], axis=1)    
+
+    
     if compare_plots: 
         signals = ["f1", "f10", "f20"]
-        plot_signals_before_and_after(df, df_filtered, signals, timestamp_vector=timestamp_vector)
-
-    return df
+        plot_signals_before_and_after(df_latent, df_filtered, signals, timestamp_vector=timestamp_vector)
+        signals = ["bbox._x._img_frame"]
+        plot_signals_before_and_after(df_bbox, df_filtered, signals, timestamp_vector=timestamp_vector)
+   
+    return df_filtered
       
 
 def downsample_eef_wrench_data(df, raw_data_path, compare_plots=True):
@@ -744,7 +772,7 @@ def stage_1_align_and_downsample():
         raw_ee_pose_path = os.path.join(SOURCE_PATH, trial, ARM_SUBDIR, "franka_robot_state_broadcaster_current_pose.csv")
                
         # Downsample data and align datasets based on the timestamps of in-hand camera images
-        compare_plots = False
+        compare_plots = True
         df = pd.DataFrame()
         df['timestamp_vector'] = get_timestamp_vector_from_images(raw_palm_camera_images_path)
         df_ds_1 = downsample_pressure_and_tof_data(df, raw_pressure_and_tof_path, compare_plots=compare_plots)
@@ -1252,9 +1280,9 @@ def stage_5_fix_hw_issues():
 
 if __name__ == '__main__':
 
-    # stage_1_align_and_downsample()
+    stage_1_align_and_downsample()
     # stage_2_transform_data_to_eef_frame()
-    stage_3_crop_data_to_task_phases()   
+    # stage_3_crop_data_to_task_phases()   
    
     # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
     # phases = ['phase_1_approach']    
