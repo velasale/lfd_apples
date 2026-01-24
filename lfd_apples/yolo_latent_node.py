@@ -159,7 +159,9 @@ class YoloLatentVector(Node):
             bbox_center = bounding_box_centers(
                 raw_image,
                 self.yolo_model)                                     
-                    
+            
+            bbox_center_at_tcp = [-1,-1]
+
             if bbox_center:                                             
 
                 # Book keeping
@@ -188,20 +190,22 @@ class YoloLatentVector(Node):
                 cy_img_frame = - int(bbox_center[1])             # Invert Y axis back for img frame 
                 cv2.circle(raw_image, (cx_img_frame, cy_img_frame), radius=5, color=(0, 0, 255), thickness=-1)
                 cv2.putText(raw_image, f"Bbox center at img frame: ({cx_img_frame},{cy_img_frame})", (20,20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
 
                 # Bounding Box center at TCP frame:
                 cx_tcp_frame, cy_tcp_frame = transform_point_image_to_frame(cx_img_frame, cy_img_frame, img_w/2, img_h/2, theta=angle)               
                 self.get_logger().info(f"Bbox center @ tcp frame: {cx_tcp_frame}, {cy_tcp_frame}\n")       
-                cv2.putText(raw_image, f"({cx_tcp_frame},{cy_tcp_frame})", (cx_img_frame, cy_img_frame),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)              
-                
+                cv2.putText(raw_image, f"({cx_tcp_frame},{cy_tcp_frame})", (cx_img_frame + 10, cy_img_frame),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)               
+
+                bbox_center_at_tcp = [cx_tcp_frame, cy_tcp_frame]                
+
             else:            
                 self.get_logger().warn(f"No bounding boxes dectected")
                 bbox_center = [-1, -1]            
 
             bbox_center_msg = Int16MultiArray()
-            bbox_center_msg.data = [cx_tcp_frame, cy_tcp_frame]
+            bbox_center_msg.data = bbox_center_at_tcp
             # # bbox_center_msg.data = centers_array.flatten().tolist()
             self.bbox_center_pub.publish(bbox_center_msg)
         
