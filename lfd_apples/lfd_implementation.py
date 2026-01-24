@@ -115,6 +115,9 @@ class LFDController(Node):
             Float32MultiArray, 'lfd/latent_image', self.palm_camera_callback, 10)       
         self.joint_states_sub = self.create_subscription(
             JointState, '/joint_states', self.joint_states_callback, 10)  # Dummy subscriber to ensure joint states are available
+        self.bbox_center_sub = self.create_subscription(
+            Int16MultiArray, 'lfd/bbox_center', self.bbox_callback, 10)  
+        
         
         # Topic Publishers
         self.vel_pub = self.create_publisher(
@@ -166,7 +169,8 @@ class LFDController(Node):
         # Controller gain for delta
         # Converts deltas into m/s and rad/s
         # In our case deltas were obtained for delta_times = 1msec, hence gain = 1/0.001 = 1000
-        self.DELTA_GAIN = 2000
+        self.DELTA_GAIN = 1000
+        # self.DELTA_GAIN = 1500    # I used this one for command interface = position
 
 
     def initialize_rviz_trail(self):
@@ -322,7 +326,7 @@ class LFDController(Node):
         # demo_trial = 'trial_4_downsampled_aligned_data.csv'        
 
         # Twist actions given at the eef frame
-        self.DEBUG_TRIAL = 'trial_50'
+        self.DEBUG_TRIAL = 'trial_6'
 
         # 1 - Approach Phase
         approach_eef_demos_folder = '/home/alejo/Documents/DATA/04_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_1_approach'
@@ -345,7 +349,7 @@ class LFDController(Node):
         # Load apple pose
         self.apple_pose_base = self.approach_debugging_demo_pd[['apple._x._base', 'apple._y._base', 'apple._z._base']].iloc[0]
         self.apple_pose_tcp = self.approach_debugging_demo_pd[['apple._x._ee', 'apple._y._ee', 'apple._z._ee']].iloc[0]
-        self.place_rviz_apple()
+        
 
         # Load action names from yaml config
         data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
@@ -403,7 +407,7 @@ class LFDController(Node):
         self.contact_accomplished = False
         self.pick_accomplished = False
         self.data_ready = False
-        self.running_lfd_approach = False
+        self.running_lfd = False
         self.running_lfd_contact = False
         self.running_lfd_pick = False        
 
@@ -415,7 +419,7 @@ class LFDController(Node):
         self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
         # --- Timer to recreate incoming palm camera with fake hardware ---
-        self.create_timer(0.034, self.incoming_cam_sim)
+        # self.create_timer(0.034, self.incoming_cam_sim)
 
 
     def initialize_ml_models(self):
@@ -424,6 +428,7 @@ class LFDController(Node):
         phase = 'phase_1_approach'
         model = 'mlp'
         timesteps = '0_timesteps'               
+
         self.load_model(phase, model, timesteps)              
 
 
@@ -673,7 +678,7 @@ class LFDController(Node):
 
 
     def update_tcp_trail(self):
-        if not self.running_lfd_approach:
+        if not self.running_lfd:
             return
 
         self.trail_step += 1
@@ -694,7 +699,7 @@ class LFDController(Node):
     def run_lfd_approach(self, n_timesteps=2):       
 
         self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
-        self.running_lfd_approach = True
+        self.running_lfd = True
         self.lfd_approach = True
         self.sum_pos_x_error = 0.0
         self.sum_pos_y_error = 0.0
@@ -703,7 +708,7 @@ class LFDController(Node):
         self.tcp_trail_marker.points.clear()
         self.trail_step = 0
 
-        while rclpy.ok() and self.running_lfd_approach:
+        while rclpy.ok() and self.running_lfd:
             
             # self.tof = np.array([1000])  # Dummy value for testing
             self.tof = 1000.0
@@ -711,13 +716,13 @@ class LFDController(Node):
             if self.tof < self.TOF_THRESHOLD:
                 self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                
                 self.send_stop_message()
-                self.running_lfd_approach = False
+                self.running_lfd = False
 
             rclpy.spin_once(self,timeout_sec=0.0)
             time.sleep(0.001)
         
         self.send_stop_message()
-        self.running_lfd_approach = False
+        self.running_lfd = False
 
 
     def send_stop_message(self):
@@ -767,7 +772,7 @@ class LFDController(Node):
         This is for testing purposes only.
         """
 
-        if self.running_lfd_approach and self.DEBUGGING_MODE:
+        if self.running_lfd and self.DEBUGGING_MODE:
 
             # --- Get next action from debugging demo ---
             
@@ -775,6 +780,7 @@ class LFDController(Node):
             if self.lfd_approach:
 
                 if self.APPROACH_DEBUGGING_STEP >= len(self.approach_debugging_actions_pd):
+                    self.get_logger().info(f'Approach steps:{self.APPROACH_DEBUGGING_STEP}')
                     self.get_logger().info("Debugging demo actions exhausted.")
                     self.send_stop_message()
                     # self.running_lfd_approach = False
@@ -790,26 +796,34 @@ class LFDController(Node):
 
                     # If using deltas, multiply by scaling factor
                     # Send actions (twist)                            
-                    self.position_kp = 2.0
-                    self.position_ki = 0.01
-                    self.position_kp_z = 0.1
+                    self.position_kp = 1.25  # 2.0
+                    self.position_ki = 0.025
+                    self.position_kp_z = 0.2    # 0.1
+
+                    # =========================  HEADS UP ===========================
+                    # If using bbox pixels from camera without prior, otherwise comment to use the prior knowledge
+                    self.pixel_to_meter_rate = 0.2/320      # approx 20cm per 320 pixels
+                    self.eef_pos_x_error = self.bbox_center_at_tcp[0] * self.pixel_to_meter_rate
+                    self.eef_pos_1_error = self.bbox_center_at_tcp[1] * self.pixel_to_meter_rate
+                    # ================================================================
+
 
                     self.sum_pos_x_error += self.eef_pos_x_error
                     self.sum_pos_y_error += self.eef_pos_y_error
                     self.get_logger().info(f"apple pose tcp: {self.p_apple_tcp}")
 
-                    self.target_cmd.twist.linear.x = float(y[0]) * self.DELTA_GAIN \
+                    self.target_cmd.twist.linear.x = 0.0 * float(y[0]) * self.DELTA_GAIN \
                                                         + self.position_kp * self.eef_pos_x_error \
                                                         + self.position_ki * self.sum_pos_x_error
-                    self.target_cmd.twist.linear.y = float(y[1]) * self.DELTA_GAIN \
+                    self.target_cmd.twist.linear.y = 0.0 * float(y[1]) * self.DELTA_GAIN \
                                                         + self.position_kp * self.eef_pos_y_error \
                                                         + self.position_ki * self.sum_pos_y_error
-                    self.target_cmd.twist.linear.z = float(y[2]) * self.DELTA_GAIN \
-                                                        + self.position_kp_z * self.eef_pos_z_error   
+                    self.target_cmd.twist.linear.z = 0.0 * float(y[2]) * self.DELTA_GAIN \
+                                                        + 0.0 * self.position_kp_z * self.eef_pos_z_error   
                     
-                    self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN 
-                    self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN 
-                    self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.x = 0.0 * float(y[3]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.y = 0.0 * float(y[4]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.z = 0.0 * float(y[5]) * self.DELTA_GAIN 
                                 
                     self.APPROACH_DEBUGGING_STEP += 1           
 
@@ -817,6 +831,7 @@ class LFDController(Node):
             elif self.lfd_contact:
             
                 if self.CONTACT_DEBUGGING_STEP >= len(self.contact_debugging_actions_pd) and self.lfd_contact:
+                    self.get_logger().info(f'Contact steps:{self.CONTACT_DEBUGGING_STEP}')
                     self.get_logger().info("Debugging demo actions exhausted.")
                     self.send_stop_message()
                     # self.running_lfd_approach = False                
@@ -845,9 +860,10 @@ class LFDController(Node):
             elif self.lfd_pick:
 
                 if self.PICK_DEBUGGING_STEP >= len(self.pick_debugging_actions_pd):
+                    self.get_logger().info(f'Pick steps:{self.PICK_DEBUGGING_STEP}')
                     self.get_logger().info("Debugging demo actions exhausted.")
                     self.send_stop_message()
-                    self.running_lfd_approach = False                
+                    self.running_lfd = False                
                     self.lfd_pick = False
                 
                     return
@@ -868,8 +884,7 @@ class LFDController(Node):
                     self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN 
                                 
                     self.PICK_DEBUGGING_STEP += 1          
-            
-            
+                       
 
     def palm_camera_callback(self, msg: Float32MultiArray):
         """
@@ -881,7 +896,7 @@ class LFDController(Node):
         :type msg: Image
         """
 
-        if self.running_lfd_approach and not self.DEBUGGING_MODE:
+        if self.running_lfd and not self.DEBUGGING_MODE:
             
             # --- Extract latent image ---
             self.latent_image = msg.data
@@ -969,45 +984,27 @@ class LFDController(Node):
             else:
                 self.t_1_data = self.t_data
                         
-        if self.running_lfd_approach and self.DEBUGGING_MODE:
-
-            # --- Get next action from debugging demo ---
-            # Get current step
+        if self.running_lfd and self.DEBUGGING_MODE:
             
-            if self.APPROACH_DEBUGGING_STEP >= len(self.approach_debugging_actions_pd):
-                self.get_logger().info("Debugging demo actions exhausted.")
-                self.send_stop_message()
-                self.running_lfd_approach = False
-                return
-            else:
-            
-                action_row = self.approach_debugging_actions_pd.iloc[self.APPROACH_DEBUGGING_STEP]
-                y = action_row.values
-                
-                self.get_logger().info(f"Debugging mode - Step {self.APPROACH_DEBUGGING_STEP}, Action: {y}")
+            # Simply run the incoming_cam_simulated function that handles all twists
+            self.incoming_cam_sim()
 
-                # Send actions (twist)        
-                # If using deltas, multiply by scaling factor to conver to speed units               
-                self.target_cmd.twist.linear.x = float(y[0]) * self.DELTA_GAIN
-                self.target_cmd.twist.linear.y = float(y[1]) * self.DELTA_GAIN
-                self.target_cmd.twist.linear.z = float(y[2]) * self.DELTA_GAIN    
-                self.target_cmd.twist.angular.x = float(y[3]) * self.DELTA_GAIN
-                self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN
-                self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN
 
-                # self.target_cmd.twist.linear.x = 0.0 #float(y[0]) * self.DELTA_GAIN
-                # self.target_cmd.twist.linear.y = 0.0 #float(y[1]) * self.DELTA_GAIN
-                # self.target_cmd.twist.linear.z = 0.0 #float(y[2]) * self.DELTA_GAIN    
-                # self.target_cmd.twist.angular.x = 0.1 #float(y[3]) * self.DELTA_GAIN
-                # self.target_cmd.twist.angular.y = 0.0 #float(y[4]) * self.DELTA_GAIN
-                # self.target_cmd.twist.angular.z = 0.0 #float(y[5]) * self.DELTA_GAIN
-            
-                self.APPROACH_DEBUGGING_STEP += 1        
+    def bbox_callback(self, msg: Int16MultiArray):
+        '''
+        Center of Bounding Box from Yolo node
+        
+        :param self: Description
+        :param msg: Description
+        :type msg: Int16MultiArray
+        '''
+
+        self.bbox_center_at_tcp = msg.data
             
         
     def publish_smoothed_velocity(self):
 
-        if not self.running_lfd_approach:
+        if not self.running_lfd:
             return
 
         dt = (self.get_clock().now() - self.last_cmd_time).nanoseconds * 1e-9
@@ -1178,16 +1175,17 @@ def main():
             pass
 
         input("\n\033[1;32m\nSTEP 2: Place apple on the proxy. \nPress ENTER key when done.\033[0m\n")    
+        node.place_rviz_apple()
 
         # ------------ Step 2: Allow free drive if needed ---------
-        # node.swap_controller(node.arm_controller, node.gravity_controller)
+        node.swap_controller(node.arm_controller, node.gravity_controller)
         time.sleep(1.0)                
         node.get_logger().info("\n\033[1;32m\nSTEP 3: Free-drive arm until apple in camera FOV. \nPress ENTER key when you are done.\033[0m\n")        
         input()    
        
         # ------------ Step 3: Enable Servo Node Cartesian velocity controller ---------
-        node.swap_controller(node.arm_controller, node.twist_controller)
-        # node.swap_controller(node.gravity_controller, node.twist_controller)
+        # node.swap_controller(node.arm_controller, node.twist_controller)
+        node.swap_controller(node.gravity_controller, node.twist_controller)
         time.sleep(1.0)  
 
         node.get_logger().info("Enabling Moveit2 Servo Node for twist controller...")
@@ -1200,9 +1198,9 @@ def main():
         robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
 
         # -------------- Step 4: Run lfd controller ----------------        
-        input("\n\033[1;32m\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\033[0m\n")        
+        input("\n\033[1;32m\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\033[0m\n")     
+        node.initialize_debugging_mode_variables   
         node.DEBUGGING_MODE = True
-        node.APPROACH_DEBUGGING_STEP = 0
         node.run_lfd_approach()      
 
         # Save states to CSV        
