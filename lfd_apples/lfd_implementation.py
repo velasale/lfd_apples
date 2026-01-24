@@ -802,9 +802,9 @@ class LFDController(Node):
 
                     # =========================  HEADS UP ===========================
                     # If using bbox pixels from camera without prior, otherwise comment to use the prior knowledge
-                    self.pixel_to_meter_rate = 0.2/320      # approx 20cm per 320 pixels
+                    self.pixel_to_meter_rate = 0.3/320      # approx 20cm per 320 pixels
                     self.eef_pos_x_error = self.bbox_center_at_tcp[0] * self.pixel_to_meter_rate
-                    self.eef_pos_1_error = self.bbox_center_at_tcp[1] * self.pixel_to_meter_rate
+                    self.eef_pos_y_error = self.bbox_center_at_tcp[1] * self.pixel_to_meter_rate
                     # ================================================================
 
 
@@ -818,12 +818,12 @@ class LFDController(Node):
                     self.target_cmd.twist.linear.y = 0.0 * float(y[1]) * self.DELTA_GAIN \
                                                         + self.position_kp * self.eef_pos_y_error \
                                                         + self.position_ki * self.sum_pos_y_error
-                    self.target_cmd.twist.linear.z = 0.0 * float(y[2]) * self.DELTA_GAIN \
+                    self.target_cmd.twist.linear.z = 1.0 * float(y[2]) * self.DELTA_GAIN \
                                                         + 0.0 * self.position_kp_z * self.eef_pos_z_error   
                     
-                    self.target_cmd.twist.angular.x = 0.0 * float(y[3]) * self.DELTA_GAIN 
-                    self.target_cmd.twist.angular.y = 0.0 * float(y[4]) * self.DELTA_GAIN 
-                    self.target_cmd.twist.angular.z = 0.0 * float(y[5]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.x = 1.0 * float(y[3]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.y = 1.0 * float(y[4]) * self.DELTA_GAIN 
+                    self.target_cmd.twist.angular.z = 1.0 * float(y[5]) * self.DELTA_GAIN 
                                 
                     self.APPROACH_DEBUGGING_STEP += 1           
 
