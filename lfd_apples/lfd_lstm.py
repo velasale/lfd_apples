@@ -276,7 +276,7 @@ if __name__ == '__main__':
     hidden_dim_list = [64]
     num_layers_list = [2]
 
-    seq_lens = [5]
+    seq_lens = [1]
 
     for phase in phases:
         print(f'\n------------------ {phase}-------------------')
