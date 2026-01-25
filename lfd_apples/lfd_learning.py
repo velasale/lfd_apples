@@ -80,6 +80,12 @@ class DatasetForLearning():
             c for c in self.input_cols
             if c not in ouput_set
         ]
+
+        n_time_steps = int(self.TIME_STEPS.split('_timesteps')[0])
+
+        self.input_cols = expand_features_over_time(self.input_cols, n_time_steps)
+
+        pass
         
         
         
@@ -399,6 +405,14 @@ def get_phase_columns(cfg, phase_name):
         columns.extend(resolve_columns(cfg, key))
 
     return columns
+
+
+def expand_features_over_time(features, sequence_length):
+    return [
+        f"{feat}_(t_{t})"
+        for t in range(1, sequence_length)
+        for feat in features
+    ]
 
 
 def zscore_normalize(train_set, test_set, eps=1e-8):
