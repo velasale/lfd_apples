@@ -693,6 +693,10 @@ def main():
     regressors = ['rf','mlp','mlp_torch']    
     time_steps = [0,5,10,20]
    
+    phases = ['phase_1_approach']
+    regressors = ['mlp']
+    time_steps = [15, 20]
+
     for phase in phases:
 
         print(f"================== {phase} ===================")

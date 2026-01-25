@@ -313,16 +313,16 @@ def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_tri
     return trial_file, pd.read_csv(trial_file)
 
 
-def infer_actions(regressor='lstm', SEQ_LEN = 5):
+def infer_actions(regressor='mlp', SEQ_LEN = 5):
     
     TRIALS_SET = 'test_trials.csv'   
-    TRIAL_ID = 139#'random'           # type id or 'random'    
+    TRIAL_ID = 'random'           # type id or 'random'    
 
     PHASE = 'phase_1_approach'
     TIMESTEPS = '10_timesteps'    
     BASE_PATH = '/home/alejo/Documents/DATA'
 
-    n_inputs = 72
+    n_inputs = 68
     num_layers = 2
     hidden_dim = 64
 
@@ -914,10 +914,10 @@ def main():
 if __name__ == '__main__':
 
     # main()
-    # infer_actions()
+    infer_actions()
     # infer_actions_all_set()
 
     # important_features(top=10)
 
-    compare_trajectories()
+    # compare_trajectories()
 
