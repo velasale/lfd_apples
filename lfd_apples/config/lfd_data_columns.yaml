@@ -1,5 +1,41 @@
 # Action and state space columns used in all harvesting phases
 
+phases:
+  phase_1_approach:
+    - tof_cols
+    - inhand_cam_feature_cols
+    # - joint_states_cols.pos
+    # - ee_pose_cols
+    - apple_position_groundtruth
+    - action_cols
+
+  phase_2_contact:
+    - tof_cols
+    - air_pressure_cols
+    - wrench_cols
+    # - joint_states_cols.pos
+    # - ee_pose_cols
+    - apple_position_groundtruth
+    - action_cols
+
+  phase_3_pick:
+    - tof_cols
+    - air_pressure_cols
+    - wrench_cols
+    # - joint_states_cols.pos
+    # - ee_pose_cols
+    - apple_position_groundtruth
+    - action_cols
+
+  phase_4_disposal:
+    - tof_cols
+    - air_pressure_cols
+    - wrench_cols
+    # - joint_states_cols.pos
+    # - ee_pose_cols
+    - action_cols
+
+
 action_cols_at_base_frame:
 
   # Velocities @ base frame
@@ -29,9 +65,9 @@ action_cols:
   - Δ_ori_eef._z._eef_frame
 
 apple_position_groundtruth:
-  - 'apple._x._base'
-  - 'apple._y._base'
-  - 'apple._z._base'
+  # - 'apple._x._base'
+  # - 'apple._y._base'
+  # - 'apple._z._base'
   - 'apple._x._ee'
   - 'apple._y._ee'
   - 'apple._z._ee'
@@ -109,38 +145,3 @@ inhand_cam_feature_cols:
   # - f30
   # - f45
 
-
-phases:
-  phase_1_approach:
-    - tof_cols
-    - inhand_cam_feature_cols
-    - joint_states_cols.pos
-    # - ee_pose_cols
-    - apple_position_groundtruth
-    - action_cols
-
-  phase_2_contact:
-    - tof_cols
-    - air_pressure_cols
-    - wrench_cols
-    - joint_states_cols.pos
-    # - ee_pose_cols
-    - apple_position_groundtruth
-    - action_cols
-
-  phase_3_pick:
-    - tof_cols
-    - air_pressure_cols
-    - wrench_cols
-    - joint_states_cols.pos
-    # - ee_pose_cols
-    - apple_position_groundtruth
-    - action_cols
-
-  phase_4_disposal:
-    - tof_cols
-    - air_pressure_cols
-    - wrench_cols
-    - joint_states_cols.pos
-    # - ee_pose_cols
-    - action_cols
