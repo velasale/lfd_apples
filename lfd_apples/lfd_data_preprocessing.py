@@ -833,8 +833,8 @@ def stage_2_transform_data_to_eef_frame():
         SOURCE_PATH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\experiment_1_(pull)")
         DESTINATION_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)\experiment_1_(pull)")
     else:
-        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam')
-        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/only_human_demos/with_palm_cam')
+        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)')
+        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)')
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
