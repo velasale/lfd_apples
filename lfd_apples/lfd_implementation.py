@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
-import rclpy
-from rclpy.action import ActionClient
-from rclpy.node import Node
-from control_msgs.action import FollowJointTrajectory
-from sensor_msgs.msg import JointState
-from trajectory_msgs.msg import JointTrajectoryPoint
-from controller_manager_msgs.srv import SwitchController, LoadController, ListControllers
+
+# System imports
 import subprocess
 import time
 import os
-import yaml
 from pathlib import Path
-
-import pandas as pd
 
 # Custom imports
 from lfd_apples.listen_franka import main as listen_main
@@ -21,6 +13,9 @@ from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array, fr3_jacob
 from lfd_apples.lfd_vision import extract_pooled_latent_vector
 
 # ROS2 imports
+import rclpy
+from rclpy.action import ActionClient
+from rclpy.node import Node
 from std_msgs.msg import Int16MultiArray
 from std_msgs.msg import Float32MultiArray
 from std_srvs.srv import SetBool, Trigger
@@ -28,15 +23,22 @@ from geometry_msgs.msg import PoseStamped, TwistStamped, Twist
 from sensor_msgs.msg import Image
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
-
+from control_msgs.action import FollowJointTrajectory
+from sensor_msgs.msg import JointState
+from trajectory_msgs.msg import JointTrajectoryPoint
+from controller_manager_msgs.srv import SwitchController, LoadController, ListControllers
 
 # CV Bridge and YOLO imports
 from cv_bridge import CvBridge
 from ultralytics import YOLO
 import cv2
 
+# File type imports
 import pickle
 import joblib
+import yaml
+import pandas as pd
+
 import numpy as np
 print("NumPy version:", np.__version__)
 
@@ -77,11 +79,11 @@ class LFDController(Node):
         self.initialize_flags()
 
         self.initialize_state_variables()
-        self.initialize_debugging_mode_variables()        
+        self.initialize_debugging_mode_variables('trial_1')        
         self.initialize_signal_variables_and_thresholds()
         self.initialize_arm_poses()      
         
-        self.initialize_ml_models()
+        self.initialize_ml_models('phase_1_approach', 'mlp', '0_timesteps')
 
         # --- Velocity ramping variables ---
         # self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
@@ -96,46 +98,70 @@ class LFDController(Node):
 
 
         self.last_cmd_time = self.get_clock().now()   
-
         self.joint_names = [f"fr3_joint{i+1}" for i in range(7)]
         self.joint_states = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         self.trajectory_points = []       
-     
-        
+             
 
     # === Initialization functions ===
     def initialize_ros_topics(self):
 
-        # Topic Subscribers
+        # ROS Topic Subscribers
         self.distance_sub = self.create_subscription(
-            Int16MultiArray, 'microROS/sensor_data', self.gripper_sensors_callback, 10)
+            Int16MultiArray,
+            'microROS/sensor_data',
+            self.gripper_sensors_callback,
+            10)
         self.eef_pose_sub = self.create_subscription(
-            PoseStamped, '/franka_robot_state_broadcaster/current_pose', self.eef_pose_callback, 10)
+            PoseStamped,
+            '/franka_robot_state_broadcaster/current_pose',
+            self.eef_pose_callback,
+            10)
         self.palm_camera_sub = self.create_subscription(
-            Float32MultiArray, 'lfd/latent_image', self.palm_camera_callback, 10)       
+            Float32MultiArray,
+            'lfd/latent_image',
+            self.palm_camera_callback,
+            10)       
         self.joint_states_sub = self.create_subscription(
-            JointState, '/joint_states', self.joint_states_callback, 10)  # Dummy subscriber to ensure joint states are available
+            JointState,
+            '/joint_states',
+            self.joint_states_callback,
+            10)  # Dummy subscriber to ensure joint states are available
         self.bbox_center_sub = self.create_subscription(
-            Int16MultiArray, 'lfd/bbox_center', self.bbox_callback, 10)  
+            Int16MultiArray,
+            'lfd/bbox_center',
+            self.bbox_callback, 10)  
         
         
-        # Topic Publishers
+        # ROS Topic Publishers
         self.vel_pub = self.create_publisher(
-            TwistStamped, '/cartesian_velocity_controller/command', 10)
+            TwistStamped,
+            '/cartesian_velocity_controller/command',
+            10)
         self.delta_pub = self.create_publisher(
-            Float32MultiArray, '/cartesian_delta', 10)       
+            Float32MultiArray,
+            '/cartesian_delta',
+            10)       
         self.servo_pub = self.create_publisher(
-            TwistStamped, '/servo_node_lfd/delta_twist_cmds', 10)
+            TwistStamped,
+            '/servo_node_lfd/delta_twist_cmds',
+            10)
         self.tcp_marker_pub = self.create_publisher(
-            Marker, '/lfd/tcp_trail', 10) 
+            Marker,
+            '/lfd/tcp_trail',
+            10) 
         self.apple_marker_pub = self.create_publisher(
-            Marker, '/lfd/apple', 10) 
+            Marker,
+            '/lfd/apple',
+            10) 
 
 
     def initialize_ros_service_clients(self):
 
         # Service Clients
-        self.servo_node_client = self.create_client(Trigger, '/servo_node_lfd/start_servo')
+        self.servo_node_client = self.create_client(
+            Trigger,
+            '/servo_node_lfd/start_servo')
         while not self.servo_node_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('Waiting for servo node service...')
 
@@ -168,12 +194,14 @@ class LFDController(Node):
 
         # Controller gain for delta
         # Converts deltas into m/s and rad/s
-        # In our case deltas were obtained for delta_times = 1msec, hence gain = 1/0.001 = 1000
+        # In our case, delta_eef_pose was calculated for delta_times = 0.001 sec, 
+        # hence, we use a gain of 1000 (1/0.001sec) to convert m to m/sec.
         self.DELTA_GAIN = 1000
         # self.DELTA_GAIN = 1500    # I used this one for command interface = position
 
 
     def initialize_rviz_trail(self):
+
         self.tcp_trail_marker = Marker()
         self.tcp_trail_marker.header.frame_id = "fr3_link0"  # base frame
         self.tcp_trail_marker.ns = "tcp_trail"
@@ -267,51 +295,54 @@ class LFDController(Node):
         '''
         
         # State Space 
-        self.ncols_tof = 1
-        self.ncols_latent_image = 64
-        self.ncols_eef_pose = 7        
-        self.ncols_air_pressure = 3
-        self.ncols_joint_positions = 7
-        self.ncols_joint_velocities = 7
-        self.ncols_joint_efforts = 7
-        self.ncols_wrench = 6
+        self.NCOLS_TOF = 1
+        self.NCOLS_LATENT_IMAGE = 64
+        self.NCOLS_BBOX = 2
+        self.NCOLS_EEF_POSE = 7        
+        self.NCOLS_AIR_PRESSURE = 3
+        self.NCOLS_JOINT_POSITIONS = 7
+        self.NCOLS_JOINT_VELOCITIES = 7
+        self.NCOLS_JOINT_EFFORTS = 7
+        self.NCOLS_WRENCH = 6
+
+        self.ncols_approach = self.NCOLS_TOF + self.NCOLS_LATENT_IMAGE + self.NCOLS_JOINT_POSITIONS
+        self.ncols_contact = self.NCOLS_TOF + self.NCOLS_AIR_PRESSURE + self.NCOLS_WRENCH
+        self.ncols_pick = self.NCOLS_TOF + self.NCOLS_AIR_PRESSURE + self.NCOLS_WRENCH        
 
         # Action Space
-        self.ncols_eef_velocity = 6
-        self.ncols_approach = self.ncols_tof + self.ncols_latent_image + self.ncols_joint_positions
-
-        self.ncols_contact = self.ncols_tof + self.ncols_air_pressure + self.ncols_wrench
-        self.ncols_pick = self.ncols_tof + self.ncols_air_pressure + self.ncols_wrench        
-
+        self.NCOLS_EEF_VELOCITIES = 6
         self.KEEP_ACTIONS_MEMORY = False
         previous_timesteps_ncols = self.ncols_approach  
         if self.KEEP_ACTIONS_MEMORY:
-            previous_timesteps_ncols += self.ncols_eef_velocity  # Add action space dimensions         
+            previous_timesteps_ncols += self.NCOLS_EEF_VELOCITIES  # Add action space dimensions         
         self.t_2_data = np.zeros(previous_timesteps_ncols)       
         self.t_1_data = np.zeros(previous_timesteps_ncols)            
 
         # Initialize state space arrays
         self.t_data = []
-        self.tof = np.zeros(self.ncols_tof)
-        self.latent_image = np.zeros(self.ncols_latent_image)        
-        self.eef_pose = np.zeros(self.ncols_eef_pose)
-        self.joint_positions = np.zeros(self.ncols_joint_positions)
+        self.tof = np.zeros(self.NCOLS_TOF)
+        self.latent_image = np.zeros(self.NCOLS_LATENT_IMAGE)        
+        self.bbox = np.zeros(self.NCOLS_BBOX)
+        self.eef_pose = np.zeros(self.NCOLS_EEF_POSE)
+        self.joint_positions = np.zeros(self.NCOLS_JOINT_POSITIONS)
 
-        self.Y = np.zeros(self.ncols_eef_velocity)
-        self.Y_base_frame = np.zeros(self.ncols_eef_velocity)
+        self.Y = np.zeros(self.NCOLS_EEF_VELOCITIES)
+        self.Y_base_frame = np.zeros(self.NCOLS_EEF_VELOCITIES)
 
         # DataFrames to store normalized states over time
         self.lfd_states_df = pd.DataFrame()
         self.lfd_actions_df = pd.DataFrame()      
 
 
-    def initialize_debugging_mode_variables(self):
+    def initialize_debugging_mode_variables(self, trial='trial_1'):
         '''
         These variables are to be used while DEBUG mode is on
-        In this mode, the model is not used, instead a prerecorded demo is replayed
+        In this mode, the model is not used; instead, actions from a pre-recorded demo are replayed
         
         :param self: Description
         '''
+
+        self.DEBUG_TRIAL = trial
 
         # Debugging variables
         self.DEBUGGING_MODE = False
@@ -325,9 +356,7 @@ class LFDController(Node):
         # demos_folder = '/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)'
         # demo_trial = 'trial_4_downsampled_aligned_data.csv'        
 
-        # Twist actions given at the eef frame
-        self.DEBUG_TRIAL = 'trial_6'
-
+        # Twist actions at EEF frame (TCP frame)
         # 1 - Approach Phase
         approach_eef_demos_folder = '/home/alejo/Documents/DATA/04_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/phase_1_approach'
         approach_eef_demo_trial = self.DEBUG_TRIAL + '_downsampled_aligned_data_transformed_(phase_1_approach).csv'        
@@ -372,10 +401,12 @@ class LFDController(Node):
     def initialize_signal_variables_and_thresholds(self):        
 
         # Thresholds
+        # TOF threshold is used to switch from 'approach' to 'contact' phase
         self.TOF_THRESHOLD = 50                 # units in mm
+        # Air pressure threshold is used to tell when a suction cup has engaged.
         self.AIR_PRESSURE_THRESHOLD = 600       # units in hPa        
        
-        # Gripper Signal Variables
+        # Gripper Signal Variables with Exponential Moving Average
         self.ema_alpha = 0.5
         self.ema_scA = EMA(self.ema_alpha)
         self.ema_scB = EMA(self.ema_alpha)
@@ -422,15 +453,20 @@ class LFDController(Node):
         # self.create_timer(0.034, self.incoming_cam_sim)
 
 
-    def initialize_ml_models(self):
-        
-        # Load learned model
-        phase = 'phase_1_approach'
-        model = 'mlp'
-        timesteps = '0_timesteps'               
-
-        self.load_model(phase, model, timesteps)              
-
+    def initialize_ml_models(self, phase='phase_1_approach', model='mlp', timesteps='0_timesteps'):        
+      
+        BASE_DIR = '/home/alejo/Documents/DATA'
+        # BASE_DIR = '/media/alejo/IL_data'
+        model_path = os.path.join(BASE_DIR, '06_IL_learning/experiment_1_(pull)', phase, timesteps)
+        model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
+        with open(os.path.join(model_path, model_name), "rb") as f:
+            # self.lfd_model = pickle.load(f)
+            self.lfd_model = joblib.load(f)
+        self.lfd_X_mean = np.load(os.path.join(model_path, model + '_Xmean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+        self.lfd_X_std = np.load(os.path.join(model_path, model + '_Xstd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
+        self.lfd_Y_mean = np.load(os.path.join(model_path, model + '_Ymean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
+        self.lfd_Y_std = np.load(os.path.join(model_path, model + '_Ystd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
+   
 
     # === ROS controller functions ===
     def ensure_controller_loaded(self, controller_name):
@@ -536,23 +572,7 @@ class LFDController(Node):
         return True
 
 
-    # === TBD =====
-
-    def load_model(self, phase, model, timesteps):        
-
-        BASE_DIR = '/home/alejo/Documents/DATA'
-        # BASE_DIR = '/media/alejo/IL_data'
-        model_path = os.path.join(BASE_DIR, '06_IL_learning/experiment_1_(pull)', phase, timesteps)
-        model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
-        with open(os.path.join(model_path, model_name), "rb") as f:
-            # self.lfd_model = pickle.load(f)
-            self.lfd_model = joblib.load(f)
-        self.lfd_X_mean = np.load(os.path.join(model_path, model + '_Xmean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-        self.lfd_X_std = np.load(os.path.join(model_path, model + '_Xstd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
-        self.lfd_Y_mean = np.load(os.path.join(model_path, model + '_Ymean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-        self.lfd_Y_std = np.load(os.path.join(model_path, model + '_Ystd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
-
-
+    # === TBD =====    
     def move_to_home(self):
         self.get_logger().info('Waiting for action server...')
         if not self.action_client.wait_for_server(timeout_sec=5.0):
@@ -582,101 +602,7 @@ class LFDController(Node):
         self.get_logger().info(f'Motion complete with error code: {result.error_code}')
         return True
 
-   
-    def replay_joints(self, csv_path, downsample_factor=1, speed_factor=1.0, ramp_time=1.0):
-
-        self.get_logger().info(f"Loading trajectory from {csv_path}")
-        df = pd.read_csv(csv_path)
-
-        # Convert '_position' column and downsample
-        df_joints = pd.DataFrame(
-            df["_position"].apply(parse_array).apply(lambda x: x[:7]).tolist(),
-            columns=[f"fr3_joint{i+1}" for i in range(7)]
-        ).iloc[::downsample_factor].reset_index(drop=True)
-
-        # Debug print
-        self.get_logger().info(f"Raw points loaded: {len(df_joints)}")
-
-        # --- clear previous trajectory points ---
-        self.trajectory_points = []
-
-        # Original data recorded at 1 kHz → dt = 0.001 s
-        # Adjusted for downsampling and speed scaling
-        original_dt = 0.040 # Original time step in seconds
-        dt = original_dt * downsample_factor / speed_factor
-        time_from_start = ramp_time
-
-        for _, row in df_joints.iterrows():
-            point = JointTrajectoryPoint()
-            point.positions = row.tolist()
-            time_from_start += dt
-            point.time_from_start.sec = int(time_from_start)
-            point.time_from_start.nanosec = int((time_from_start - int(time_from_start)) * 1e9)
-            self.trajectory_points.append(point)
-
-        total_duration = time_from_start
-        self.get_logger().info(f"Prepared {len(self.trajectory_points)} trajectory points, total_duration={total_duration:.3f}s")
-
-
-        # --- Smooth ramp from current position to first point ---
-        try:
-            joint_state_msg = rclpy.wait_for_message('/joint_states', JointState, node=self, timeout=2.0)
-            current_positions = list(joint_state_msg.position[:7])
-            self.get_logger().info("Got current joint state for smooth ramp.")
-        except Exception:
-            current_positions = self.HOME_POSITIONS
-            self.get_logger().warn("Could not get /joint_states, using home positions for ramp.")
-
-        first_point_positions = self.trajectory_points[0].positions
-
-        # Generate ramp points
-        ramp_points = []
-        ramp_steps = max(int(ramp_time / dt), 2)  # at least 2 steps
-        for i in range(1, ramp_steps + 1):
-            alpha = i / ramp_steps
-            ramp_pos = [
-                (1 - alpha) * cur + alpha * target
-                for cur, target in zip(current_positions, first_point_positions)
-            ]
-            point = JointTrajectoryPoint()
-            point.positions = ramp_pos
-            point.velocities = [0.0] * 7
-            point.time_from_start.sec = int(alpha * ramp_time)
-            point.time_from_start.nanosec = int((alpha * ramp_time - int(alpha * ramp_time)) * 1e9)
-            ramp_points.append(point)
-
-        # Insert ramp points at the beginning
-        self.trajectory_points = ramp_points + self.trajectory_points
-        self.get_logger().info(f"Inserted {len(ramp_points)} ramp points for smooth start.")
-
-        if not self.action_client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error("Action server not available")
-            return        
-
-        goal_msg = FollowJointTrajectory.Goal()
-        goal_msg.trajectory.joint_names = self.joint_names
-        goal_msg.trajectory.points = self.trajectory_points
-
-        # Let the controller settle after activation
-        time.sleep(1.0)
-
-        self.get_logger().info("Sending trajectory via FollowJointTrajectory action...")
-        send_goal_future = self.action_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self, send_goal_future)
-
-        goal_handle = send_goal_future.result()
-
-        if not goal_handle.accepted:
-            self.get_logger().error("Trajectory goal rejected!")
-            return
-
-        self.get_logger().info("Trajectory goal accepted, waiting for result...")
-        result_future = goal_handle.get_result_async()
-        rclpy.spin_until_future_complete(self, result_future)
-        result = result_future.result().result
-        self.get_logger().info(f"Trajectory execution finished: {result}")
-
-
+       
     def update_tcp_trail(self):
         if not self.running_lfd:
             return
@@ -694,58 +620,6 @@ class LFDController(Node):
         self.tcp_trail_marker.header.stamp = self.get_clock().now().to_msg()
 
         self.tcp_marker_pub.publish(self.tcp_trail_marker)
-
-
-    def run_lfd_approach(self, n_timesteps=2):       
-
-        self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
-        self.running_lfd = True
-        self.lfd_approach = True
-        self.sum_pos_x_error = 0.0
-        self.sum_pos_y_error = 0.0
-
-        # Rviz: Clear previous trail       
-        self.tcp_trail_marker.points.clear()
-        self.trail_step = 0
-
-        while rclpy.ok() and self.running_lfd:
-            
-            # self.tof = np.array([1000])  # Dummy value for testing
-            self.tof = 1000.0
-
-            if self.tof < self.TOF_THRESHOLD:
-                self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                
-                self.send_stop_message()
-                self.running_lfd = False
-
-            rclpy.spin_once(self,timeout_sec=0.0)
-            time.sleep(0.001)
-        
-        self.send_stop_message()
-        self.running_lfd = False
-
-
-    def send_stop_message(self):
-        """
-        # Ensure a final zero-twist is sent to stop motion
-        
-        :param self: Description
-        """
-
-        self.target_cmd.twist = Twist()  # zero target
-        self.current_cmd.header.stamp = self.get_clock().now().to_msg()
-        self.vel_pub.publish(self.current_cmd)
-
-
-    def compute_joint_velocities(self, desired_ee_velocity: np.ndarray, joint_positions: list):
-        """
-        desired_ee_velocity: 6-element NumPy array
-        joint_positions: list of 7 floats
-        returns: 7-element NumPy array
-        """
-        jacobian = fr3_jacobian(joint_positions)
-        joint_velocities = np.linalg.pinv(jacobian) @ desired_ee_velocity
-        self.get_logger().info(f'Joint velocities: {joint_velocities}')
 
 
     # === Sensor Topics Callback ====
@@ -885,6 +759,72 @@ class LFDController(Node):
                                 
                     self.PICK_DEBUGGING_STEP += 1          
                        
+    
+    def bbox_callback(self, msg: Int16MultiArray):
+        '''
+        Center of Bounding Box from Yolo node
+        
+        :param self: Description
+        :param msg: Description
+        :type msg: Int16MultiArray
+        '''
+
+        self.bbox_center_at_tcp = msg.data
+           
+
+    def eef_pose_callback(self, msg: PoseStamped):
+
+        # get pose
+        self.eef_pos_x = msg.pose.position.x
+        self.eef_pos_y = msg.pose.position.y
+        self.eef_pos_z = msg.pose.position.z
+        self.eef_ori_x = msg.pose.orientation.x
+        self.eef_ori_y = msg.pose.orientation.y
+        self.eef_ori_z = msg.pose.orientation.z
+        self.eef_ori_w = msg.pose.orientation.w
+       
+
+
+        self.eef_pose = np.array([self.eef_pos_x,
+                                  self.eef_pos_y,
+                                  self.eef_pos_z,
+                                  self.eef_ori_x,
+                                  self.eef_ori_y,
+                                  self.eef_ori_z,
+                                  self.eef_ori_w])
+        
+        # self.eef_pos_x_error = self.goal_pose[0] - self.eef_pos_x
+        # self.eef_pos_y_error = self.goal_pose[1] - self.eef_pos_y
+        # self.eef_pos_z_error = self.goal_pose[2] - self.eef_pos_z
+
+        # Update sensors average since last action
+    
+
+    def joint_states_callback(self, msg: JointState):
+
+        self.joint_states = list(msg.position[:7])
+
+        # FK to obtain EEF pose at the base frame
+        q = self.joint_states #.to_numpy(dtype=float)                
+        T, Ts = fr3_fk(q)
+        p_tcp_base = T[:3, 3]
+        R_base_tcp = T[:3, :3]
+        
+        self.eef_pos_x_from_fk = p_tcp_base[0]
+        self.eef_pos_y_from_fk = p_tcp_base[1]
+        self.eef_pos_z_from_fk = p_tcp_base[2]    
+
+        # Update TCP trail
+        self.update_tcp_trail()
+
+        # Apple position in TCP frame
+        self.p_apple_tcp = R_base_tcp.T @ (self.apple_pose_base - p_tcp_base)
+
+        # Update distance from known target location
+        self.eef_pos_x_error = self.p_apple_tcp[0]
+        self.eef_pos_y_error = self.p_apple_tcp[1]
+        self.eef_pos_z_error = self.p_apple_tcp[2]
+
 
     def palm_camera_callback(self, msg: Float32MultiArray):
         """
@@ -990,17 +930,35 @@ class LFDController(Node):
             self.incoming_cam_sim()
 
 
-    def bbox_callback(self, msg: Int16MultiArray):
-        '''
-        Center of Bounding Box from Yolo node
-        
-        :param self: Description
-        :param msg: Description
-        :type msg: Int16MultiArray
-        '''
+    # === Action Functions ====
+    def run_lfd_approach(self, n_timesteps=2):       
 
-        self.bbox_center_at_tcp = msg.data
+        self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
+        self.running_lfd = True
+        self.lfd_approach = True
+        self.sum_pos_x_error = 0.0
+        self.sum_pos_y_error = 0.0
+
+        # Rviz: Clear previous trail       
+        self.tcp_trail_marker.points.clear()
+        self.trail_step = 0
+
+        while rclpy.ok() and self.running_lfd:
             
+            # self.tof = np.array([1000])  # Dummy value for testing
+            self.tof = 1000.0
+
+            if self.tof < self.TOF_THRESHOLD:
+                self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                
+                self.send_stop_message()
+                self.running_lfd = False
+
+            rclpy.spin_once(self,timeout_sec=0.0)
+            time.sleep(0.001)
+        
+        self.send_stop_message()
+        self.running_lfd = False
+
         
     def publish_smoothed_velocity(self):
 
@@ -1060,58 +1018,28 @@ class LFDController(Node):
         self.servo_pub.publish(self.current_cmd)
 
 
-    def eef_pose_callback(self, msg: PoseStamped):
-
-        # get pose
-        self.eef_pos_x = msg.pose.position.x
-        self.eef_pos_y = msg.pose.position.y
-        self.eef_pos_z = msg.pose.position.z
-        self.eef_ori_x = msg.pose.orientation.x
-        self.eef_ori_y = msg.pose.orientation.y
-        self.eef_ori_z = msg.pose.orientation.z
-        self.eef_ori_w = msg.pose.orientation.w
-       
-
-
-        self.eef_pose = np.array([self.eef_pos_x,
-                                  self.eef_pos_y,
-                                  self.eef_pos_z,
-                                  self.eef_ori_x,
-                                  self.eef_ori_y,
-                                  self.eef_ori_z,
-                                  self.eef_ori_w])
+    def send_stop_message(self):
+        """
+        # Ensure a final zero-twist is sent to stop motion
         
-        # self.eef_pos_x_error = self.goal_pose[0] - self.eef_pos_x
-        # self.eef_pos_y_error = self.goal_pose[1] - self.eef_pos_y
-        # self.eef_pos_z_error = self.goal_pose[2] - self.eef_pos_z
+        :param self: Description
+        """
 
-        # Update sensors average since last action
-    
+        self.target_cmd.twist = Twist()  # zero target
+        self.current_cmd.header.stamp = self.get_clock().now().to_msg()
+        self.vel_pub.publish(self.current_cmd)
 
-    def joint_states_callback(self, msg: JointState):
 
-        self.joint_states = list(msg.position[:7])
+    def compute_joint_velocities(self, desired_ee_velocity: np.ndarray, joint_positions: list):
+        """
+        desired_ee_velocity: 6-element NumPy array
+        joint_positions: list of 7 floats
+        returns: 7-element NumPy array
+        """
+        jacobian = fr3_jacobian(joint_positions)
+        joint_velocities = np.linalg.pinv(jacobian) @ desired_ee_velocity
+        self.get_logger().info(f'Joint velocities: {joint_velocities}')
 
-        # FK to obtain EEF pose at the base frame
-        q = self.joint_states #.to_numpy(dtype=float)                
-        T, Ts = fr3_fk(q)
-        p_tcp_base = T[:3, 3]
-        R_base_tcp = T[:3, :3]
-        
-        self.eef_pos_x_from_fk = p_tcp_base[0]
-        self.eef_pos_y_from_fk = p_tcp_base[1]
-        self.eef_pos_z_from_fk = p_tcp_base[2]    
-
-        # Update TCP trail
-        self.update_tcp_trail()
-
-        # Apple position in TCP frame
-        self.p_apple_tcp = R_base_tcp.T @ (self.apple_pose_base - p_tcp_base)
-
-        # Update distance from known target location
-        self.eef_pos_x_error = self.p_apple_tcp[0]
-        self.eef_pos_y_error = self.p_apple_tcp[1]
-        self.eef_pos_z_error = self.p_apple_tcp[2]
 
 
 
