@@ -112,7 +112,14 @@ To fix this simply replace the file **fr3_ros_controllers.yaml** with the one in
 
 ### III. Scripts for Learning
 - lfd_learning.py
+- lfd_lstm.py
 
 
-### IV. Scripts for Data Analysis
+### IV. Scripts for Implementation
+- lfd_implementation.py
+- yolo_latent_node.py
+
+
+### V. Scripts for Data Analysis
 - lfd_metadata_analysis.py
+- lfd_data_visualization.py
