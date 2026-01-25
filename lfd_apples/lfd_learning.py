@@ -37,7 +37,7 @@ class DatasetForLearning():
                
 
         self.define_data_paths()                # Paths to csvs and to store results
-        self.load_actions()                     # Data outputs (actions) from yaml file
+        self.load_states_and_actions()                     # Data outputs (actions) from yaml file
         self.load_data(self.BASE_PATH)          # List of data-csv filepaths
         self.split_data()                       # Split data into train and test sets (trial wise)
         self.prepare_data()                     # Prepares train and testing sets (normalized)
@@ -58,7 +58,7 @@ class DatasetForLearning():
         os.makedirs(self.DESTINATION_PATH, exist_ok=True)
 
 
-    def load_actions(self):
+    def load_states_and_actions(self):
         """
         Load actions from yaml file
         
@@ -68,10 +68,21 @@ class DatasetForLearning():
         data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
         with open(data_columns_path, "r") as f:
             cfg = yaml.safe_load(f)    
-        
+       
+        # Actions
         self.output_cols = cfg['action_cols']       
         self.n_output_cols = len(self.output_cols)     # These are the ouputs (actions)
 
+        # State
+        self.input_cols = get_phase_columns(cfg, self.phase)
+        ouput_set = set(self.output_cols)
+        self.input_cols = [
+            c for c in self.input_cols
+            if c not in ouput_set
+        ]
+
+        pass
+        
         
     def load_data(self, BASE_PATH):
         
@@ -165,21 +176,24 @@ class DatasetForLearning():
             self.BASE_PATH,
             self.TIME_STEPS,
             self.train_trials,
-            self.n_input_cols,
+            self.input_cols,
+            self.output_cols,
             self.SEQ_LENGTH,
             clip=self.clip)
         self.X_val, self.Y_val, self.X_val_seq, self.Y_val_seq = self.prepare_trial_set(
             self.BASE_PATH,
             self.TIME_STEPS,
             self.val_trials,
-            self.n_input_cols,
+            self.input_cols,
+            self.output_cols,
             self.SEQ_LENGTH,
             clip=self.clip)  
         self.X_test, self.Y_test, self.X_test_seq, self.Y_test_seq = self.prepare_trial_set(
             self.BASE_PATH,
             self.TIME_STEPS,
             self.test_trials,
-            self.n_input_cols,
+            self.input_cols,
+            self.output_cols,
             self.SEQ_LENGTH,
             clip=self.clip)          
         
@@ -231,10 +245,11 @@ class DatasetForLearning():
 
 
     @staticmethod
-    def prepare_trial_set(BASE_PATH, TIME_STEPS, set_csv_list, n_input_cols, SEQ_LENGTH, clip=False):
+    def prepare_trial_set(BASE_PATH, TIME_STEPS, set_csv_list, input_cols, output_cols, SEQ_LENGTH, clip=False):
         
         # Open csvs, convert int to arrays, and stack
-        set_arrays = []
+        set_arrays_states = []
+        set_arrays_actions = []
         set_lstm_X_seqs = []
         set_lstm_Y_seqs = []
         for trial in set_csv_list:     
@@ -247,28 +262,30 @@ class DatasetForLearning():
             df = pd.read_csv(filepath)
             df = df.apply(pd.to_numeric, errors='coerce')
 
-            df.drop(columns=['timestamp_vector'], inplace=True)
+            df_state = df[input_cols]
+            df_actions = df[output_cols]
 
             # --- Choice 1: Arrays
-            arr = df.to_numpy(dtype=np.float64)
-            set_arrays.append(arr)
+            arr_state = df_state.to_numpy(dtype=np.float64)
+            arr_actions = df_actions.to_numpy(dtype=np.float64)
+
+            set_arrays_states.append(arr_state)
+            set_arrays_actions.append(arr_actions)
 
             # --- Choice 2: Sequences
             # For LSTM. They need to be formed before stacking them all across trials
             
-            lstm_X_array = arr[:, :n_input_cols]
-            lstm_Y_array = arr[:, n_input_cols:]
+            lstm_X_array = set_arrays_states
+            lstm_Y_array = set_arrays_actions
 
             if SEQ_LENGTH > -1:
                 lstm_X_seq, lstm_Y_seq = DatasetForLearning.create_sequences(lstm_X_array, lstm_Y_array, SEQ_LENGTH)            
                 set_lstm_X_seqs.append(lstm_X_seq)
                 set_lstm_Y_seqs.append(lstm_Y_seq)            
 
-
-        set_combined = np.vstack(set_arrays)
-        X = set_combined[:, :n_input_cols]
-        Y = set_combined[:, n_input_cols:]
-
+        X = np.vstack(set_arrays_states)
+        Y = np.vstack(set_arrays_actions)
+      
         if SEQ_LENGTH>-1:
             set_lstm_X_combined = np.vstack(set_lstm_X_seqs)
             set_lstm_y_combined = np.vstack(set_lstm_Y_seqs)            
@@ -355,6 +372,37 @@ class DatasetForLearning():
             Y_seq[i] = Y[i]  # predict current timestep
 
         return X_seq, Y_seq
+
+
+def resolve_columns(cfg, key):
+    value = cfg[key]
+
+    # Case 1: already a list of column names
+    if isinstance(value, list):
+        return value
+
+    # Case 2: parameterized feature block
+    if isinstance(value, dict) and "prefix" in value and "count" in value:
+        return [f"{value['prefix']}{i}" for i in range(value["count"])]
+
+    # Case 3: nested dict (e.g. joint_states_cols)
+    if isinstance(value, dict):
+        cols = []
+        for subkey in value.values():
+            cols.extend(subkey)
+        return cols
+
+    raise TypeError(f"Cannot resolve columns for key: {key}")
+
+
+def get_phase_columns(cfg, phase_name):
+    phase_keys = cfg["phases"][phase_name]
+
+    columns = []
+    for key in phase_keys:
+        columns.extend(resolve_columns(cfg, key))
+
+    return columns
 
 
 def zscore_normalize(train_set, test_set, eps=1e-8):
@@ -695,7 +743,7 @@ def main():
    
     phases = ['phase_1_approach']
     regressors = ['mlp']
-    time_steps = [15, 20]
+    time_steps = [5]
 
     for phase in phases:
 
