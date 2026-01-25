@@ -330,6 +330,7 @@ def reduce_size_inhand_camera_raw_images(df_with_timestamps, raw_data_path, mode
 
     latent_vector_rows = []
     bbox_rows = []
+    previous_bbox = [-1,1]
     for fname in sorted(os.listdir(raw_data_path)):
         if not fname.lower().endswith((".jpg", ".jpeg", ".png")):
             continue
@@ -1280,15 +1281,15 @@ def stage_5_fix_hw_issues():
 
 if __name__ == '__main__':
 
-    stage_1_align_and_downsample()
+    # stage_1_align_and_downsample()
     # stage_2_transform_data_to_eef_frame()
     # stage_3_crop_data_to_task_phases()   
    
-    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
     # phases = ['phase_1_approach']    
-    # for phase in phases:
-    #     for step in [0,5,10]:
-    #         stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
+    for phase in phases:
+        for step in [0, 5, 10, 15, 20]:
+            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
