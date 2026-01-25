@@ -3,10 +3,11 @@
 phases:
   phase_1_approach:
     - tof_cols
-    - inhand_cam_feature_cols
+    # - inhand_cam_feature_cols
+    - inhand_cam_bbox
     # - joint_states_cols.pos
     # - ee_pose_cols
-    - apple_position_groundtruth
+    - apple_position_groundtruth    
     - action_cols
 
   phase_2_contact:
@@ -35,7 +36,7 @@ phases:
     # - ee_pose_cols
     - action_cols
 
-
+#========================== ACTION COLUMNS =========================
 action_cols_at_base_frame:
 
   # Velocities @ base frame
@@ -64,14 +65,20 @@ action_cols:
   - Δ_ori_eef._y._eef_frame
   - Δ_ori_eef._z._eef_frame
 
+
+# ============================ STATE INPUTS =====================
+
 apple_position_groundtruth:
   # - 'apple._x._base'
   # - 'apple._y._base'
   # - 'apple._z._base'
-  - 'apple._x._ee'
-  - 'apple._y._ee'
-  - 'apple._z._ee'
+  - apple._x._ee
+  - apple._y._ee
+  - apple._z._ee
 
+inhand_cam_bbox:
+  - bbox._x._img_frame
+  - bbox._y._img_frame
 
 air_pressure_cols:
   - scA
