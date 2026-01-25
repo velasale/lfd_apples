@@ -80,8 +80,7 @@ class DatasetForLearning():
             c for c in self.input_cols
             if c not in ouput_set
         ]
-
-        pass
+        
         
         
     def load_data(self, BASE_PATH):
@@ -264,22 +263,19 @@ class DatasetForLearning():
 
             df_state = df[input_cols]
             df_actions = df[output_cols]
-
-            # --- Choice 1: Arrays
+            
             arr_state = df_state.to_numpy(dtype=np.float64)
             arr_actions = df_actions.to_numpy(dtype=np.float64)
 
+            # --- Choice 1: Arrays
             set_arrays_states.append(arr_state)
             set_arrays_actions.append(arr_actions)
 
             # --- Choice 2: Sequences
             # For LSTM. They need to be formed before stacking them all across trials
-            
-            lstm_X_array = set_arrays_states
-            lstm_Y_array = set_arrays_actions
-
+                      
             if SEQ_LENGTH > -1:
-                lstm_X_seq, lstm_Y_seq = DatasetForLearning.create_sequences(lstm_X_array, lstm_Y_array, SEQ_LENGTH)            
+                lstm_X_seq, lstm_Y_seq = DatasetForLearning.create_sequences(arr_state, arr_actions, SEQ_LENGTH)            
                 set_lstm_X_seqs.append(lstm_X_seq)
                 set_lstm_Y_seqs.append(lstm_Y_seq)            
 
