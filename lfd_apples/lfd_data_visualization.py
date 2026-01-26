@@ -1,4 +1,3 @@
-
 import cv2
 import pandas as pd
 import glob
@@ -18,7 +17,7 @@ from tqdm import tqdm
 import torch
 
 # Custom imports
-from lfd_apples.lfd_learning import VelocityMLP, DatasetForLearning  # make sure this class is imported
+from lfd_apples.lfd_learning import VelocityMLP, DatasetForLearning, resolve_columns, get_phase_columns, expand_features_over_time  # make sure this class is imported
 from lfd_apples.lfd_lstm import LSTMRegressor
 from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array, plot_3dpose, fr3_fk, Trial
 from lfd_apples.lfd_data_preprocessing import parse_array_string
@@ -313,22 +312,18 @@ def trial_csv(model_path, phase, timesteps, trial='random', trials_set='test_tri
     return trial_file, pd.read_csv(trial_file)
 
 
-def infer_actions(regressor='mlp', SEQ_LEN = 5):
-    
-    TRIALS_SET = 'train_trials.csv'   
-    TRIAL_ID = 97 #'random'           # type id or 'random'    
-
-    PHASE = 'phase_1_approach'
-    TIMESTEPS = '10_timesteps'    
+def infer_actions(regressor, PHASE = 'phase_1_approach', TRIALS_SET = 'test_trials.csv', TRIAL_ID = 5):
+        
     BASE_PATH = '/home/alejo/Documents/DATA'
-
-    n_inputs = 68
-    num_layers = 2
-    hidden_dim = 64
-
-    if regressor != 'lstm':
+    
+   
+    if regressor['model'] != 'lstm':
+        regressor['hidden_dim'] = '__'
+        regressor['num_layers'] = '__'
         SEQ_LEN = -1
+        TIMESTEPS = regressor['TIMESTEPS']
     else:
+        SEQ_LEN = regressor['SEQ_LEN']
         TIMESTEPS = '0_timesteps'
 
     MODEL_PATH = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{PHASE}/{TIMESTEPS}')    
@@ -345,33 +340,44 @@ def infer_actions(regressor='mlp', SEQ_LEN = 5):
     # --- Extract ground truth ---
     groundtruth = {col: trial_df[col].values for col in output_cols}
 
+    # State
+    input_cols, input_keys = get_phase_columns(cfg, PHASE)
+    ouput_set = set(output_cols)
+    input_cols = [
+        c for c in input_cols
+        if c not in ouput_set
+    ]
+    n_time_steps = int(TIMESTEPS.split('_timesteps')[0])
+    if not regressor['model'] == 'lstm' and n_time_steps>0:          
+        input_cols = expand_features_over_time(input_cols, n_time_steps)
+    
     # --- Prepare input features ---
-    df_inputs = trial_df.drop(columns=['timestamp_vector'] + output_cols)
+    df_inputs = trial_df[input_cols]
     X = df_inputs.to_numpy()
 
 
     # ===================================== PREDICT ==================================
     # --- Load statistics ---
-    if regressor in ['rf', 'mlp', 'mlp_torch']:
+    if regressor['model'] in ['rf', 'mlp', 'mlp_torch']:
         # --- Load normalization stats ---
-        X_mean = np.load(os.path.join(MODEL_PATH, f"{regressor}_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
-        X_std  = np.load(os.path.join(MODEL_PATH, f"{regressor}_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
+        X_mean = np.load(os.path.join(MODEL_PATH, f"{regressor['model']}_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
+        X_std  = np.load(os.path.join(MODEL_PATH, f"{regressor['model']}_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
         X_norm = (X - X_mean) / X_std
 
         # --- Load target stats ---
-        Y_mean = np.load(os.path.join(MODEL_PATH, f"{regressor}_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
-        Y_std  = np.load(os.path.join(MODEL_PATH, f"{regressor}_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
+        Y_mean = np.load(os.path.join(MODEL_PATH, f"{regressor['model']}_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
+        Y_std  = np.load(os.path.join(MODEL_PATH, f"{regressor['model']}_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
 
     # --- Load model ---    
-    if regressor in ['rf', 'mlp']:
-        model_name = f"{regressor}_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.joblib"
+    if regressor['model'] in ['rf', 'mlp']:
+        model_name = f"{regressor['model']}_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.joblib"
         with open(os.path.join(MODEL_PATH, model_name), "rb") as f:
             loaded_model = joblib.load(f)
 
         Y_pred = loaded_model.predict(X_norm)
         Y_pred_denorm = Y_pred * Y_std + Y_mean
 
-    elif regressor == 'mlp_torch':
+    elif regressor['model'] == 'mlp_torch':
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         mlp_model = VelocityMLP(input_dim=X_norm.shape[1], output_dim=len(output_cols)).to(device)
         mlp_model.load_state_dict(torch.load(os.path.join(MODEL_PATH, "mlp_torch_model.pt"), map_location=device))
@@ -382,49 +388,54 @@ def infer_actions(regressor='mlp', SEQ_LEN = 5):
             Y_pred = mlp_model(X_tensor).cpu().numpy()
         Y_pred_denorm = Y_pred * Y_std + Y_mean
     
-    elif regressor == "lstm":        
+    elif regressor['model'] == "lstm":        
 
-        prefix = str(num_layers) + '_layers_' + str(hidden_dim) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
+        # Model subfolder depends on the states used during training
+        input_keys = input_keys[:-1]
+        input_keys_subfolder_name = "__".join(input_keys)
+        model_subfolder = os.path.join(MODEL_PATH, input_keys_subfolder_name)
+
+        prefix = str(regressor['num_layers']) + '_layers_' + str(regressor['hidden_dim']) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        
 
         # Load statistics
         X_mean = torch.tensor(
-            np.load(os.path.join(MODEL_PATH, prefix + f"_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            np.load(os.path.join(MODEL_PATH, model_subfolder, prefix + f"_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
             dtype=torch.float32,
             device=device
         )
 
         X_std = torch.tensor(
-            np.load(os.path.join(MODEL_PATH, prefix + f"_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            np.load(os.path.join(MODEL_PATH, model_subfolder, prefix + f"_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
             dtype=torch.float32,
             device=device
         )
 
         Y_mean = torch.tensor(
-            np.load(os.path.join(MODEL_PATH, prefix + f"_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            np.load(os.path.join(MODEL_PATH, model_subfolder, prefix + f"_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
             dtype=torch.float32,
             device=device
         )
 
         Y_std = torch.tensor(
-            np.load(os.path.join(MODEL_PATH, prefix + f"_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            np.load(os.path.join(MODEL_PATH, model_subfolder, prefix + f"_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
             dtype=torch.float32,
             device=device
         )      
         
         # Model
         lstm_model = LSTMRegressor(
-            input_dim= n_inputs,   # number of features
-            hidden_dim=hidden_dim,
-            output_dim=6,
-            num_layers=num_layers,
+            input_dim = regressor['n_inputs'],   # number of features
+            hidden_dim = regressor['hidden_dim'],
+            output_dim = 6,
+            num_layers = regressor['num_layers'],
             pooling='last'
         )
 
         # Move model to device
         lstm_model.to(device)
-        lstm_model.load_state_dict(torch.load(os.path.join(MODEL_PATH, prefix + "model.pth")))
+        lstm_model.load_state_dict(torch.load(os.path.join(MODEL_PATH, model_subfolder, prefix + "model.pth")))
 
         # Set to evaluation mode
         lstm_model.eval()
@@ -432,7 +443,7 @@ def infer_actions(regressor='mlp', SEQ_LEN = 5):
         # Create tensor with sequences             
         trial_filename = trial_filename.replace('_(' + TIMESTEPS + ').csv', '')
 
-        _,_, X_seq, Y_seq = DatasetForLearning.prepare_trial_set(MODEL_PATH, TIMESTEPS, [trial_filename], n_input_cols=n_inputs, SEQ_LENGTH=SEQ_LEN, clip=False)
+        _,_, X_seq, Y_seq = DatasetForLearning.prepare_trial_set(MODEL_PATH, TIMESTEPS, [trial_filename], input_cols, output_cols, SEQ_LENGTH=SEQ_LEN, clip=False)
         X_tensor = torch.tensor(X_seq, dtype=torch.float32)
         Y_tensor = torch.tensor(Y_seq, dtype=torch.float32)
 
@@ -452,7 +463,7 @@ def infer_actions(regressor='mlp', SEQ_LEN = 5):
 
     # =================================== PLOT =======================================
     # --- Move predictions back to dataframe ---
-    if regressor == 'lstm':
+    if regressor['model'] == 'lstm':
         Y_pred_denorm = Y_pred_denorm.detach().cpu().numpy()
 
     df_predictions = pd.DataFrame()
@@ -466,7 +477,7 @@ def infer_actions(regressor='mlp', SEQ_LEN = 5):
     trial_description = trial_filename.split('steps/')[1]
     fig, axs = plt.subplots(3, 2, figsize=(12, 10), sharex=True)
 
-    if regressor == 'lstm': regressor = str(SEQ_LEN) + "_seq_lstm"
+    if regressor['model'] == 'lstm': regressor['model'] = str(SEQ_LEN) + "_seq_lstm"
    
 
     lin_range = 2e-4
@@ -476,7 +487,7 @@ def infer_actions(regressor='mlp', SEQ_LEN = 5):
         ang_range = 6e-4 / 3
     y_lims = np.array([[-lin_range, lin_range], [-ang_range, ang_range]])
 
-    model_title = regressor + '_layers:_' + str(num_layers) + '_dim:_' + str(hidden_dim)
+    model_title = regressor['model'] + '_layers:_' + str(regressor['num_layers']) + '_dim:_' + str(regressor['hidden_dim'])
 
     preds = df_predictions.iloc[:,:6]
     cols = preds.columns.tolist()  # guarantees same order
@@ -522,17 +533,13 @@ def infer_actions(regressor='mlp', SEQ_LEN = 5):
     # combine_inhand_camera_and_actions(trial_name, images_folder, random_file, output_video_path)  
 
 
-def infer_actions_all_set(regressor='lstm', SEQ_LEN = 1):
-    
-    TRIALS_SET = 'test_trials.csv'       
-
-    PHASE = 'phase_1_approach'
-    TIMESTEPS = '10_timesteps'    
+def infer_actions_all_set(regressor='mlp', SEQ_LEN = 5, TIMESTEPS = '5_timesteps', PHASE = 'phase_1_approach', TRIALS_SET = 'test_trials.csv'):
+        
     BASE_PATH = '/home/alejo/Documents/DATA'
 
-    n_inputs = 68
+    n_inputs = 70
     num_layers = 2
-    hidden_dim = 64
+    hidden_dim = 128
 
     if regressor != 'lstm':
         SEQ_LEN = -1
@@ -542,123 +549,160 @@ def infer_actions_all_set(regressor='lstm', SEQ_LEN = 1):
     MODEL_PATH = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{PHASE}/{TIMESTEPS}')    
 
 
-     # --- Load Train or Test trial ---
-    trials_csv_list = os.path.join(MODEL_PATH, "../", TRIALS_SET)
-    df_trials = pd.read_csv(trials_csv_list)
-    trials_list = df_trials['trial_id'].tolist()
-    trial_path = MODEL_PATH.replace('06_IL_learning', '05_IL_preprocessed_(memory)')
+    # ============ Load Actions and States from config file ==========
+    # Actions
+    data_columns_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+    with open(data_columns_path, "r") as f:
+        cfg = yaml.safe_load(f)
+    output_cols = cfg['action_cols']
 
-    mse_list = []
-    mae_list = []
+    # States
+    input_cols, input_keys = get_phase_columns(cfg, PHASE)
+    ouput_set = set(output_cols)
+    input_cols = [
+        c for c in input_cols
+        if c not in ouput_set
+    ]
+    n_time_steps = int(TIMESTEPS.split('_timesteps')[0])
+    if not regressor == 'lstm' and n_time_steps>0:            
+        input_cols = expand_features_over_time(input_cols, n_time_steps)
 
-    for trial in tqdm(trials_list):
-
-        filename = 'trial_' + str(trial) + '_downsampled_aligned_data_transformed_(' + PHASE + ')_(' + TIMESTEPS + ').csv'
-        filename = trial + '_(' + TIMESTEPS + ').csv'
-        # filename = trial
-        trial_filename = os.path.join(trial_path, filename)
-        trial_df = pd.read_csv(trial_filename)    
-
-        # ================================ LOAD TRIAL DATA ===============================
-        # trial_filename, trial_df = trial_csv(MODEL_PATH, PHASE, TIMESTEPS, TRIAL_ID, TRIALS_SET)
-
-        # --- Load action columns from config ---
-        data_columns_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
-        with open(data_columns_path, "r") as f:
-            cfg = yaml.safe_load(f)
-        output_cols = cfg['action_cols']
-
-        # --- Extract ground truth ---
-        groundtruth = {col: trial_df[col].values for col in output_cols}
-
-        # --- Prepare input features ---
-        df_inputs = trial_df.drop(columns=['timestamp_vector'] + output_cols)
-        X = df_inputs.to_numpy()
+    
 
 
-        # ===================================== PREDICT ==================================
-        # --- Load statistics ---
-        if regressor in ['rf', 'mlp', 'mlp_torch']:
-            # --- Load normalization stats ---
-            X_mean = np.load(os.path.join(MODEL_PATH, f"{regressor}_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
-            X_std  = np.load(os.path.join(MODEL_PATH, f"{regressor}_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
-            X_norm = (X - X_mean) / X_std
+    # =============== Load Statistics and Model =========================
+    if regressor in ['rf', 'mlp', 'mlp_torch']:
+        # --- Load normalization stats ---
+        X_mean = np.load(os.path.join(MODEL_PATH, f"{regressor}_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
+        X_std  = np.load(os.path.join(MODEL_PATH, f"{regressor}_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))        
+        
+        Y_mean = np.load(os.path.join(MODEL_PATH, f"{regressor}_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
+        Y_std  = np.load(os.path.join(MODEL_PATH, f"{regressor}_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
 
-            # --- Load target stats ---
-            Y_mean = np.load(os.path.join(MODEL_PATH, f"{regressor}_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
-            Y_std  = np.load(os.path.join(MODEL_PATH, f"{regressor}_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
-
-        # --- Load model ---    
+        # --- Load Model ----       
         if regressor in ['rf', 'mlp']:
             model_name = f"{regressor}_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.joblib"
             with open(os.path.join(MODEL_PATH, model_name), "rb") as f:
                 loaded_model = joblib.load(f)
-
-            Y_pred = loaded_model.predict(X_norm)
-            Y_pred_denorm = Y_pred * Y_std + Y_mean
-
         elif regressor == 'mlp_torch':
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             mlp_model = VelocityMLP(input_dim=X_norm.shape[1], output_dim=len(output_cols)).to(device)
             mlp_model.load_state_dict(torch.load(os.path.join(MODEL_PATH, "mlp_torch_model.pt"), map_location=device))
             mlp_model.eval()
 
-            X_tensor = torch.tensor(X_norm, dtype=torch.float32).to(device)
-            with torch.no_grad():
-                Y_pred = mlp_model(X_tensor).cpu().numpy()
-            Y_pred_denorm = Y_pred * Y_std + Y_mean
+    elif regressor == "lstm":        
+
+        # Model subfolder depends on the states used during training
+        input_keys = input_keys[:-1]
+        input_keys_subfolder_name = "__".join(input_keys)
+        model_subfolder = os.path.join(MODEL_PATH, input_keys_subfolder_name)
+
+
+        prefix = str(num_layers) + '_layers_' + str(hidden_dim) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        
+
+        # --- Load statistics ---
+        X_mean = torch.tensor(
+            np.load(os.path.join(MODEL_PATH, model_subfolder, prefix + f"_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            dtype=torch.float32,
+            device=device
+        )
+
+        X_std = torch.tensor(
+            np.load(os.path.join(MODEL_PATH, model_subfolder, prefix + f"_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            dtype=torch.float32,
+            device=device
+        )
+
+        Y_mean = torch.tensor(
+            np.load(os.path.join(MODEL_PATH, model_subfolder, prefix + f"_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            dtype=torch.float32,
+            device=device
+        )
+
+        Y_std = torch.tensor(
+            np.load(os.path.join(MODEL_PATH, model_subfolder, prefix + f"_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            dtype=torch.float32,
+            device=device
+        )      
         
-        elif regressor == "lstm":        
+        # --- Load Model ---
+        lstm_model = LSTMRegressor(
+            input_dim= n_inputs,   # number of features
+            hidden_dim=hidden_dim,
+            output_dim=6,
+            num_layers=num_layers,
+            pooling='last'
+        )
 
-            prefix = str(num_layers) + '_layers_' + str(hidden_dim) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
+        # Move model to device
+        lstm_model.to(device)
+        lstm_model.load_state_dict(torch.load(os.path.join(MODEL_PATH, model_subfolder, prefix + "model.pth")))
 
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        
+        # Set to evaluation mode
+        lstm_model.eval()
+   
+    # --- Validation Loss ---
+    if regressor == 'mlp':
 
-            # Load statistics
-            X_mean = torch.tensor(
-                np.load(os.path.join(MODEL_PATH, prefix + f"_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
-                dtype=torch.float32,
-                device=device
-            )
+        plt.figure(figsize=(8,5))
+        plt.plot(loaded_model.loss_curve_, label="Training Loss")
 
-            X_std = torch.tensor(
-                np.load(os.path.join(MODEL_PATH, prefix + f"_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
-                dtype=torch.float32,
-                device=device
-            )
+        if hasattr(loaded_model, "validation_scores_"):
+            # validation_scores_ are R^2 scores per epoch
+            val_loss = [1 - v for v in loaded_model.validation_scores_]  # convert R^2 -> pseudo-loss
+            plt.plot(val_loss, label="Validation (1 - R2)")
 
-            Y_mean = torch.tensor(
-                np.load(os.path.join(MODEL_PATH, prefix + f"_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
-                dtype=torch.float32,
-                device=device
-            )
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss / 1-R2")
+        plt.title(f"MLP Training and Validation Progress")
+        plt.legend()
+        plt.grid(True)
 
-            Y_std = torch.tensor(
-                np.load(os.path.join(MODEL_PATH, prefix + f"_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
-                dtype=torch.float32,
-                device=device
-            )      
-            
-            # Model
-            lstm_model = LSTMRegressor(
-                input_dim= n_inputs,   # number of features
-                hidden_dim=hidden_dim,
-                output_dim=6,
-                num_layers=num_layers,
-                pooling='last'
-            )
 
-            # Move model to device
-            lstm_model.to(device)
-            lstm_model.load_state_dict(torch.load(os.path.join(MODEL_PATH, prefix + "model.pth")))
 
-            # Set to evaluation mode
-            lstm_model.eval()
+    # ================ Run predictions on each trial ====================
+    # --- Load trials list ---
+    trials_csv_list = os.path.join(MODEL_PATH, "../", TRIALS_SET)
+    df_trials = pd.read_csv(trials_csv_list)
+    trials_list = df_trials['trial_id'].tolist()
+    trial_path = MODEL_PATH.replace('06_IL_learning', '05_IL_preprocessed_(memory)')
 
-            # Create tensor with sequences             
+    # --- Run predictions on each trial ---
+    mse_list = []
+    mae_list = []
+    for trial in tqdm(trials_list):
+
+        # --- Trial data path ---
+        filename = 'trial_' + str(trial) + '_downsampled_aligned_data_transformed_(' + PHASE + ')_(' + TIMESTEPS + ').csv'
+        filename = trial + '_(' + TIMESTEPS + ').csv'
+        trial_filename = os.path.join(trial_path, filename)
+        trial_df = pd.read_csv(trial_filename)    
+             
+              
+        # --- Predict ---     
+        df_inputs = trial_df[input_cols]
+        X = df_inputs.to_numpy()       
+
+        if regressor in ['rf', 'mlp', 'mlp_torch']:
+            # --- Normalize inputs ---
+            X_norm = (X - X_mean) / X_std
+
+            # --- Predict  ---    
+            if regressor in ['rf', 'mlp']:              
+                Y_pred = loaded_model.predict(X_norm)
+
+            elif regressor == 'mlp_torch':               
+                X_tensor = torch.tensor(X_norm, dtype=torch.float32).to(device)
+                with torch.no_grad():
+                    Y_pred = mlp_model(X_tensor).cpu().numpy()
+        
+        elif regressor == "lstm":       
+          
+            # --- Create tensor with sequences ---             
             trial_filename = trial_filename.replace('_(' + TIMESTEPS + ').csv', '')
 
-            _,_, X_seq, Y_seq = DatasetForLearning.prepare_trial_set(MODEL_PATH, TIMESTEPS, [trial_filename], n_input_cols=n_inputs, SEQ_LENGTH=SEQ_LEN, clip=False)
+            _,_, X_seq, Y_seq = DatasetForLearning.prepare_trial_set(MODEL_PATH, TIMESTEPS, [trial_filename], input_cols, output_cols, SEQ_LENGTH=SEQ_LEN, clip=False)
             X_tensor = torch.tensor(X_seq, dtype=torch.float32)
             Y_tensor = torch.tensor(Y_seq, dtype=torch.float32)
 
@@ -666,16 +710,16 @@ def infer_actions_all_set(regressor='lstm', SEQ_LEN = 1):
             X_mean = X_mean.to(device)
             X_std = X_std.to(device)
 
-            # Normalize X_tensor
+            # --- Normalize X_tensor ---
             X_tensor_norm = (X_tensor - X_mean) / (X_std + 1e-8)
             Xb = X_tensor_norm.to(device, dtype=torch.float32)   
-            pred_norm = lstm_model(Xb)
-        
-            # Denormalize predictions
-            Y_pred_denorm = pred_norm * Y_std + Y_mean      
 
-        # =================================== PLOT =======================================
-        # --- Move predictions back to dataframe ---
+            # --- Predict ---
+            Y_pred = lstm_model(Xb)
+        
+        # --- Evaluation Metrics ---
+        # Denormalize predictions
+        Y_pred_denorm = Y_pred * Y_std + Y_mean      
         if regressor == 'lstm':
             Y_pred_denorm = Y_pred_denorm.detach().cpu().numpy()
 
@@ -687,11 +731,15 @@ def infer_actions_all_set(regressor='lstm', SEQ_LEN = 1):
                
         preds = df_predictions.iloc[:,:6]
         cols = preds.columns.tolist()  # guarantees same order
+
+        # --- Ground Truth ---
+        groundtruth = {col: trial_df[col].values for col in output_cols}       
         truths = pd.DataFrame(groundtruth)[cols]
 
         preds_np = preds.to_numpy()
         truths_np = truths.to_numpy()
         
+        # --- Metrics ---
         mae_per_dim = mean_absolute_error(
             preds_np,
             truths_np,
@@ -712,6 +760,7 @@ def infer_actions_all_set(regressor='lstm', SEQ_LEN = 1):
     # print(f'Mean MSE across Trials set: {mse_array.mean(axis=0)}')
     # print(f'Mean MAE across Trials set: {mae_array.mean(axis=0)}')    
 
+    plt.figure()
     plt.hist(mse_list, alpha=0.7, color='blue')
     plt.title(f'{TRIALS_SET} \nMSE Distribution across Trials - {regressor}')
     plt.xlabel('MSE')
@@ -759,7 +808,6 @@ def important_features(top=5):
         
         print(f'\nFeature importance during \033[1m{phase}\033[0m$: \n\n {phase_df}')
         # print(sub_df)               
-
 
 
 def compare_trajectories():
@@ -911,11 +959,33 @@ def main():
         combine_inhand_camera_and_actions(trial_name, images_folder, csv_path, output_video_path)
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':        
 
     # main()
-    # infer_actions()
-    infer_actions_all_set()
+
+    # TODO dictionary of models
+    model = {'model': 'lstm',
+             'SEQ_LEN': 30,
+             'num_layers': 2,
+             'hidden_dim': 1024,
+             'n_inputs': 68}  
+    
+
+    # model = {'model': 'mlp',                            # 'mlp', 'rf'
+    #          'TIMESTEPS': '0_timesteps',                # 0, 5, 10, 15, 20           
+    #          }                
+
+    infer_actions(model,
+                  PHASE = 'phase_1_approach', 
+                  TRIALS_SET = 'test_trials.csv',
+                  TRIAL_ID = 'random')     # either 'random' or an int number
+   
+        
+    # infer_actions_all_set(regressor='lstm',
+    #                       SEQ_LEN = 30,
+    #                       TIMESTEPS = '5_timesteps',
+    #                       PHASE = 'phase_1_approach', 
+    #                       TRIALS_SET = 'train_trials.csv')
 
     # important_features(top=10)
 

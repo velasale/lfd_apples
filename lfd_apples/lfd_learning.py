@@ -74,7 +74,7 @@ class DatasetForLearning():
         self.n_output_cols = len(self.output_cols)     # These are the ouputs (actions)
 
         # State
-        self.input_cols = get_phase_columns(cfg, self.phase)
+        self.input_cols, self.input_keys = get_phase_columns(cfg, self.phase)
         ouput_set = set(self.output_cols)
         self.input_cols = [
             c for c in self.input_cols
@@ -82,8 +82,8 @@ class DatasetForLearning():
         ]
 
         n_time_steps = int(self.TIME_STEPS.split('_timesteps')[0])
-
-        self.input_cols = expand_features_over_time(self.input_cols, n_time_steps)
+        if n_time_steps>0:
+            self.input_cols = expand_features_over_time(self.input_cols, n_time_steps)
 
         pass
         
@@ -404,7 +404,7 @@ def get_phase_columns(cfg, phase_name):
     for key in phase_keys:
         columns.extend(resolve_columns(cfg, key))
 
-    return columns
+    return columns, phase_keys
 
 
 def expand_features_over_time(features, sequence_length):
@@ -486,8 +486,8 @@ def rf_regressor(regressor, dataset_class):
     # Review feature importance    
     filename = 'trial_1_downsampled_aligned_data_transformed_(' + lfd.phase + ')_(' + lfd.TIME_STEPS + ').csv'
     df = pd.read_csv(os.path.join(lfd.BASE_PATH, filename))
-    df = df.iloc[:, :-lfd.n_output_cols]        # simply drop action columns
-    df = df.iloc[:, 1:]                         # drop timevector column
+    df = df[lfd.input_cols]        # simply drop action columns
+    # df = df.iloc[:, 1:]                         # drop timevector column
 
     feat_df = pd.DataFrame({
         "feature": df.columns,                # column names from your data
@@ -511,16 +511,16 @@ def rf_regressor(regressor, dataset_class):
 def mlp_regressor(regressor, dataset_class):
 
     # Initiliaze class with data
-    lfd = dataset_class        
+    lfd = dataset_class            
 
     # Initialize MLP regressor
     regressor_model = MLPRegressor(
-        hidden_layer_sizes=(128,128),  # two hidden layers with 50 neurons each
+        hidden_layer_sizes=(512,512),  # two hidden layers with 50 neurons each
         activation='relu',
         solver='adam',
         learning_rate='adaptive',
         # learning_rate_init=0.001,
-        max_iter=2000,
+        max_iter=1000,
         early_stopping=True,            # it automatically takes 10% of data for validation
         n_iter_no_change=50,            
         verbose=True
@@ -544,7 +544,7 @@ def mlp_regressor(regressor, dataset_class):
     plt.legend()
     plt.grid(True)
     
-    plot_path = os.path.join(lfd.DESTINATION_PATH, 'loss_curve.png')
+    plot_path = os.path.join(model_subfolder, 'loss_curve.png')
     plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     plt.close()          
 
@@ -666,6 +666,13 @@ def save_model(model_name, regressor_model, dataset_class):
    
     lfd = dataset_class
 
+    # Keep track of inputs used during training
+    input_keys = lfd.input_keys[:-1]
+    input_keys_subfolder_name = "__".join(input_keys)
+    model_subfolder = os.path.join(lfd.DESTINATION_PATH, input_keys_subfolder_name)
+    os.makedirs(model_subfolder, exist_ok=True)
+
+
     # Names
     model_filename = model_name + lfd.suffix + '.joblib'
     Xmean_name = model_name + '_Xmean' + lfd.suffix + '.npy'
@@ -675,7 +682,7 @@ def save_model(model_name, regressor_model, dataset_class):
 
     # Save model
     if model_name in ['rf', 'mlp']:
-        with open(os.path.join(lfd.DESTINATION_PATH, model_filename), "wb") as f:
+        with open(os.path.join(model_subfolder, model_filename), "wb") as f:
             joblib.dump(regressor_model, f)
 
     elif regressor_model in ['mlp_torch', 'lstm']:
@@ -694,7 +701,7 @@ def save_model(model_name, regressor_model, dataset_class):
                            lfd.Y_train_tensor_std]
     
     for name, value in zip(variable_names, variable_values):
-            np.save(os.path.join(lfd.DESTINATION_PATH, name), value)
+            np.save(os.path.join(model_subfolder, name), value)
     
 
 def learn(lfd_dataset, regressor='mlp', phase='phase_1_approach', time_steps='2_timesteps'):
@@ -748,11 +755,11 @@ def learn(lfd_dataset, regressor='mlp', phase='phase_1_approach', time_steps='2_
 def main():
     
     phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
-    regressors = ['rf','mlp','mlp_torch']    
+    regressors = ['rf','mlp']    
     time_steps = [0,5,10,20]
    
     phases = ['phase_1_approach']
-    regressors = ['mlp']
+    regressors = ['mlp']   
     time_steps = [5]
 
     for phase in phases:

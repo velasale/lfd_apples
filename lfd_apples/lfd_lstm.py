@@ -190,7 +190,12 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
     BASE_SOURCE_PATH = '/home/alejo/Documents/DATA'
     lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps='0_timesteps', SEQ_LENGTH=SEQ_LEN)
 
-   
+    # Keep track of inputs used during training
+    input_keys = lfd_dataset.input_keys[:-1]
+    input_keys_subfolder_name = "__".join(input_keys)
+    model_subfolder = os.path.join(lfd_dataset.DESTINATION_PATH, input_keys_subfolder_name)
+    os.makedirs(model_subfolder, exist_ok=True)
+           
     # Tensor datasets
     train_ds = TensorDataset(lfd_dataset.X_train_tensor_norm, lfd_dataset.Y_train_tensor_norm)
     val_ds   = TensorDataset(lfd_dataset.X_val_tensor_norm, lfd_dataset.Y_val_tensor_norm)
@@ -238,16 +243,21 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
     plt.legend()
     plt.grid(True)
 
+   
     # Save plot to file
     prefix = str(num_layers) + '_layers_' + str(hidden_dim) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
 
-    plot_path = os.path.join(lfd_dataset.DESTINATION_PATH, prefix + "loss_plot.png")
+    plot_path = os.path.join(model_subfolder, prefix + "loss_plot.png")
     plt.savefig(plot_path, dpi=300)
     print(f"Loss plot saved at: {plot_path}")
 
     # Save model
-    model_path = os.path.join(lfd_dataset.DESTINATION_PATH, prefix + "model.pth")    
+    model_path = os.path.join(model_subfolder, prefix + "model.pth")    
     torch.save(model.state_dict(), model_path)
+
+    # Save losses history
+    losses_path = os.path.join(model_subfolder, prefix + "losses.npz")
+    np.savez(losses_path, train_losses=np.array(train_losses), val_losses=np.array(val_losses))
 
     # Save statistics             
     Xmean_name = prefix + '_Xmean' + lfd_dataset.suffix + '.npy'
@@ -262,7 +272,7 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
                        Y_train_std]
     
     for name, value in zip(variable_names, variable_values):
-            np.save(os.path.join(lfd_dataset.DESTINATION_PATH, name), value)
+            np.save(os.path.join(model_subfolder, name), value)
     
 
     # Evaluate model
@@ -273,10 +283,10 @@ if __name__ == '__main__':
 
     
     phases = ['phase_1_approach']
-    hidden_dim_list = [64]
+    hidden_dim_list = [2048]
     num_layers_list = [2]
 
-    seq_lens = [1]
+    seq_lens = [30]
 
     for phase in phases:
         print(f'\n------------------ {phase}-------------------')
