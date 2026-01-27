@@ -533,7 +533,7 @@ def infer_actions(regressor, PHASE = 'phase_1_approach', TRIALS_SET = 'test_tria
     # combine_inhand_camera_and_actions(trial_name, images_folder, random_file, output_video_path)  
 
 
-def infer_actions_all_set(regressor='mlp', SEQ_LEN = 5, TIMESTEPS = '5_timesteps', PHASE = 'phase_1_approach', TRIALS_SET = 'test_trials.csv'):
+def infer_actions_all_set(regressor, PHASE = 'phase_1_approach', TRIALS_SET = 'test_trials.csv'):
         
     BASE_PATH = '/home/alejo/Documents/DATA'
 
@@ -541,11 +541,16 @@ def infer_actions_all_set(regressor='mlp', SEQ_LEN = 5, TIMESTEPS = '5_timesteps
     num_layers = 2
     hidden_dim = 128
 
-    if regressor != 'lstm':
+    if regressor['model'] != 'lstm':
+        regressor['hidden_dim'] = '__'
+        regressor['num_layers'] = '__'
         SEQ_LEN = -1
+        TIMESTEPS = regressor['TIMESTEPS']
     else:
+        SEQ_LEN = regressor['SEQ_LEN']
         TIMESTEPS = '0_timesteps'
 
+    
     MODEL_PATH = os.path.join(BASE_PATH, f'06_IL_learning/experiment_1_(pull)/{PHASE}/{TIMESTEPS}')    
 
 
@@ -564,33 +569,31 @@ def infer_actions_all_set(regressor='mlp', SEQ_LEN = 5, TIMESTEPS = '5_timesteps
         if c not in ouput_set
     ]
     n_time_steps = int(TIMESTEPS.split('_timesteps')[0])
-    if not regressor == 'lstm' and n_time_steps>0:            
-        input_cols = expand_features_over_time(input_cols, n_time_steps)
-
-    
+    if not regressor['model'] == 'lstm' and n_time_steps>0:            
+        input_cols = expand_features_over_time(input_cols, n_time_steps)    
 
 
     # =============== Load Statistics and Model =========================
-    if regressor in ['rf', 'mlp', 'mlp_torch']:
+    if regressor['model'] in ['rf', 'mlp', 'mlp_torch']:
         # --- Load normalization stats ---
-        X_mean = np.load(os.path.join(MODEL_PATH, f"{regressor}_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
-        X_std  = np.load(os.path.join(MODEL_PATH, f"{regressor}_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))        
+        X_mean = np.load(os.path.join(MODEL_PATH, f"{regressor['model']}_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
+        X_std  = np.load(os.path.join(MODEL_PATH, f"{regressor['model']}_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))        
         
-        Y_mean = np.load(os.path.join(MODEL_PATH, f"{regressor}_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
-        Y_std  = np.load(os.path.join(MODEL_PATH, f"{regressor}_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
+        Y_mean = np.load(os.path.join(MODEL_PATH, f"{regressor['model']}_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
+        Y_std  = np.load(os.path.join(MODEL_PATH, f"{regressor['model']}_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy"))
 
         # --- Load Model ----       
-        if regressor in ['rf', 'mlp']:
-            model_name = f"{regressor}_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.joblib"
+        if regressor['model'] in ['rf', 'mlp']:
+            model_name = f"{regressor['model']}_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.joblib"
             with open(os.path.join(MODEL_PATH, model_name), "rb") as f:
                 loaded_model = joblib.load(f)
-        elif regressor == 'mlp_torch':
+        elif regressor['model'] == 'mlp_torch':
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             mlp_model = VelocityMLP(input_dim=X_norm.shape[1], output_dim=len(output_cols)).to(device)
             mlp_model.load_state_dict(torch.load(os.path.join(MODEL_PATH, "mlp_torch_model.pt"), map_location=device))
             mlp_model.eval()
 
-    elif regressor == "lstm":        
+    elif regressor['model'] == "lstm":        
 
         # Model subfolder depends on the states used during training
         input_keys = input_keys[:-1]
@@ -598,7 +601,7 @@ def infer_actions_all_set(regressor='mlp', SEQ_LEN = 5, TIMESTEPS = '5_timesteps
         model_subfolder = os.path.join(MODEL_PATH, input_keys_subfolder_name)
 
 
-        prefix = str(num_layers) + '_layers_' + str(hidden_dim) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
+        prefix = str(model['num_layers']) + '_layers_' + str(model['hidden_dim']) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        
 
         # --- Load statistics ---
@@ -628,10 +631,10 @@ def infer_actions_all_set(regressor='mlp', SEQ_LEN = 5, TIMESTEPS = '5_timesteps
         
         # --- Load Model ---
         lstm_model = LSTMRegressor(
-            input_dim= n_inputs,   # number of features
-            hidden_dim=hidden_dim,
-            output_dim=6,
-            num_layers=num_layers,
+            input_dim = model['n_inputs'],   # number of features
+            hidden_dim = model['hidden_dim'],
+            output_dim = 6,
+            num_layers = model['num_layers'],
             pooling='last'
         )
 
@@ -643,7 +646,7 @@ def infer_actions_all_set(regressor='mlp', SEQ_LEN = 5, TIMESTEPS = '5_timesteps
         lstm_model.eval()
    
     # --- Validation Loss ---
-    if regressor == 'mlp':
+    if regressor['model'] == 'mlp':
 
         plt.figure(figsize=(8,5))
         plt.plot(loaded_model.loss_curve_, label="Training Loss")
@@ -684,20 +687,20 @@ def infer_actions_all_set(regressor='mlp', SEQ_LEN = 5, TIMESTEPS = '5_timesteps
         df_inputs = trial_df[input_cols]
         X = df_inputs.to_numpy()       
 
-        if regressor in ['rf', 'mlp', 'mlp_torch']:
+        if regressor['model'] in ['rf', 'mlp', 'mlp_torch']:
             # --- Normalize inputs ---
             X_norm = (X - X_mean) / X_std
 
             # --- Predict  ---    
-            if regressor in ['rf', 'mlp']:              
+            if regressor['model'] in ['rf', 'mlp']:              
                 Y_pred = loaded_model.predict(X_norm)
 
-            elif regressor == 'mlp_torch':               
+            elif regressor['model'] == 'mlp_torch':               
                 X_tensor = torch.tensor(X_norm, dtype=torch.float32).to(device)
                 with torch.no_grad():
                     Y_pred = mlp_model(X_tensor).cpu().numpy()
         
-        elif regressor == "lstm":       
+        elif regressor['model'] == "lstm":       
           
             # --- Create tensor with sequences ---             
             trial_filename = trial_filename.replace('_(' + TIMESTEPS + ').csv', '')
@@ -720,7 +723,7 @@ def infer_actions_all_set(regressor='mlp', SEQ_LEN = 5, TIMESTEPS = '5_timesteps
         # --- Evaluation Metrics ---
         # Denormalize predictions
         Y_pred_denorm = Y_pred * Y_std + Y_mean      
-        if regressor == 'lstm':
+        if regressor['model'] == 'lstm':
             Y_pred_denorm = Y_pred_denorm.detach().cpu().numpy()
 
         df_predictions = pd.DataFrame()
@@ -760,23 +763,24 @@ def infer_actions_all_set(regressor='mlp', SEQ_LEN = 5, TIMESTEPS = '5_timesteps
     # print(f'Mean MSE across Trials set: {mse_array.mean(axis=0)}')
     # print(f'Mean MAE across Trials set: {mae_array.mean(axis=0)}')    
 
+    MODEL_NAME = regressor['model']
     plt.figure()
     plt.hist(mse_list, alpha=0.7, color='blue')
-    plt.title(f'{TRIALS_SET} \nMSE Distribution across Trials - {regressor}')
+    plt.title(f'{TRIALS_SET} \nMSE Distribution across Trials - {MODEL_NAME}')
     plt.xlabel('MSE')
     plt.ylabel('Frequency')
     plt.grid(True)
     
     plt.figure()
     plt.hist(mae_list, alpha=0.7, color='blue')
-    plt.title(f'{TRIALS_SET} \n MAE Distribution across Trials - {regressor}')
+    plt.title(f'{TRIALS_SET} \n MAE Distribution across Trials - {MODEL_NAME}')
     plt.xlabel('MAE')
     plt.ylabel('Frequency')
     plt.grid(True)
 
     plt.show()
 
-    print(f'\n{regressor}')
+    print(f'\n{MODEL_NAME}')
     print(f'Mean MSE across Trials set: {np.mean(mse_list)}')
     print(f'Mean MAE across Trials set: {np.mean(mae_list)}')
 
@@ -968,24 +972,22 @@ if __name__ == '__main__':
              'SEQ_LEN': 30,
              'num_layers': 2,
              'hidden_dim': 1024,
-             'n_inputs': 68}  
+             'n_inputs': 65}  
     
 
     # model = {'model': 'mlp',                            # 'mlp', 'rf'
     #          'TIMESTEPS': '0_timesteps',                # 0, 5, 10, 15, 20           
     #          }                
 
-    infer_actions(model,
-                  PHASE = 'phase_1_approach', 
-                  TRIALS_SET = 'test_trials.csv',
-                  TRIAL_ID = 'random')     # either 'random' or an int number
+    # infer_actions(model,
+    #               PHASE = 'phase_1_approach', 
+    #               TRIALS_SET = 'test_trials.csv',
+    #               TRIAL_ID = 'random')     # either 'random' or an int number
    
         
-    # infer_actions_all_set(regressor='lstm',
-    #                       SEQ_LEN = 30,
-    #                       TIMESTEPS = '5_timesteps',
-    #                       PHASE = 'phase_1_approach', 
-    #                       TRIALS_SET = 'train_trials.csv')
+    infer_actions_all_set(model,                          
+                          PHASE = 'phase_1_approach', 
+                          TRIALS_SET = 'test_trials.csv')
 
     # important_features(top=10)
 

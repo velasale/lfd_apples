@@ -103,7 +103,7 @@ class YoloLatentVector(Node):
         # --- Draw Crosshair at image center
         # Transform from Image cFrame to TCP cframe
         cx, cy = img_w // 2, img_h // 2
-        length = 80
+        length = 70
         angle = math.radians(45)
         dx = int(length * math.cos(angle))
         dy = int(length * math.sin(angle))
@@ -114,6 +114,8 @@ class YoloLatentVector(Node):
         x1 = (cx - dx, cy - dy)
         x2 = (cx + dx, cy + dy)
         
+        cv2.circle(raw_image, (cx, cy), radius=25, color=(0, 255, 0), thickness=1)
+
         cv2.line(raw_image, x1, x2, color=(0, 255, 0), thickness=1)
         # X-axis label (placed past positive direction)
         cv2.putText(raw_image, "X axis",
