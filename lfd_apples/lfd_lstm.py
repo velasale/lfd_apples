@@ -283,8 +283,8 @@ if __name__ == '__main__':
 
     
     phases = ['phase_1_approach']
-    hidden_dim_list = [128]
-    num_layers_list = [3]
+    hidden_dim_list = [2048]
+    num_layers_list = [2]
 
     seq_lens = [30]
 

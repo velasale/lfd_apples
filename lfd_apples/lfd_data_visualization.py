@@ -966,13 +966,12 @@ def main():
 if __name__ == '__main__':        
 
     # main()
-
-    # TODO dictionary of models
+   
     model = {'model': 'lstm',
              'SEQ_LEN': 30,
-             'num_layers': 2,
-             'hidden_dim': 1024,
-             'n_inputs': 65}  
+             'num_layers': 4,
+             'hidden_dim': 128,
+             'n_inputs': 68}  
     
 
     # model = {'model': 'mlp',                            # 'mlp', 'rf'

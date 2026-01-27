@@ -37,7 +37,7 @@ class DatasetForLearning():
                
 
         self.define_data_paths()                # Paths to csvs and to store results
-        self.load_states_and_actions()                     # Data outputs (actions) from yaml file
+        self.load_states_and_actions()          # Data outputs (actions) from yaml file
         self.load_data(self.BASE_PATH)          # List of data-csv filepaths
         self.split_data()                       # Split data into train and test sets (trial wise)
         self.prepare_data()                     # Prepares train and testing sets (normalized)

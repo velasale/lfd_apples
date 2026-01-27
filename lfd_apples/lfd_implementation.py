@@ -5,12 +5,15 @@ import subprocess
 import time
 import os
 from pathlib import Path
+import torch
 
 # Custom imports
 from lfd_apples.listen_franka import main as listen_main
 from lfd_apples.listen_franka import start_recording_bagfile, stop_recording_bagfile, save_metadata, find_next_trial_number 
 from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array, fr3_jacobian, fr3_fk
 from lfd_apples.lfd_vision import extract_pooled_latent_vector
+from lfd_apples.lfd_learning import VelocityMLP, DatasetForLearning, resolve_columns, get_phase_columns, expand_features_over_time
+from lfd_apples.lfd_lstm import LSTMRegressor
 
 # ROS2 imports
 import rclpy
@@ -68,7 +71,7 @@ class EMA():
 
 class LFDController(Node):
 
-    def __init__(self):
+    def __init__(self, model):
         super().__init__('move_to_home_and_freedrive')
 
         self.initialize_ros_topics()
@@ -77,13 +80,13 @@ class LFDController(Node):
         self.initialize_rviz_trail()  
         self.initialize_ros_timers()
         self.initialize_flags()
-
-        self.initialize_state_variables()
+        
+        self.initialize_state_variables(model)
         self.initialize_debugging_mode_variables('trial_1')        
         self.initialize_signal_variables_and_thresholds()
         self.initialize_arm_poses()      
         
-        self.initialize_ml_models('phase_1_approach', 'mlp', '0_timesteps')
+        self.initialize_ml_models(model)
 
         # --- Velocity ramping variables ---
         # self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
@@ -95,7 +98,6 @@ class LFDController(Node):
 
         # self.max_linear_jerk    = 0.1 * self.SCALING_FACTOR    # m/s³
         # self.max_angular_jerk   = 1.0 * self.SCALING_FACTOR    # rad/s³   
-
 
         self.last_cmd_time = self.get_clock().now()   
         self.joint_names = [f"fr3_joint{i+1}" for i in range(7)]
@@ -287,12 +289,49 @@ class LFDController(Node):
         # ===================== PUBLISH MARKERS =====================
         self.apple_marker_pub.publish(self.apple_marker)
         self.apple_marker_pub.publish(text_marker)
+  
 
-
-    def initialize_state_variables(self):
+    def initialize_state_variables(self, model):
         '''
         Space Representation for lfd inference        
         '''
+
+        model_name = model['model']
+
+        if model_name != 'lstm':
+            model['hidden_dim'] = '__'
+            model['num_layers'] = '__'
+            SEQ_LEN = -1
+            timesteps = model['TIMESTEPS']
+        else:
+            SEQ_LEN = model['SEQ_LEN']
+            timesteps = '0_timesteps'
+        
+        PHASE='phase_1_approach'
+
+        # Load yaml config file
+        # Actions
+        data_columns_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+        with open(data_columns_path, "r") as f:
+            cfg = yaml.safe_load(f)
+        output_cols = cfg['action_cols']
+
+        # States
+        input_cols, input_keys = get_phase_columns(cfg, PHASE)
+        ouput_set = set(output_cols)
+        input_cols = [
+            c for c in input_cols
+            if c not in ouput_set
+        ]
+        n_time_steps = int(timesteps.split('_timesteps')[0])
+        if not model_name == 'lstm' and n_time_steps>0:            
+            input_cols = expand_features_over_time(input_cols, n_time_steps)    
+
+        # Model subfolder depends on the states used during training
+        input_keys = input_keys[:-1]
+        input_keys_subfolder_name = "__".join(input_keys)
+        model_subfolder = os.path.join(self.model_path, input_keys_subfolder_name)
+
         
         # State Space 
         self.NCOLS_TOF = 1
@@ -453,19 +492,85 @@ class LFDController(Node):
         # self.create_timer(0.034, self.incoming_cam_sim)
 
 
-    def initialize_ml_models(self, phase='phase_1_approach', model='mlp', timesteps='0_timesteps'):        
+    def initialize_ml_models(self, model):        
+
+        model_name = model['model']
+
+        if model_name != 'lstm':
+            model['hidden_dim'] = '__'
+            model['num_layers'] = '__'
+            SEQ_LEN = -1
+            TIMESTEPS = model['TIMESTEPS']
+        else:
+            SEQ_LEN = model['SEQ_LEN']
+            TIMESTEPS = '0_timesteps'
+        
+        PHASE='phase_1_approach'
       
-        BASE_DIR = '/home/alejo/Documents/DATA'
-        # BASE_DIR = '/media/alejo/IL_data'
-        model_path = os.path.join(BASE_DIR, '06_IL_learning/experiment_1_(pull)', phase, timesteps)
-        model_name = model + '_experiment_1_(pull)_' + phase + '_' + timesteps + '.joblib'
-        with open(os.path.join(model_path, model_name), "rb") as f:
-            # self.lfd_model = pickle.load(f)
-            self.lfd_model = joblib.load(f)
-        self.lfd_X_mean = np.load(os.path.join(model_path, model + '_Xmean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-        self.lfd_X_std = np.load(os.path.join(model_path, model + '_Xstd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
-        self.lfd_Y_mean = np.load(os.path.join(model_path, model + '_Ymean_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))
-        self.lfd_Y_std = np.load(os.path.join(model_path, model + '_Ystd_experiment_1_(pull)_' + phase + '_' + timesteps + '.npy'))   
+        self.BASE_PATH = '/home/alejo/Documents/DATA'        
+        self.model_path = os.path.join(self.BASE_PATH, '06_IL_learning/experiment_1_(pull)', PHASE, TIMESTEPS)
+
+        if model_name in ['rf', 'mlp', 'mlp_torch']:
+            model_filename = model_name + '_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.joblib'
+            with open(os.path.join(self.model_path, model_filename), "rb") as f:
+                # self.lfd_model = pickle.load(f)
+                self.lfd_model = joblib.load(f)
+            self.lfd_X_mean = np.load(os.path.join(self.model_path, model_name + '_Xmean_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))
+            self.lfd_X_std = np.load(os.path.join(self.model_path, model_name + '_Xstd_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))   
+            self.lfd_Y_mean = np.load(os.path.join(self.model_path, model_name + '_Ymean_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))
+            self.lfd_Y_std = np.load(os.path.join(self.model_path, model_name + '_Ystd_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))   
+
+        if model_name == "lstm":        
+
+            # Model subfolder depends on the states used during training
+            input_keys = input_keys[:-1]
+            input_keys_subfolder_name = "__".join(input_keys)
+            model_subfolder = os.path.join(self.model_path, input_keys_subfolder_name)
+
+
+            prefix = str(model['num_layers']) + '_layers_' + str(model['hidden_dim']) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        
+
+            # --- Load statistics ---
+            self.X_mean = torch.tensor(
+                np.load(os.path.join(self.model_path, model_subfolder, prefix + f"_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+                dtype=torch.float32,
+                device=device
+            )
+
+            self.X_std = torch.tensor(
+                np.load(os.path.join(self.model_path, model_subfolder, prefix + f"_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+                dtype=torch.float32,
+                device=device
+            )
+
+            self.Y_mean = torch.tensor(
+                np.load(os.path.join(self.model_path, model_subfolder, prefix + f"_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+                dtype=torch.float32,
+                device=device
+            )
+
+            self.Y_std = torch.tensor(
+                np.load(os.path.join(self.model_path, model_subfolder, prefix + f"_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+                dtype=torch.float32,
+                device=device
+            )      
+            
+            # --- Load Model ---
+            self.lstm_model = LSTMRegressor(
+                input_dim = model['n_inputs'],   # number of features
+                hidden_dim = model['hidden_dim'],
+                output_dim = 6,
+                num_layers = model['num_layers'],
+                pooling='last'
+            )
+
+            # Move model to device
+            self.lstm_model.to(device)
+            self.lstm_model.load_state_dict(torch.load(os.path.join(self.model_path, model_subfolder, prefix + "model.pth")))
+
+            # Set to evaluation mode
+            self.lstm_model.eval()
    
 
     # === ROS controller functions ===
@@ -1072,7 +1177,13 @@ def main():
 
     rclpy.init()
 
-    node = LFDController()    
+    model = {'model': 'lstm',
+             'SEQ_LEN': 30,
+             'num_layers': 4,
+             'hidden_dim': 128,
+             'n_inputs': 68}  
+    
+    node = LFDController(model)    
 
     BASE_DIR = '/home/alejo/Documents/DATA'
     BAG_MAIN_DIR = '07_IL_implementation/bagfiles'
