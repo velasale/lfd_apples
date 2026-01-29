@@ -893,7 +893,6 @@ def stage_2_transform_data_to_eef_frame():
             # Transform linear velocity
             v_eef = R_eef_base @ v_base
             delta_linear_eef = R_eef_base @ delta_linear_base
-
             
             # Transform angular velocity
             w_eef = R_eef_base @ w_base
