@@ -6,6 +6,7 @@ import time
 import os
 from pathlib import Path
 import torch
+from collections import deque
 
 # Custom imports
 from lfd_apples.listen_franka import main as listen_main
@@ -71,22 +72,25 @@ class EMA():
 
 class LFDController(Node):
 
-    def __init__(self, model):
+    def __init__(self, MODEL_PARAMS):
         super().__init__('move_to_home_and_freedrive')
 
+        self.MODEL_PARAMS = MODEL_PARAMS
+
+        self.initialize_state_variables()
+        self.initialize_debugging_mode_variables('trial_1')        
+        self.initialize_signal_variables_and_thresholds()
+        self.initialize_arm_poses()      
+        
+        self.initialize_ml_models()
+        
         self.initialize_ros_topics()
         self.initialize_ros_service_clients()
         self.initialize_ros_controller_properties()    
         self.initialize_rviz_trail()  
         self.initialize_ros_timers()
         self.initialize_flags()
-        
-        self.initialize_state_variables(model)
-        self.initialize_debugging_mode_variables('trial_1')        
-        self.initialize_signal_variables_and_thresholds()
-        self.initialize_arm_poses()      
-        
-        self.initialize_ml_models(model)
+                
 
         # --- Velocity ramping variables ---
         # self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
@@ -291,49 +295,45 @@ class LFDController(Node):
         self.apple_marker_pub.publish(text_marker)
   
 
-    def initialize_state_variables(self, model):
+    def initialize_state_variables(self):
         '''
         Space Representation for lfd inference        
         '''
 
-        model_name = model['model']
+        model_name = self.MODEL_PARAMS['MODEL']              
 
+        # --- Adjust some parameters depending on model ---
         if model_name != 'lstm':
-            model['hidden_dim'] = '__'
-            model['num_layers'] = '__'
+            self.MODEL_PARAMS['HIDDEN_DIM'] = '__'
+            self.MODEL_PARAMS['NUM_LAYERS'] = '__'
             SEQ_LEN = -1
-            timesteps = model['TIMESTEPS']
+            timesteps = self.MODEL_PARAMS['TIMESTEPS']
         else:
-            SEQ_LEN = model['SEQ_LEN']
+            SEQ_LEN = self.MODEL_PARAMS['SEQ_LEN']
             timesteps = '0_timesteps'
-        
-        PHASE='phase_1_approach'
 
-        # Load yaml config file
-        # Actions
-        data_columns_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+
+        # --- Load yaml with State and Action Space variables ---
+        data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
         with open(data_columns_path, "r") as f:
-            cfg = yaml.safe_load(f)
-        output_cols = cfg['action_cols']
+            cfg = yaml.safe_load(f)    
+        
+        self.ACTION_NAMES = cfg['action_cols']              
+        self.N_ACTIONS = len(self.ACTION_NAMES)   
 
-        # States
-        input_cols, input_keys = get_phase_columns(cfg, PHASE)
-        ouput_set = set(output_cols)
-        input_cols = [
-            c for c in input_cols
+        # States   
+        PHASE = 'phase_1_approach'
+        self.APPROACH_STATE_NAMES, self.APPROACH_STATE_NAME_KEYS = get_phase_columns(cfg, PHASE)
+        ouput_set = set(self.ACTION_NAMES)
+        self.APPROACH_STATE_NAMES = [
+            c for c in self.APPROACH_STATE_NAMES
             if c not in ouput_set
         ]
         n_time_steps = int(timesteps.split('_timesteps')[0])
         if not model_name == 'lstm' and n_time_steps>0:            
-            input_cols = expand_features_over_time(input_cols, n_time_steps)    
-
-        # Model subfolder depends on the states used during training
-        input_keys = input_keys[:-1]
-        input_keys_subfolder_name = "__".join(input_keys)
-        model_subfolder = os.path.join(self.model_path, input_keys_subfolder_name)
-
+            self.APPROACH_STATE_NAMES = expand_features_over_time(self.APPROACH_STATE_NAMES, n_time_steps)                  
         
-        # State Space 
+        # TODO: These numbers could be automatically extracted from YAML FILE
         self.NCOLS_TOF = 1
         self.NCOLS_LATENT_IMAGE = 64
         self.NCOLS_BBOX = 2
@@ -344,33 +344,35 @@ class LFDController(Node):
         self.NCOLS_JOINT_EFFORTS = 7
         self.NCOLS_WRENCH = 6
 
-        self.ncols_approach = self.NCOLS_TOF + self.NCOLS_LATENT_IMAGE + self.NCOLS_JOINT_POSITIONS
+        self.N_APPROACH_STATES = len(self.APPROACH_STATE_NAMES)
         self.ncols_contact = self.NCOLS_TOF + self.NCOLS_AIR_PRESSURE + self.NCOLS_WRENCH
         self.ncols_pick = self.NCOLS_TOF + self.NCOLS_AIR_PRESSURE + self.NCOLS_WRENCH        
 
         # Action Space
-        self.NCOLS_EEF_VELOCITIES = 6
+        self.N_ACTIONS = 6
         self.KEEP_ACTIONS_MEMORY = False
-        previous_timesteps_ncols = self.ncols_approach  
+        previous_timesteps_ncols = self.N_APPROACH_STATES  
         if self.KEEP_ACTIONS_MEMORY:
-            previous_timesteps_ncols += self.NCOLS_EEF_VELOCITIES  # Add action space dimensions         
+            previous_timesteps_ncols += self.N_ACTIONS  # Add action space dimensions         
         self.t_2_data = np.zeros(previous_timesteps_ncols)       
         self.t_1_data = np.zeros(previous_timesteps_ncols)            
 
         # Initialize state space arrays
-        self.t_data = []
+        self.state = []
         self.tof = np.zeros(self.NCOLS_TOF)
         self.latent_image = np.zeros(self.NCOLS_LATENT_IMAGE)        
         self.bbox = np.zeros(self.NCOLS_BBOX)
         self.eef_pose = np.zeros(self.NCOLS_EEF_POSE)
         self.joint_positions = np.zeros(self.NCOLS_JOINT_POSITIONS)
 
-        self.Y = np.zeros(self.NCOLS_EEF_VELOCITIES)
-        self.Y_base_frame = np.zeros(self.NCOLS_EEF_VELOCITIES)
+        self.Y = np.zeros(self.N_ACTIONS)
+        self.Y_base_frame = np.zeros(self.N_ACTIONS)
 
         # DataFrames to store normalized states over time
         self.lfd_states_df = pd.DataFrame()
-        self.lfd_actions_df = pd.DataFrame()      
+        self.lfd_actions_df = pd.DataFrame()              
+
+        self.state_buffer = deque(maxlen = SEQ_LEN)
 
 
     def initialize_debugging_mode_variables(self, trial='trial_1'):
@@ -385,9 +387,9 @@ class LFDController(Node):
 
         # Debugging variables
         self.DEBUGGING_MODE = False
-        self.APPROACH_DEBUGGING_STEP = 0
-        self.CONTACT_DEBUGGING_STEP = 0
-        self.PICK_DEBUGGING_STEP = 0
+        self.approach_debugging_step = 0
+        self.contact_debugging_step = 0
+        self.pick_debugging_step = 0
 
         # --- Data for debugging ---
         # Replay sequence of actions from a previous demo
@@ -417,24 +419,12 @@ class LFDController(Node):
         # Load apple pose
         self.apple_pose_base = self.approach_debugging_demo_pd[['apple._x._base', 'apple._y._base', 'apple._z._base']].iloc[0]
         self.apple_pose_tcp = self.approach_debugging_demo_pd[['apple._x._ee', 'apple._y._ee', 'apple._z._ee']].iloc[0]
-        
-
-        # Load action names from yaml config
-        data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
-        with open(data_columns_path, "r") as f:
-            cfg = yaml.safe_load(f)    
-        
-        self.action_cols = cfg['action_cols']       
-
-        # If using actions at the base frame, rename with the following:
-        # self.action_cols = ['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z']
-
-        self.n_action_cols = len(self.action_cols)     # These are the ouputs (actions)
+                
 
         # Load actions
-        self.approach_debugging_actions_pd = self.approach_debugging_demo_pd[self.action_cols]
-        self.contact_debugging_actions_pd = self.contact_debugging_demo_pd[self.action_cols]
-        self.pick_debugging_actions_pd = self.pick_debugging_demo_pd[self.action_cols]
+        self.approach_debugging_actions_pd = self.approach_debugging_demo_pd[self.ACTION_NAMES]
+        self.contact_debugging_actions_pd = self.contact_debugging_demo_pd[self.ACTION_NAMES]
+        self.pick_debugging_actions_pd = self.pick_debugging_demo_pd[self.ACTION_NAMES]
 
 
     def initialize_signal_variables_and_thresholds(self):        
@@ -492,85 +482,86 @@ class LFDController(Node):
         # self.create_timer(0.034, self.incoming_cam_sim)
 
 
-    def initialize_ml_models(self, model):        
+    def initialize_ml_models(self):        
 
-        model_name = model['model']
+        model_name = self.MODEL_PARAMS['MODEL']
 
         if model_name != 'lstm':
-            model['hidden_dim'] = '__'
-            model['num_layers'] = '__'
+            self.MODEL_PARAMS['hidden_dim'] = '__'
+            self.MODEL_PARAMS['num_layers'] = '__'
             SEQ_LEN = -1
-            TIMESTEPS = model['TIMESTEPS']
+            TIMESTEPS = self.MODEL_PARAMS['TIMESTEPS']
         else:
-            SEQ_LEN = model['SEQ_LEN']
+            SEQ_LEN = self.MODEL_PARAMS['SEQ_LEN']
             TIMESTEPS = '0_timesteps'
-        
-        PHASE='phase_1_approach'
-      
+
+        # --- Model Path ---     
+        PHASE='phase_1_approach'      
         self.BASE_PATH = '/home/alejo/Documents/DATA'        
-        self.model_path = os.path.join(self.BASE_PATH, '06_IL_learning/experiment_1_(pull)', PHASE, TIMESTEPS)
+        self.MODEL_PATH = os.path.join(self.BASE_PATH, '06_IL_learning/experiment_1_(pull)', PHASE, TIMESTEPS)       
+
 
         if model_name in ['rf', 'mlp', 'mlp_torch']:
             model_filename = model_name + '_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.joblib'
-            with open(os.path.join(self.model_path, model_filename), "rb") as f:
+            with open(os.path.join(self.MODEL_PATH, model_filename), "rb") as f:
                 # self.lfd_model = pickle.load(f)
-                self.lfd_model = joblib.load(f)
-            self.lfd_X_mean = np.load(os.path.join(self.model_path, model_name + '_Xmean_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))
-            self.lfd_X_std = np.load(os.path.join(self.model_path, model_name + '_Xstd_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))   
-            self.lfd_Y_mean = np.load(os.path.join(self.model_path, model_name + '_Ymean_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))
-            self.lfd_Y_std = np.load(os.path.join(self.model_path, model_name + '_Ystd_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))   
+                self.LFD_MODEL = joblib.load(f)
+            self.X_MEAN = np.load(os.path.join(self.MODEL_PATH, model_name + '_Xmean_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))
+            self.X_STD = np.load(os.path.join(self.MODEL_PATH, model_name + '_Xstd_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))   
+            self.Y_MEAN = np.load(os.path.join(self.MODEL_PATH, model_name + '_Ymean_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))
+            self.Y_STD = np.load(os.path.join(self.MODEL_PATH, model_name + '_Ystd_experiment_1_(pull)_' + PHASE + '_' + TIMESTEPS + '.npy'))   
 
         if model_name == "lstm":        
 
-            # Model subfolder depends on the states used during training
-            input_keys = input_keys[:-1]
-            input_keys_subfolder_name = "__".join(input_keys)
-            model_subfolder = os.path.join(self.model_path, input_keys_subfolder_name)
+            # APPROACH MODEL
+            # Note: Subfolder depends on the states used during training
+            self.APPROACH_STATE_NAME_KEYS = self.APPROACH_STATE_NAME_KEYS[:-1]
+            input_keys_subfolder_name = "__".join(self.APPROACH_STATE_NAME_KEYS)
+            model_subfolder = os.path.join(self.MODEL_PATH, input_keys_subfolder_name)            
 
-
-            prefix = str(model['num_layers']) + '_layers_' + str(model['hidden_dim']) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        
+            prefix = str(self.MODEL_PARAMS['NUM_LAYERS']) + '_layers_' + str(self.MODEL_PARAMS['HIDDEN_DIM']) + '_dim_' + str(SEQ_LEN) + "_seq_lstm_"
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")        
 
             # --- Load statistics ---
-            self.X_mean = torch.tensor(
-                np.load(os.path.join(self.model_path, model_subfolder, prefix + f"_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            self.X_MEAN = torch.tensor(
+                np.load(os.path.join(self.MODEL_PATH, model_subfolder, prefix + f"_Xmean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
                 dtype=torch.float32,
-                device=device
+                device=self.device
             )
 
-            self.X_std = torch.tensor(
-                np.load(os.path.join(self.model_path, model_subfolder, prefix + f"_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            self.X_STD = torch.tensor(
+                np.load(os.path.join(self.MODEL_PATH, model_subfolder, prefix + f"_Xstd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
                 dtype=torch.float32,
-                device=device
+                device=self.device
             )
 
-            self.Y_mean = torch.tensor(
-                np.load(os.path.join(self.model_path, model_subfolder, prefix + f"_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            self.Y_MEAN = torch.tensor(
+                np.load(os.path.join(self.MODEL_PATH, model_subfolder, prefix + f"_Ymean_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
                 dtype=torch.float32,
-                device=device
+                device=self.device
             )
 
-            self.Y_std = torch.tensor(
-                np.load(os.path.join(self.model_path, model_subfolder, prefix + f"_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
+            self.Y_STD = torch.tensor(
+                np.load(os.path.join(self.MODEL_PATH, model_subfolder, prefix + f"_Ystd_experiment_1_(pull)_{PHASE}_{TIMESTEPS}.npy")),
                 dtype=torch.float32,
-                device=device
+                device=self.device
             )      
             
             # --- Load Model ---
-            self.lstm_model = LSTMRegressor(
-                input_dim = model['n_inputs'],   # number of features
-                hidden_dim = model['hidden_dim'],
-                output_dim = 6,
-                num_layers = model['num_layers'],
+            self.LFD_MODEL = LSTMRegressor(
+                input_dim = self.N_APPROACH_STATES,   # number of features
+                hidden_dim = self.MODEL_PARAMS['HIDDEN_DIM'],
+                output_dim = self.N_ACTIONS,
+                num_layers = self.MODEL_PARAMS['NUM_LAYERS'],
                 pooling='last'
             )
 
             # Move model to device
-            self.lstm_model.to(device)
-            self.lstm_model.load_state_dict(torch.load(os.path.join(self.model_path, model_subfolder, prefix + "model.pth")))
+            self.LFD_MODEL.to(self.device)
+            self.LFD_MODEL.load_state_dict(torch.load(os.path.join(self.MODEL_PATH, model_subfolder, prefix + "model.pth")))
 
             # Set to evaluation mode
-            self.lstm_model.eval()
+            self.LFD_MODEL.eval()
    
 
     # === ROS controller functions ===
@@ -758,8 +749,8 @@ class LFDController(Node):
             # ============= APPROACH =============
             if self.lfd_approach:
 
-                if self.APPROACH_DEBUGGING_STEP >= len(self.approach_debugging_actions_pd):
-                    self.get_logger().info(f'Approach steps:{self.APPROACH_DEBUGGING_STEP}')
+                if self.approach_debugging_step >= len(self.approach_debugging_actions_pd):
+                    self.get_logger().info(f'Approach steps:{self.approach_debugging_step}')
                     self.get_logger().info("Debugging demo actions exhausted.")
                     self.send_stop_message()
                     # self.running_lfd_approach = False
@@ -768,10 +759,10 @@ class LFDController(Node):
                     return
                 else:
                 
-                    action_row = self.approach_debugging_actions_pd.iloc[self.APPROACH_DEBUGGING_STEP]
+                    action_row = self.approach_debugging_actions_pd.iloc[self.approach_debugging_step]
                     y = action_row.values
                     
-                    self.get_logger().info(f"Approach Debugging mode - Step {self.APPROACH_DEBUGGING_STEP}, Action: {y}")
+                    self.get_logger().info(f"Approach Debugging mode - Step {self.approach_debugging_step}, Action: {y}")
 
                     # If using deltas, multiply by scaling factor
                     # Send actions (twist)                            
@@ -804,13 +795,13 @@ class LFDController(Node):
                     self.target_cmd.twist.angular.y = 1.0 * float(y[4]) * self.DELTA_GAIN 
                     self.target_cmd.twist.angular.z = 1.0 * float(y[5]) * self.DELTA_GAIN 
                                 
-                    self.APPROACH_DEBUGGING_STEP += 1           
+                    self.approach_debugging_step += 1           
 
             # ============= CONTACT =============
             elif self.lfd_contact:
             
-                if self.CONTACT_DEBUGGING_STEP >= len(self.contact_debugging_actions_pd) and self.lfd_contact:
-                    self.get_logger().info(f'Contact steps:{self.CONTACT_DEBUGGING_STEP}')
+                if self.contact_debugging_step >= len(self.contact_debugging_actions_pd) and self.lfd_contact:
+                    self.get_logger().info(f'Contact steps:{self.contact_debugging_step}')
                     self.get_logger().info("Debugging demo actions exhausted.")
                     self.send_stop_message()
                     # self.running_lfd_approach = False                
@@ -819,10 +810,10 @@ class LFDController(Node):
                     return
                 else:
                 
-                    action_row = self.contact_debugging_actions_pd.iloc[self.CONTACT_DEBUGGING_STEP]
+                    action_row = self.contact_debugging_actions_pd.iloc[self.contact_debugging_step]
                     y = action_row.values
                     
-                    self.get_logger().info(f"Contact Debugging mode - Step {self.CONTACT_DEBUGGING_STEP}, Action: {y}")
+                    self.get_logger().info(f"Contact Debugging mode - Step {self.contact_debugging_step}, Action: {y}")
 
                     # If using deltas, multiply by scaling factor
                     # Send actions (twist)                           
@@ -833,13 +824,13 @@ class LFDController(Node):
                     self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN 
                     self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN 
                                 
-                    self.CONTACT_DEBUGGING_STEP += 1          
+                    self.contact_debugging_step += 1          
 
             # ============= PICK =============
             elif self.lfd_pick:
 
-                if self.PICK_DEBUGGING_STEP >= len(self.pick_debugging_actions_pd):
-                    self.get_logger().info(f'Pick steps:{self.PICK_DEBUGGING_STEP}')
+                if self.pick_debugging_step >= len(self.pick_debugging_actions_pd):
+                    self.get_logger().info(f'Pick steps:{self.pick_debugging_step}')
                     self.get_logger().info("Debugging demo actions exhausted.")
                     self.send_stop_message()
                     self.running_lfd = False                
@@ -848,10 +839,10 @@ class LFDController(Node):
                     return
                 else:
                 
-                    action_row = self.pick_debugging_actions_pd.iloc[self.PICK_DEBUGGING_STEP]
+                    action_row = self.pick_debugging_actions_pd.iloc[self.pick_debugging_step]
                     y = action_row.values
                     
-                    self.get_logger().info(f"Pick Debugging mode - Step {self.PICK_DEBUGGING_STEP}, Action: {y}")
+                    self.get_logger().info(f"Pick Debugging mode - Step {self.pick_debugging_step}, Action: {y}")
 
                     # If using deltas, multiply by scaling factor
                     # Send actions (twist)                           
@@ -862,7 +853,7 @@ class LFDController(Node):
                     self.target_cmd.twist.angular.y = float(y[4]) * self.DELTA_GAIN 
                     self.target_cmd.twist.angular.z = float(y[5]) * self.DELTA_GAIN 
                                 
-                    self.PICK_DEBUGGING_STEP += 1          
+                    self.pick_debugging_step += 1          
                        
     
     def bbox_callback(self, msg: Int16MultiArray):
@@ -886,9 +877,7 @@ class LFDController(Node):
         self.eef_ori_x = msg.pose.orientation.x
         self.eef_ori_y = msg.pose.orientation.y
         self.eef_ori_z = msg.pose.orientation.z
-        self.eef_ori_w = msg.pose.orientation.w
-       
-
+        self.eef_ori_w = msg.pose.orientation.w    
 
         self.eef_pose = np.array([self.eef_pos_x,
                                   self.eef_pos_y,
@@ -922,8 +911,11 @@ class LFDController(Node):
         # Update TCP trail
         self.update_tcp_trail()
 
+        # Distance between eef and apple
+        self.distance_at_base_frame = self.apple_pose_base.values.squeeze() - p_tcp_base
+
         # Apple position in TCP frame
-        self.p_apple_tcp = R_base_tcp.T @ (self.apple_pose_base - p_tcp_base)
+        self.p_apple_tcp = R_base_tcp.T @ (self.distance_at_base_frame)
 
         # Update distance from known target location
         self.eef_pos_x_error = self.p_apple_tcp[0]
@@ -933,101 +925,117 @@ class LFDController(Node):
 
     def palm_camera_callback(self, msg: Float32MultiArray):
         """
-        We'll use this callback to publish Twist commands everytime a new latent image arrives.
-        Image arrives as a Float32MultiArray with 64 elements
+        We'll use this callback to publish Twist commands everytime a new latent image arrives.        
         
         :param self: Description
-        :param msg: Description
-        :type msg: Image
+        :param msg: Latent Features from 15th layer of YOLO v8 cnn. 
+        :type msg: Float32MultiArray with 64 elements
         """
 
         if self.running_lfd and not self.DEBUGGING_MODE:
             
+            # ====================== Build State ==========================
             # --- Extract latent image ---
             self.latent_image = msg.data
 
             # --- Combine data ---
-            self.t_data = np.concatenate([self.tof, self.latent_image, self.joint_states])            
-            # Combine data, with past steps            
-            self.X = np.concatenate([self.t_2_data, self.t_1_data, self.t_data])
-            self.X = np.concatenate([self.t_data])
+            self.state = np.concatenate([self.tof_for_state, self.latent_image, self.p_apple_tcp])    
             
             
-            # --- Normalize data ---                        
-            self.X_norm = (self.X - self.lfd_X_mean) / self.lfd_X_std
-            # --- Append as row in DataFrame ---
-            self.lfd_states_df = pd.concat([
-                self.lfd_states_df, 
-                # pd.DataFrame([self.t_data_norm])
-                pd.DataFrame([self.X_norm])
-            ], ignore_index=True)
-            
-            # ======================= Predict Actions ======================
-            # Predict normalized actions
-            self.Y_norm = self.lfd_model.predict(self.X_norm.reshape(1, -1))
-            # Denormalize actions
-            self.Y = self.Y_norm * self.lfd_Y_std + self.lfd_Y_mean
-            self.Y = self.Y.squeeze()    
+            # Combine data, with past steps if model is 'rf' or 'mlp'            
+            # self.X = np.concatenate([self.t_2_data, self.t_1_data, self.state])
+            self.state_buffer.append(self.state)        # Update buffer
 
-
-            # Transform actions (eef cartesian velocities) to base frame                        
-            position = self.eef_pose[:3]
-            orientation = self.eef_pose[3:]
-            position_skew_matrix = np.array([[0, -position[2], position[1]],
-                                         [position[2], 0, -position[0]],
-                                         [-position[1], position[0], 0]])
-            # Rotation matrix from quaternion   base <- eef
-            R_base_eef = R.from_quat(orientation).as_matrix()   
-            v_eef = self.Y[:3]  # Assuming the model outputs in base frame for now
-            w_eef = self.Y[3:]  # Assuming the model outputs in base frame for now
-
-            # Check array sizes and shapes
-            v_eef = np.array(v_eef, dtype=float).reshape(3,)
-            w_eef = np.array(w_eef, dtype=float).reshape(3,)
-            R_base_eef = np.array(R_base_eef, dtype=float).reshape(3, 3)
-            position_skew_matrix = np.array(position_skew_matrix, dtype=float).reshape(3, 3)
-
-            v_base = R_base_eef @ v_eef + position_skew_matrix @ R_base_eef @ w_eef
-            w_base = R_base_eef @ w_eef
-
-            self.Y_base_frame = np.array([v_base[0], v_base[1], v_base[2], w_base[0], w_base[1], w_base[2]])
-
-            # Scale down the velocities
-            self.DELTA_GAIN = 1       # deltas were obtained at 1khz
-            self.Y_base_frame = self.Y_base_frame * self.DELTA_GAIN       
-
-            y = self.Y
-            # --- Append as row in DataFrame ---
-            self.lfd_actions_df = pd.concat([
-                self.lfd_actions_df, 
-                # pd.DataFrame([self.t_data_norm])
-                pd.DataFrame([y])
-
-            ], ignore_index=True)
-            self.get_logger().info(f'Target actions in eef frame: {y}')       
-            y_base = self.Y_base_frame
-            self.get_logger().info(f'Target actions in base frame: {y_base}') 
-
-            # Adjust velocities with feedback from goal pose
-
-
-            # Send actions (twist)                   
-            self.target_cmd.twist.linear.x = float(y_base[0]) + self.eef_pos_x_error * self.DELTA_GAIN
-            self.target_cmd.twist.linear.y = float(y_base[1]) + self.eef_pos_y_error * self.DELTA_GAIN
-            self.target_cmd.twist.linear.z = float(y_base[2]) + self.eef_pos_z_error * self.DELTA_GAIN
-            self.target_cmd.twist.angular.x = float(y_base[3])
-            self.target_cmd.twist.angular.y = float(y_base[4])
-            self.target_cmd.twist.angular.z = float(y_base[5])
-
-            self.get_logger().info(f"palm camera callback sending topic")
-
-            # Add actions to State Space to pass them to the next time steps
-            self.t_2_data = self.t_1_data
-
-            if self.KEEP_ACTIONS_MEMORY:
-                self.t_1_data = np.concatenate([self.t_data, self.Y])
+            if not len(self.state_buffer) == self.MODEL_PARAMS['SEQ_LEN']:
+                pass
             else:
-                self.t_1_data = self.t_data
+                self.X = np.stack(self.state_buffer)
+
+                self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
+                print('X Tensor shape:', self.X_tensor.shape)
+            
+                # --- Normalize State ---                        
+                self.X_norm = (self.X_tensor - self.X_MEAN) / self.X_STD
+                print('X Tensor normalized shape:', self.X_norm.shape)
+
+                # # --- Append as row in DataFrame ---
+                # self.lfd_states_df = pd.concat([
+                #     self.lfd_states_df, 
+                #     # pd.DataFrame([self.t_data_norm])
+                #     pd.DataFrame([self.X_norm])
+                # ], ignore_index=True)
+            
+                # ======================= Predict Actions ======================
+                # Predict normalized actions
+                # self.Y_norm = self.LFD_MODEL.predict(self.X_norm.reshape(1, -1))
+                self.Y_norm = self.LFD_MODEL(self.X_norm)
+                print('Y Tensor normalized shape:', self.Y_norm.shape)
+
+                # Denormalize actions
+                self.Y = self.Y_norm * self.Y_STD + self.Y_MEAN
+                self.Y = self.Y.squeeze()  
+                
+                # Move tensor to cpu
+                self.Y = self.Y.detach().cpu().numpy()
+
+                # ======================= Transform Actiosn =====================        
+                # Transform actions (eef cartesian velocities) to base frame                        
+                position = self.eef_pose[:3]
+                orientation = self.eef_pose[3:]
+                position_skew_matrix = np.array([[0, -position[2], position[1]],
+                                                 [position[2], 0, -position[0]],
+                                                 [-position[1], position[0], 0]])
+                
+                # Rotation matrix from quaternion   base <- eef
+                R_base_eef = R.from_quat(orientation).as_matrix()   
+                v_eef = self.Y[:3]  # Assuming the model outputs in base frame for now
+                w_eef = self.Y[3:]  # Assuming the model outputs in base frame for now
+
+                # Check array sizes and shapes
+                v_eef = np.array(v_eef, dtype=float).reshape(3,)
+                w_eef = np.array(w_eef, dtype=float).reshape(3,)
+                R_base_eef = np.array(R_base_eef, dtype=float).reshape(3, 3)
+                # position_skew_matrix = np.array(position_skew_matrix, dtype=float).reshape(3, 3)
+
+                v_base = R_base_eef @ v_eef     # + position_skew_matrix @ R_base_eef @ w_eef
+                w_base = R_base_eef @ w_eef
+                self.Y_base_frame = np.array([v_base[0],
+                                              v_base[1],
+                                              v_base[2],
+                                              w_base[0],
+                                              w_base[1],
+                                              w_base[2]])
+                
+                self.get_logger().info(f'Target actions in base frame: {self.Y_base_frame}') 
+              
+                # y = self.Y
+                # # --- Append as row in DataFrame ---
+                # self.lfd_actions_df = pd.concat([
+                #     self.lfd_actions_df, 
+                #     # pd.DataFrame([self.t_data_norm])
+                #     pd.DataFrame([y])
+                #     ], ignore_index=True)
+                # self.get_logger().info(f'Target actions in eef frame: {y}')                     
+
+                # Adjust velocities with feedback from goal pose               
+
+                # Send actions (twist)                   
+                self.target_cmd.twist.linear.x = 1.0 * float(self.Y_base_frame[0]) * self.DELTA_GAIN
+                self.target_cmd.twist.linear.y = 1.0 * float(self.Y_base_frame[1]) * self.DELTA_GAIN
+                self.target_cmd.twist.linear.z = 1.0 * float(self.Y_base_frame[2]) * self.DELTA_GAIN
+                self.target_cmd.twist.angular.x = 1.0 * float(self.Y_base_frame[3])
+                self.target_cmd.twist.angular.y = 1.0 * float(self.Y_base_frame[4])
+                self.target_cmd.twist.angular.z = 1.0 * float(self.Y_base_frame[5])
+
+                self.get_logger().info(f"palm camera callback sending topic")
+
+                # Combine data, with past steps if model is 'rf' or 'mlp'    
+                # Add actions to State Space to pass them to the next time steps
+                # self.t_2_data = self.t_1_data
+                # if self.KEEP_ACTIONS_MEMORY:
+                #     self.t_1_data = np.concatenate([self.state, self.Y])
+                # else:
+                #     self.t_1_data = self.state
                         
         if self.running_lfd and self.DEBUGGING_MODE:
             
@@ -1177,13 +1185,20 @@ def main():
 
     rclpy.init()
 
-    model = {'model': 'lstm',
+    MODEL_PARAMS = {'MODEL': 'lstm',
              'SEQ_LEN': 30,
-             'num_layers': 4,
-             'hidden_dim': 128,
-             'n_inputs': 68}  
+             'NUM_LAYERS': 2,
+             'HIDDEN_DIM': 1024
+             }  
     
-    node = LFDController(model)    
+    node = LFDController(MODEL_PARAMS)    
+
+    # Define location of apple if using apple-prior knowledge from apple localization
+    apple_pose_at_base = pd.Series(
+        [0.0, 0.6, 0.4],
+        index=['apple._x._base', 'apple._y._base', 'apple._z._base']
+        )
+    node.apple_pose_base = apple_pose_at_base
 
     BASE_DIR = '/home/alejo/Documents/DATA'
     BAG_MAIN_DIR = '07_IL_implementation/bagfiles'
@@ -1223,7 +1238,6 @@ def main():
         input()    
        
         # ------------ Step 3: Enable Servo Node Cartesian velocity controller ---------
-        # node.swap_controller(node.arm_controller, node.twist_controller)
         node.swap_controller(node.gravity_controller, node.twist_controller)
         time.sleep(1.0)  
 
@@ -1239,7 +1253,7 @@ def main():
         # -------------- Step 4: Run lfd controller ----------------        
         input("\n\033[1;32m\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\033[0m\n")     
         node.initialize_debugging_mode_variables   
-        node.DEBUGGING_MODE = True
+        node.DEBUGGING_MODE = False
         node.run_lfd_approach()      
 
         # Save states to CSV        

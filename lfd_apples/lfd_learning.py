@@ -70,24 +70,21 @@ class DatasetForLearning():
             cfg = yaml.safe_load(f)    
        
         # Actions
-        self.output_cols = cfg['action_cols']       
-        self.n_output_cols = len(self.output_cols)     # These are the ouputs (actions)
+        self.ACTION_NAMES = cfg['action_cols']       
+        self.N_ACTIONS = len(self.ACTION_NAMES)     # These are the ouputs (actions)
 
         # State
-        self.input_cols, self.input_keys = get_phase_columns(cfg, self.phase)
-        ouput_set = set(self.output_cols)
-        self.input_cols = [
-            c for c in self.input_cols
+        self.APPROACH_STATE_NAMES, self.APPROACH_STATE_NAME_KEYS = get_phase_columns(cfg, self.phase)
+        ouput_set = set(self.ACTION_NAMES)
+        self.APPROACH_STATE_NAMES = [
+            c for c in self.APPROACH_STATE_NAMES
             if c not in ouput_set
         ]
 
         n_time_steps = int(self.TIME_STEPS.split('_timesteps')[0])
         if n_time_steps>0:
-            self.input_cols = expand_features_over_time(self.input_cols, n_time_steps)
-
-        pass
-        
-        
+            self.APPROACH_STATE_NAMES = expand_features_over_time(self.APPROACH_STATE_NAMES, n_time_steps)
+                
         
     def load_data(self, BASE_PATH):
         
@@ -111,7 +108,7 @@ class DatasetForLearning():
         combined = np.vstack(all_arrays)
 
         self.n_total_cols = combined.shape[1]
-        self.n_input_cols = self.n_total_cols - self.n_output_cols
+        self.n_input_cols = self.n_total_cols - self.N_ACTIONS
         self.csvs_filepaths_list = filepaths
         
         return combined, filepaths
@@ -181,24 +178,24 @@ class DatasetForLearning():
             self.BASE_PATH,
             self.TIME_STEPS,
             self.train_trials,
-            self.input_cols,
-            self.output_cols,
+            self.APPROACH_STATE_NAMES,
+            self.ACTION_NAMES,
             self.SEQ_LENGTH,
             clip=self.clip)
         self.X_val, self.Y_val, self.X_val_seq, self.Y_val_seq = self.prepare_trial_set(
             self.BASE_PATH,
             self.TIME_STEPS,
             self.val_trials,
-            self.input_cols,
-            self.output_cols,
+            self.APPROACH_STATE_NAMES,
+            self.ACTION_NAMES,
             self.SEQ_LENGTH,
             clip=self.clip)  
         self.X_test, self.Y_test, self.X_test_seq, self.Y_test_seq = self.prepare_trial_set(
             self.BASE_PATH,
             self.TIME_STEPS,
             self.test_trials,
-            self.input_cols,
-            self.output_cols,
+            self.APPROACH_STATE_NAMES,
+            self.ACTION_NAMES,
             self.SEQ_LENGTH,
             clip=self.clip)          
         

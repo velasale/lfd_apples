@@ -191,7 +191,7 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
     lfd_dataset = DatasetForLearning(BASE_SOURCE_PATH, phase, time_steps='0_timesteps', SEQ_LENGTH=SEQ_LEN)
 
     # Keep track of inputs used during training
-    input_keys = lfd_dataset.input_keys[:-1]
+    input_keys = lfd_dataset.APPROACH_STATE_NAME_KEYS[:-1]
     input_keys_subfolder_name = "__".join(input_keys)
     model_subfolder = os.path.join(lfd_dataset.DESTINATION_PATH, input_keys_subfolder_name)
     os.makedirs(model_subfolder, exist_ok=True)
@@ -283,7 +283,7 @@ if __name__ == '__main__':
 
     
     phases = ['phase_1_approach']
-    hidden_dim_list = [2048]
+    hidden_dim_list = [1024]
     num_layers_list = [2]
 
     seq_lens = [30]
