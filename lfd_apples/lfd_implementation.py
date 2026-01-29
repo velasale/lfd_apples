@@ -978,7 +978,7 @@ class LFDController(Node):
                 # Move tensor to cpu
                 self.Y = self.Y.detach().cpu().numpy()
 
-                # ======================= Transform Actiosn =====================        
+                # ======================= Transform Actions =====================        
                 # Transform actions (eef cartesian velocities) to base frame                        
                 position = self.eef_pose[:3]
                 orientation = self.eef_pose[3:]
