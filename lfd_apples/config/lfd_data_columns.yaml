@@ -6,38 +6,47 @@ phases:
     - inhand_cam_features
     # - inhand_cam_bbox
     # - joint_states.pos
-    # - ee_pose
     - apple_prior    
     - action_cols
+    # - action_cols_at_base_frame
+
 
   phase_2_contact:
     - tof
     - air_pressure
     - wrench
     # - joint_states.pos
-    # - ee_pose
-    - apple_prior
+    - apple_prior    
     - action_cols
+    # - action_cols_at_base_frame
 
   phase_3_pick:
     - tof
     - air_pressure
     - wrench
     # - joint_states.pos
-    # - ee_pose
     - apple_prior
     - action_cols
+    # - action_cols_at_base_frame
 
   phase_4_disposal:
     - tof
     - air_pressure
     - wrench
     # - joint_states.pos
-    # - ee_pose
     - action_cols
+    # - action_cols_at_base_frame
 
-#========================== ACTION COLUMNS =========================
+#======================== ACTION SPACE ====================
 action_cols_at_base_frame:
+
+  # # Deltas @ base frame
+  - delta_pos_x
+  - delta_pos_y
+  - delta_pos_z
+  - delta_ori_x
+  - delta_ori_y
+  - delta_ori_z
 
   # Velocities @ base frame
   - v_eef_x
@@ -66,20 +75,18 @@ action_cols:
   - Δ_ori_eef._z._eef_frame
 
 
-# ============================ STATE INPUTS =====================
-
+# ======================= STATE SPACE ========================
+# --- Prior knowledge ---
 apple_prior:
-  # - 'apple._x._base'
-  # - 'apple._y._base'
-  # - 'apple._z._base'
+  # - apple._x._base
+  # - apple._y._base
+  # - apple._z._base
   - apple._x._ee
   - apple._y._ee
   - apple._z._ee
 
-inhand_cam_bbox:
-  - bbox._x._img_frame
-  - bbox._y._img_frame
 
+# --- Gripper State Space --- 
 air_pressure:
   - scA
   - scB
@@ -88,6 +95,16 @@ air_pressure:
 tof:
   - tof
 
+inhand_cam_features:
+  prefix: "f"
+  count: 64        # Number of features extracted from in-hand camera images, Layer 15 of Segmentation Network
+
+inhand_cam_bbox:
+  - bbox._x._img_frame
+  - bbox._y._img_frame
+
+
+# --- Arm State Space ---
 wrench:
   - _wrench._force._x
   - _wrench._force._y
@@ -95,15 +112,6 @@ wrench:
   - _wrench._torque._x
   - _wrench._torque._y
   - _wrench._torque._z
-
-ee_pose:
-  - _pose._position._x
-  - _pose._position._y
-  - _pose._position._z
-  - _pose._orientation._x
-  - _pose._orientation._y
-  - _pose._orientation._z
-  - _pose._orientation._w
 
 joint_states:
   pos:
@@ -131,24 +139,24 @@ joint_states:
     - eff_joint_6
     - eff_joint_7
 
-inhand_cam_features:
-  prefix: "f"
-  count: 64        # Number of features extracted from in-hand camera images, Layer 15 of Segmentation Network
-  # - f11
-  # - f21
-  # - f52
-  # - f23
-  # - f4
-  # - f14
-  # - f60
-  # - f41 
-  # - f19
-  # - f10
-  # - f54
-  # - f34
-  # - f15
-  # - f6
-  # - f55
-  # - f30
-  # - f45
+ee_pose:
+  - _pose._position._x
+  - _pose._position._y
+  - _pose._position._z
+  - _pose._orientation._x
+  - _pose._orientation._y
+  - _pose._orientation._z
+  - _pose._orientation._w
+
+
+
+
+
+
+
+
+
+
+
+
 

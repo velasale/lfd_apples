@@ -968,9 +968,9 @@ if __name__ == '__main__':
     # main()
    
     model = {'model': 'lstm',
-             'SEQ_LEN': 30,
-             'num_layers': 4,
-             'hidden_dim': 128,
+             'SEQ_LEN': 20,
+             'num_layers': 2,
+             'hidden_dim': 1024,
              'n_inputs': 68}  
     
 
@@ -981,12 +981,12 @@ if __name__ == '__main__':
     # infer_actions(model,
     #               PHASE = 'phase_1_approach', 
     #               TRIALS_SET = 'test_trials.csv',
-    #               TRIAL_ID = 'random')     # either 'random' or an int number
+    #               TRIAL_ID = 226)#'random')     # either 'random' or an int number
    
         
     infer_actions_all_set(model,                          
                           PHASE = 'phase_1_approach', 
-                          TRIALS_SET = 'test_trials.csv')
+                          TRIALS_SET = 'train_trials.csv')
 
     # important_features(top=10)
 
