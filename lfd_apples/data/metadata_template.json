@@ -12,6 +12,15 @@
             "type": "Alejo tandem actuation gripper",
             "pressure @ valve": "70 PSI",
             "weight": "1350 g"
+        },
+        "controller":{
+            "data based ctrl params": "TODO",
+            "PI ctl params":{
+                "P": "TODO",
+                "I": "TODO",
+                "additional gain":"TODO"
+            },
+            "Pixel to distance": "TODO"
         }
     },
     "proxy": {

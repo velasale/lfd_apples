@@ -968,7 +968,7 @@ if __name__ == '__main__':
     # main()
    
     model = {'model': 'lstm',
-             'SEQ_LEN': 20,
+             'SEQ_LEN': 30,
              'num_layers': 2,
              'hidden_dim': 1024,
              'n_inputs': 68}  
@@ -978,15 +978,15 @@ if __name__ == '__main__':
     #          'TIMESTEPS': '0_timesteps',                # 0, 5, 10, 15, 20           
     #          }                
 
-    # infer_actions(model,
-    #               PHASE = 'phase_1_approach', 
-    #               TRIALS_SET = 'test_trials.csv',
-    #               TRIAL_ID = 226)#'random')     # either 'random' or an int number
+    infer_actions(model,
+                  PHASE = 'phase_1_approach', 
+                  TRIALS_SET = 'test_trials.csv',
+                  TRIAL_ID = 'random')     # either 'random' or an int number
    
         
-    infer_actions_all_set(model,                          
-                          PHASE = 'phase_1_approach', 
-                          TRIALS_SET = 'train_trials.csv')
+    # infer_actions_all_set(model,                          
+    #                       PHASE = 'phase_1_approach', 
+    #                       TRIALS_SET = 'test_trials.csv')
 
     # important_features(top=10)
 

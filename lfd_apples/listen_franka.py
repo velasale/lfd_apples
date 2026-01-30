@@ -200,7 +200,8 @@ def start_recording_bagfile(BAG_FILEPATH, arm_bag=True, inhand_camera_bag=True, 
             "ros2", "bag", "record",
             "-b", "10000000000",
             "-o", BAG_NAME_PALM_CAMERA,
-            "gripper/rgb_palm_camera/image_raw",                 
+            'gripper/rgb_palm_camera/image_raw_with_artifacts', 
+            # "gripper/rgb_palm_camera/image_raw",                 
         ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
         bag_list.append(bag_proc_palm_camera)    
 

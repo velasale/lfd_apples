@@ -89,19 +89,7 @@ class LFDController(Node):
         self.initialize_ros_controller_properties()    
         self.initialize_rviz_trail()  
         self.initialize_ros_timers()
-        self.initialize_flags()
-                
-
-        # --- Velocity ramping variables ---
-        # self.current_linear_accel  = {'x': 0.0, 'y': 0.0, 'z': 0.0}
-        # self.current_angular_accel = {'x': 0.0, 'y': 0.0, 'z': 0.0}
-
-        # self.SCALING_FACTOR = 0.5e-3
-        # self.max_linear_accel   = 0.1 * self.SCALING_FACTOR   # m/s²
-        # self.max_angular_accel  = 0.2 * self.SCALING_FACTOR    # rad/s²
-
-        # self.max_linear_jerk    = 0.1 * self.SCALING_FACTOR    # m/s³
-        # self.max_angular_jerk   = 1.0 * self.SCALING_FACTOR    # rad/s³   
+        self.initialize_flags()               
 
         self.last_cmd_time = self.get_clock().now()   
         self.joint_names = [f"fr3_joint{i+1}" for i in range(7)]
@@ -199,11 +187,24 @@ class LFDController(Node):
         self.target_cmd = TwistStamped()        
 
         # Controller gain for delta
-        # Converts deltas into m/s and rad/s
+        # Converts 'm' and 'rad' deltas into m/s and rad/s
         # In our case, delta_eef_pose was calculated for delta_times = 0.001 sec, 
         # hence, we use a gain of 1000 (1/0.001sec) to convert m to m/sec.
         self.DELTA_GAIN = 1000
         # self.DELTA_GAIN = 1500    # I used this one for command interface = position
+
+        # PID GAINS
+        # If using deltas, multiply by scaling factor
+        # Send actions (twist)       
+        self.PI_GAIN = 0.1                    
+        self.POSITION_KP = 1.25  # 2.0
+        self.POSITION_KI = 0.025
+
+        PIXELS = 320
+        DISTANCE_IN_M = 0.1   
+        self.PIXEL_TO_METER_RATE = DISTANCE_IN_M / PIXELS      # approx 20cm per 320 pixels
+
+        self.position_kp_z = 0.2    # 0.1
 
 
     def initialize_rviz_trail(self):
@@ -431,7 +432,7 @@ class LFDController(Node):
 
         # Thresholds
         # TOF threshold is used to switch from 'approach' to 'contact' phase
-        self.TOF_THRESHOLD = 50                 # units in mm
+        self.TOF_THRESHOLD = 70                 # units in mm
         # Air pressure threshold is used to tell when a suction cup has engaged.
         self.AIR_PRESSURE_THRESHOLD = 600       # units in hPa        
        
@@ -468,6 +469,7 @@ class LFDController(Node):
         self.pick_accomplished = False
         self.data_ready = False
         self.running_lfd = False
+        self.running_lfd_approach = False
         self.running_lfd_contact = False
         self.running_lfd_pick = False        
 
@@ -731,9 +733,22 @@ class LFDController(Node):
         self.scA = self.ema_scA.update(self.scA)
         self.scB = self.ema_scB.update(self.scB)
         self.scC = self.ema_scC.update(self.scC)
-        self.tof = self.ema_tof.update(self.tof)
+        self.tof = self.ema_tof.update(self.tof)        
 
         self.tof_for_state = np.array([self.tof])
+
+        if self.running_lfd_approach:
+            
+            if self.tof < self.TOF_THRESHOLD:
+                self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                  
+                self.running_lfd = False
+                self.running_lfd_approach = False
+                self.send_stop_message()
+
+            if self.tof < 100:
+                self.get_logger().info(f"TOF reached: {self.tof} < {self.TOF_THRESHOLD} turning off PI controller")      
+                self.PI_GAIN = 0.0
+
 
 
     def incoming_cam_sim(self):
@@ -747,14 +762,14 @@ class LFDController(Node):
             # --- Get next action from debugging demo ---
             
             # ============= APPROACH =============
-            if self.lfd_approach:
+            if self.running_lfd_approach:
 
                 if self.approach_debugging_step >= len(self.approach_debugging_actions_pd):
                     self.get_logger().info(f'Approach steps:{self.approach_debugging_step}')
                     self.get_logger().info("Debugging demo actions exhausted.")
                     self.send_stop_message()
                     # self.running_lfd_approach = False
-                    self.lfd_approach = False
+                    self.running_lfd_approach = False
                     self.lfd_contact = True
                     return
                 else:
@@ -763,31 +778,26 @@ class LFDController(Node):
                     y = action_row.values
                     
                     self.get_logger().info(f"Approach Debugging mode - Step {self.approach_debugging_step}, Action: {y}")
-
-                    # If using deltas, multiply by scaling factor
-                    # Send actions (twist)                            
-                    self.position_kp = 1.25  # 2.0
-                    self.position_ki = 0.025
-                    self.position_kp_z = 0.2    # 0.1
+                    
 
                     # =========================  HEADS UP ===========================
                     # If using bbox pixels from camera without prior, otherwise comment to use the prior knowledge
-                    self.pixel_to_meter_rate = 0.3/320      # approx 20cm per 320 pixels
-                    self.eef_pos_x_error = self.bbox_center_at_tcp[0] * self.pixel_to_meter_rate
-                    self.eef_pos_y_error = self.bbox_center_at_tcp[1] * self.pixel_to_meter_rate
+                    self.PIXEL_TO_METER_RATE = 0.3/320      # approx 20cm per 320 pixels
+                    self.eef_pos_x_error = self.bbox_center_at_tcp[0] * self.PIXEL_TO_METER_RATE
+                    self.eef_pos_y_error = self.bbox_center_at_tcp[1] * self.PIXEL_TO_METER_RATE
                     # ================================================================
-
 
                     self.sum_pos_x_error += self.eef_pos_x_error
                     self.sum_pos_y_error += self.eef_pos_y_error
+
                     self.get_logger().info(f"apple pose tcp: {self.p_apple_tcp}")
 
                     self.target_cmd.twist.linear.x = 0.0 * float(y[0]) * self.DELTA_GAIN \
-                                                        + self.position_kp * self.eef_pos_x_error \
-                                                        + self.position_ki * self.sum_pos_x_error
+                                                        + self.POSITION_KP * self.eef_pos_x_error \
+                                                        + self.POSITION_KI * self.sum_pos_x_error
                     self.target_cmd.twist.linear.y = 0.0 * float(y[1]) * self.DELTA_GAIN \
-                                                        + self.position_kp * self.eef_pos_y_error \
-                                                        + self.position_ki * self.sum_pos_y_error
+                                                        + self.POSITION_KP * self.eef_pos_y_error \
+                                                        + self.POSITION_KI * self.sum_pos_y_error
                     self.target_cmd.twist.linear.z = 1.0 * float(y[2]) * self.DELTA_GAIN \
                                                         + 0.0 * self.position_kp_z * self.eef_pos_z_error   
                     
@@ -866,6 +876,12 @@ class LFDController(Node):
         '''
 
         self.bbox_center_at_tcp = msg.data
+
+        # =========================  HEADS UP ===========================
+        # If using bbox pixels from camera without prior, otherwise comment to use the prior knowledge       
+        self.bbox_pos_x_error = self.bbox_center_at_tcp[0] * self.PIXEL_TO_METER_RATE
+        self.bbox_pos_y_error = self.bbox_center_at_tcp[1] * self.PIXEL_TO_METER_RATE
+        # ================================================================
            
 
     def eef_pose_callback(self, msg: PoseStamped):
@@ -932,110 +948,94 @@ class LFDController(Node):
         :type msg: Float32MultiArray with 64 elements
         """
 
-        if self.running_lfd and not self.DEBUGGING_MODE:
-            
-            # ====================== Build State ==========================
-            # --- Extract latent image ---
-            self.latent_image = msg.data
+        if self.running_lfd and not self.DEBUGGING_MODE:            
 
-            # --- Combine data ---
-            self.state = np.concatenate([self.tof_for_state, self.latent_image, self.p_apple_tcp])    
-            
-            
-            # Combine data, with past steps if model is 'rf' or 'mlp'            
-            # self.X = np.concatenate([self.t_2_data, self.t_1_data, self.state])
-            self.state_buffer.append(self.state)        # Update buffer
+            if self.running_lfd_approach:
 
-            if not len(self.state_buffer) == self.MODEL_PARAMS['SEQ_LEN']:
-                pass
-            else:
-                self.X = np.stack(self.state_buffer)
+                # ====================== Build State ==========================
+                # --- Extract latent image ---
+                self.latent_image = msg.data
+                # self.img_time_stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9    # time in seconds
 
-                self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
-                print('X Tensor shape:', self.X_tensor.shape)
-            
-                # --- Normalize State ---                        
-                self.X_norm = (self.X_tensor - self.X_MEAN) / self.X_STD
-                print('X Tensor normalized shape:', self.X_norm.shape)
+                # --- Combine data ---
+                # self.state = np.concatenate([self.tof_for_state, self.latent_image, self.p_apple_tcp])    
+                self.state = np.concatenate([self.tof_for_state, self.latent_image])    
+                            
+                # Combine data, with past steps if model is 'rf' or 'mlp'            
+                # self.X = np.concatenate([self.t_2_data, self.t_1_data, self.state])
+                self.state_buffer.append(self.state)        # Update buffer
 
-                # # --- Append as row in DataFrame ---
-                # self.lfd_states_df = pd.concat([
-                #     self.lfd_states_df, 
-                #     # pd.DataFrame([self.t_data_norm])
-                #     pd.DataFrame([self.X_norm])
-                # ], ignore_index=True)
-            
-                # ======================= Predict Actions ======================
-                # Predict normalized actions
-                # self.Y_norm = self.LFD_MODEL.predict(self.X_norm.reshape(1, -1))
-                self.Y_norm = self.LFD_MODEL(self.X_norm)
-                print('Y Tensor normalized shape:', self.Y_norm.shape)
+                if not len(self.state_buffer) == self.MODEL_PARAMS['SEQ_LEN']:
+                    pass
+                else:
+                    self.X = np.stack(self.state_buffer)
 
-                # Denormalize actions
-                self.Y = self.Y_norm * self.Y_STD + self.Y_MEAN
-                self.Y = self.Y.squeeze()  
+                    self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
+                    print('X Tensor shape:', self.X_tensor.shape)
                 
-                # Move tensor to cpu
-                self.Y = self.Y.detach().cpu().numpy()
+                    # --- Normalize State ---                        
+                    self.X_norm = (self.X_tensor - self.X_MEAN) / self.X_STD
+                    print('X Tensor normalized shape:', self.X_norm.shape)
 
-                # ======================= Transform Actions =====================        
-                # Transform actions (eef cartesian velocities) to base frame                        
-                position = self.eef_pose[:3]
-                orientation = self.eef_pose[3:]
-                position_skew_matrix = np.array([[0, -position[2], position[1]],
-                                                 [position[2], 0, -position[0]],
-                                                 [-position[1], position[0], 0]])
+                    # # --- Append as row in DataFrame ---
+                    # self.lfd_states_df = pd.concat([
+                    #     self.lfd_states_df, 
+                    #     # pd.DataFrame([self.t_data_norm])
+                    #     pd.DataFrame([self.X_norm])
+                    # ], ignore_index=True)
                 
-                # Rotation matrix from quaternion   base <- eef
-                R_base_eef = R.from_quat(orientation).as_matrix()   
-                v_eef = self.Y[:3]  # Assuming the model outputs in base frame for now
-                w_eef = self.Y[3:]  # Assuming the model outputs in base frame for now
+                    # ======================= Predict Actions ======================
+                    # Predict normalized actions
+                    # self.Y_norm = self.LFD_MODEL.predict(self.X_norm.reshape(1, -1))
+                    self.Y_norm = self.LFD_MODEL(self.X_norm)
+                    print('Y Tensor normalized shape:', self.Y_norm.shape)
 
-                # Check array sizes and shapes
-                v_eef = np.array(v_eef, dtype=float).reshape(3,)
-                w_eef = np.array(w_eef, dtype=float).reshape(3,)
-                R_base_eef = np.array(R_base_eef, dtype=float).reshape(3, 3)
-                # position_skew_matrix = np.array(position_skew_matrix, dtype=float).reshape(3, 3)
-
-                v_base = R_base_eef @ v_eef     # + position_skew_matrix @ R_base_eef @ w_eef
-                w_base = R_base_eef @ w_eef
-                self.Y_base_frame = np.array([v_base[0],
-                                              v_base[1],
-                                              v_base[2],
-                                              w_base[0],
-                                              w_base[1],
-                                              w_base[2]])
+                    # Denormalize actions
+                    self.Y = self.Y_norm * self.Y_STD + self.Y_MEAN
+                    self.Y = self.Y.squeeze()  
+                    
+                    # Move tensor to cpu
+                    self.Y = self.Y.detach().cpu().numpy()
                 
-                self.get_logger().info(f'Target actions in base frame: {self.Y_base_frame}') 
-              
-                # y = self.Y
-                # # --- Append as row in DataFrame ---
-                # self.lfd_actions_df = pd.concat([
-                #     self.lfd_actions_df, 
-                #     # pd.DataFrame([self.t_data_norm])
-                #     pd.DataFrame([y])
-                #     ], ignore_index=True)
-                # self.get_logger().info(f'Target actions in eef frame: {y}')                     
+                    # y = self.Y
+                    # # --- Append as row in DataFrame ---
+                    # self.lfd_actions_df = pd.concat([
+                    #     self.lfd_actions_df, 
+                    #     # pd.DataFrame([self.t_data_norm])
+                    #     pd.DataFrame([y])
+                    #     ], ignore_index=True)
+                    # self.get_logger().info(f'Target actions in eef frame: {y}')                     
 
-                # Adjust velocities with feedback from goal pose               
+                    # Adjust velocities with feedback from goal pose               
+                    self.sum_pos_x_error += self.bbox_pos_x_error
+                    self.sum_pos_y_error += self.bbox_pos_y_error
 
-                # Send actions (twist)                   
-                self.target_cmd.twist.linear.x = 1.0 * float(self.Y_base_frame[0]) * self.DELTA_GAIN
-                self.target_cmd.twist.linear.y = 1.0 * float(self.Y_base_frame[1]) * self.DELTA_GAIN
-                self.target_cmd.twist.linear.z = 1.0 * float(self.Y_base_frame[2]) * self.DELTA_GAIN
-                self.target_cmd.twist.angular.x = 1.0 * float(self.Y_base_frame[3])
-                self.target_cmd.twist.angular.y = 1.0 * float(self.Y_base_frame[4])
-                self.target_cmd.twist.angular.z = 1.0 * float(self.Y_base_frame[5])
+                    # Linear Velocities                   
+                    self.target_cmd.twist.linear.x = 1.0 * float(self.Y[0]) * self.DELTA_GAIN \
+                                                        + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_x_error \
+                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_x_error
 
-                self.get_logger().info(f"palm camera callback sending topic")
+                    self.target_cmd.twist.linear.y = 1.0 * float(self.Y[1]) * self.DELTA_GAIN \
+                                                        + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_y_error \
+                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error
 
-                # Combine data, with past steps if model is 'rf' or 'mlp'    
-                # Add actions to State Space to pass them to the next time steps
-                # self.t_2_data = self.t_1_data
-                # if self.KEEP_ACTIONS_MEMORY:
-                #     self.t_1_data = np.concatenate([self.state, self.Y])
-                # else:
-                #     self.t_1_data = self.state
+                    self.target_cmd.twist.linear.z = 1.0 * float(self.Y[2]) * self.DELTA_GAIN
+
+                    # Angular Velocities
+                    self.target_cmd.twist.angular.x = 1.0 * float(self.Y[3]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
+
+                    self.get_logger().info(f'Target actions in eef frame: {self.Y}')         
+                    self.get_logger().info(f"palm camera callback sending topic")
+
+                    # Combine data, with past steps if model is 'rf' or 'mlp'    
+                    # Add actions to State Space to pass them to the next time steps
+                    # self.t_2_data = self.t_1_data
+                    # if self.KEEP_ACTIONS_MEMORY:
+                    #     self.t_1_data = np.concatenate([self.state, self.Y])
+                    # else:
+                    #     self.t_1_data = self.state
                         
         if self.running_lfd and self.DEBUGGING_MODE:
             
@@ -1044,13 +1044,14 @@ class LFDController(Node):
 
 
     # === Action Functions ====
-    def run_lfd_approach(self, n_timesteps=2):       
+    def run_lfd_approach(self):       
 
         self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
         self.running_lfd = True
-        self.lfd_approach = True
+        self.running_lfd_approach = True
         self.sum_pos_x_error = 0.0
         self.sum_pos_y_error = 0.0
+        self.PI_GAIN = 1.0      
 
         # Rviz: Clear previous trail       
         self.tcp_trail_marker.points.clear()
@@ -1058,13 +1059,8 @@ class LFDController(Node):
 
         while rclpy.ok() and self.running_lfd:
             
-            # self.tof = np.array([1000])  # Dummy value for testing
-            self.tof = 1000.0
-
-            if self.tof < self.TOF_THRESHOLD:
-                self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")                
-                self.send_stop_message()
-                self.running_lfd = False
+            # This runs depending on the flags           
+            # 'palm camera callback' has the logic
 
             rclpy.spin_once(self,timeout_sec=0.0)
             time.sleep(0.001)
@@ -1083,48 +1079,9 @@ class LFDController(Node):
 
         if dt <= 0.0:
             return
-
-        # # --- Linear axes ---
-        # for axis in ['x', 'y', 'z']:
-        #     v_cur = getattr(self.current_cmd.twist.linear, axis)
-        #     v_tgt = getattr(self.target_cmd.twist.linear, axis)
-        #     a_cur = self.current_linear_accel[axis]
-
-        #     # Desired acceleration
-        #     a_des = (v_tgt - v_cur) / dt
-        #     a_des = np.clip(a_des, -self.max_linear_accel, self.max_linear_accel)
-
-        #     # Jerk-limited acceleration update
-        #     da = a_des - a_cur
-        #     da = np.clip(da, -self.max_linear_jerk * dt,
-        #                     self.max_linear_jerk * dt)
-
-        #     a_new = a_cur + da
-        #     v_new = v_cur + a_new * dt
-
-        #     self.current_linear_accel[axis] = a_new
-        #     setattr(self.current_cmd.twist.linear, axis, v_new)
-
-        # # --- Angular axes ---
-        # for axis in ['x', 'y', 'z']:
-        #     v_cur = getattr(self.current_cmd.twist.angular, axis)
-        #     v_tgt = getattr(self.target_cmd.twist.angular, axis)
-        #     a_cur = self.current_angular_accel[axis]
-
-        #     a_des = (v_tgt - v_cur) / dt
-        #     a_des = np.clip(a_des, -self.max_angular_accel, self.max_angular_accel)
-
-        #     da = a_des - a_cur
-        #     da = np.clip(da, -self.max_angular_jerk * dt,
-        #                     self.max_angular_jerk * dt)
-
-        #     a_new = a_cur + da
-        #     v_new = v_cur + a_new * dt
-
-        #     self.current_angular_accel[axis] = a_new
-        #     setattr(self.current_cmd.twist.angular, axis, v_new)
+     
         
-        self.current_cmd.twist = self.target_cmd.twist  # Uncomment to override smoothing
+        self.current_cmd.twist = self.target_cmd.twist  
         self.current_cmd.header.frame_id = "fr3_hand_tcp"
 
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
@@ -1139,8 +1096,10 @@ class LFDController(Node):
         """
 
         self.target_cmd.twist = Twist()  # zero target
+        self.current_cmd.header.frame_id = "fr3_hand_tcp"
+
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
-        self.vel_pub.publish(self.current_cmd)
+        self.servo_pub.publish(self.current_cmd)
 
 
     def compute_joint_velocities(self, desired_ee_velocity: np.ndarray, joint_positions: list):
@@ -1152,7 +1111,6 @@ class LFDController(Node):
         jacobian = fr3_jacobian(joint_positions)
         joint_velocities = np.linalg.pinv(jacobian) @ desired_ee_velocity
         self.get_logger().info(f'Joint velocities: {joint_velocities}')
-
 
 
 
@@ -1186,16 +1144,16 @@ def main():
     rclpy.init()
 
     MODEL_PARAMS = {'MODEL': 'lstm',
-             'SEQ_LEN': 30,
-             'NUM_LAYERS': 2,
-             'HIDDEN_DIM': 1024
-             }  
+                    'SEQ_LEN': 30,
+                    'NUM_LAYERS': 2,
+                    'HIDDEN_DIM': 1024
+                    }  
     
     node = LFDController(MODEL_PARAMS)    
 
     # Define location of apple if using apple-prior knowledge from apple localization
     apple_pose_at_base = pd.Series(
-        [0.0, 0.6, 0.4],
+        [-0.036, 0.91, 0.43],
         index=['apple._x._base', 'apple._y._base', 'apple._z._base']
         )
     node.apple_pose_base = apple_pose_at_base
