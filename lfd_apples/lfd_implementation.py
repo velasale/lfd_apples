@@ -710,7 +710,7 @@ class LFDController(Node):
         goal_msg.trajectory.joint_names = self.joint_names
         point = JointTrajectoryPoint()
         point.positions = self.HOME_POSITIONS
-        point.time_from_start.sec = 5
+        # point.time_from_start.sec = 5
         goal_msg.trajectory.points.append(point)
 
         self.get_logger().info('Sending trajectory goal...')
@@ -767,6 +767,7 @@ class LFDController(Node):
         # Date
         trial_info['general']['date'] = str(datetime.datetime.now())
 
+
         # Update proxy info
         # apple_id = input("Type the apple id: ")  # Wait for user to press Enter
         trial_info['proxy']['apple']['id'] = self.apple_id
@@ -788,14 +789,20 @@ class LFDController(Node):
         trial_info['controllers']['approach']['states'] = self.APPROACH_STATE_NAME_KEYS
         trial_info['controllers']['approach']['actions'] = self.ACTION_NAMES
 
+
         # Update gripper weight
         # Gripper weight = 1190 g, Rim weight = 160 g, Gripper + Rim weight = 1350 g
         trial_info['robot']['gripper']['weight'] =  "1190 g"       
 
 
+        # Save results metrics
+        trial_info['results']['approach metrics']['final pose'] = self.p_apple_tcp_enf_of_approach
+
+
         # --- Save metadata in file    
         with open(filename + '.json', "w") as outfile:
             json.dump(trial_info, outfile, indent=4)
+
 
     # === Sensor Topics Callback ====
     def gripper_sensors_callback(self, msg: Int16MultiArray):
@@ -1013,6 +1020,10 @@ class LFDController(Node):
         self.eef_pos_x_error = self.p_apple_tcp[0]
         self.eef_pos_y_error = self.p_apple_tcp[1]
         self.eef_pos_z_error = self.p_apple_tcp[2]
+
+
+        if self.running_lfd_approach:
+            self.p_apple_tcp_enf_of_approach = self.p_apple_tcp
 
 
     def palm_camera_callback(self, msg: Float32MultiArray):

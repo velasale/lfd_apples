@@ -96,11 +96,19 @@
             0
         ]
     },
-    "results": {
-        "success_approach": true,
-        "success_grasp": true,
-        "success_pick": true,
-        "success_disposal": true,
-        "comments": "N/A"
+    "results": {        
+        "comments": "N/A",
+        "approach metrics": {
+            "final pose": [0.0, 0.0, 0.0],
+            "success": true
+            },
+        "contact metrics": {
+            "final pose": [0.0, 0.0, 0.0],
+            "cups engaged": 0,
+            "success": true
+            },
+        "pick metrics": {
+            "success": true
+        }
     }
 }
