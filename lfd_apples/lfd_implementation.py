@@ -219,7 +219,7 @@ class LFDController(Node):
         # PID GAINS
         # If using deltas, multiply by scaling factor
         # Send actions (twist)       
-        self.PI_GAIN = 0.0                    
+        self.INITIAL_PI_GAIN = 0.0                    
         self.POSITION_KP = 1.25  # 2.0
         self.POSITION_KI = 0.025
 
@@ -327,6 +327,8 @@ class LFDController(Node):
             [1.0, 1.0, 1.0],
             index=['apple._x._base', 'apple._y._base', 'apple._z._base']
             )
+
+        self.apple_pose_min_dist = 1e3
 
         model_name = self.MODEL_PARAMS['MODEL']              
 
@@ -710,7 +712,10 @@ class LFDController(Node):
         goal_msg.trajectory.joint_names = self.joint_names
         point = JointTrajectoryPoint()
         point.positions = self.HOME_POSITIONS
-        # point.time_from_start.sec = 5
+        point.accelerations = [0.0] * len(self.joint_names)
+        point.velocities = [0.0] * len(self.joint_names)
+
+        point.time_from_start.sec = 8
         goal_msg.trajectory.points.append(point)
 
         self.get_logger().info('Sending trajectory goal...')
@@ -784,7 +789,7 @@ class LFDController(Node):
         trial_info['controllers']['approach']['data based'] = self.MODEL_PARAMS
         trial_info['controllers']['approach']['PI']['P'] = self.POSITION_KP
         trial_info['controllers']['approach']['PI']['I'] = self.POSITION_KI
-        trial_info['controllers']['approach']['PI']['PI gain'] = self.PI_GAIN
+        trial_info['controllers']['approach']['PI']['PI gain'] = self.INITIAL_PI_GAIN
         trial_info['controllers']['approach']['pixel to meter'] = self.PIXEL_TO_METER_RATE
         trial_info['controllers']['approach']['states'] = self.APPROACH_STATE_NAME_KEYS
         trial_info['controllers']['approach']['actions'] = self.ACTION_NAMES
@@ -796,7 +801,7 @@ class LFDController(Node):
 
 
         # Save results metrics
-        trial_info['results']['approach metrics']['final pose'] = self.p_apple_tcp_enf_of_approach
+        trial_info['results']['approach metrics']['final pose'] =  self.p_apple_tcp_enf_of_approach.flatten().tolist()
 
 
         # --- Save metadata in file    
@@ -1023,7 +1028,13 @@ class LFDController(Node):
 
 
         if self.running_lfd_approach:
-            self.p_apple_tcp_enf_of_approach = self.p_apple_tcp
+
+            euclidean_distance = np.linalg.norm(self.p_apple_tcp)
+
+            if euclidean_distance < self.apple_pose_min_dist:
+
+                self.apple_pose_min_dist = euclidean_distance
+                self.p_apple_tcp_enf_of_approach = self.p_apple_tcp
 
 
     def palm_camera_callback(self, msg: Float32MultiArray):
@@ -1139,7 +1150,7 @@ class LFDController(Node):
         self.running_lfd_approach = True
         self.sum_pos_x_error = 0.0
         self.sum_pos_y_error = 0.0
-        self.PI_GAIN = 1.0      
+        self.PI_GAIN = self.INITIAL_PI_GAIN     
 
         # Rviz: Clear previous trail       
         self.tcp_trail_marker.points.clear()
@@ -1269,9 +1280,10 @@ def main():
         while not node.move_to_home():
             pass
 
-        input("\n\033[1;32m\nSTEP 2: Place apple on the proxy. \nPress ENTER key when done.\033[0m\n")    
 
-        # ------------ Step 2: Allow free drive if needed ---------
+        # ------------ Step 2: Place apple and record position ------       
+        input("\n\033[1;32m\nSTEP 2: Place apple on the proxy. \nPress ENTER key when done.\033[0m\n")    
+       
         node.swap_controller(node.arm_controller, node.gravity_controller)
         time.sleep(0.5)                
 
@@ -1289,24 +1301,27 @@ def main():
         node.swap_controller(node.arm_controller, node.gravity_controller)
         time.sleep(0.5)               
 
+
+        # ------------- Step 3: Place arm at a feasbile initial pose --------
         node.get_logger().info("\n\033[1;32m\nSTEP 3: Free-drive arm until apple in camera FOV. \nPress ENTER key when you are done.\033[0m\n")        
         input()    
        
-        # ------------ Step 3: Enable Servo Node Cartesian velocity controller ---------
+        # Moveit 2 - Servo node
         node.swap_controller(node.gravity_controller, node.twist_controller)
         time.sleep(0.5)  
-
         node.get_logger().info("Enabling Moveit2 Servo Node for twist controller...")
         req = Trigger.Request()        
         node.servo_node_client.call_async(req)
+        time.sleep(0.5)        
 
-        time.sleep(1.0)        
-
-        # Start bag recording        
+        # Start recording bag
         robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
+
+
 
         # -------------- Step 4: Run lfd controller ----------------        
         input("\n\033[1;32m\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\033[0m\n")     
+
         node.DEBUGGING_MODE = False
         if node.DEBUGGING_MODE: node.initialize_debugging_mode_variables   
 
@@ -1320,6 +1335,8 @@ def main():
         node.lfd_actions_df.to_csv(csv_path, index=False, header=False)
         node.get_logger().info(f"LFD approach actions saved to {csv_path}")               
 
+
+
         # -------------- Step 5: Dispose apple ----------------
         input("\n\033[1;32m\nSTEP 5: Press ENTER key to dispose apple.\033[0m\n")
         
@@ -1328,7 +1345,6 @@ def main():
 
         # Stop bag recording
         stop_recording_bagfile(robot_rosbag_list)
-
         node.save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))  
 
         # Check data
