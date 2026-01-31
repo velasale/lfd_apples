@@ -106,5 +106,15 @@ def generate_launch_description():
                     {'topic_name': 'fixed/rgb_camera/image_raw'},
                     {'frame_id': 'fixed_camera_optical_link'}                        
                     ],
-            ),   
+            ),
+
+
+        # Yolo Node
+        Node(
+                package='lfd_apples',
+                executable='yolo_latent_node',
+                name='yolo_node',
+                output='screen'
+        ),        
+            
     ])
