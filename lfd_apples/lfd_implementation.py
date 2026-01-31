@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import torch
 from collections import deque
+from ament_index_python.packages import get_package_share_directory
+import sys, termios, tty, threading
 
 # Custom imports
 from lfd_apples.listen_franka import main as listen_main
@@ -42,6 +44,8 @@ import pickle
 import joblib
 import yaml
 import pandas as pd
+import json
+import datetime
 
 import numpy as np
 print("NumPy version:", np.__version__)
@@ -50,6 +54,25 @@ from scipy.spatial.transform import Rotation as R
 
 import matplotlib.pyplot as plt
 
+
+class KeyboardListener:
+    def __init__(self):
+        self.esc_pressed = False
+        self.thread = threading.Thread(target=self.listen, daemon=True)
+        self.thread.start()
+
+    def listen(self):
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            while True:
+                ch = sys.stdin.read(1)
+                if ch == '\x1b':  # ESC
+                    self.esc_pressed = True
+                    break
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
 class EMA():
@@ -196,7 +219,7 @@ class LFDController(Node):
         # PID GAINS
         # If using deltas, multiply by scaling factor
         # Send actions (twist)       
-        self.PI_GAIN = 0.1                    
+        self.PI_GAIN = 0.0                    
         self.POSITION_KP = 1.25  # 2.0
         self.POSITION_KI = 0.025
 
@@ -300,6 +323,10 @@ class LFDController(Node):
         '''
         Space Representation for lfd inference        
         '''
+        self.apple_pose_base = pd.Series(
+            [1.0, 1.0, 1.0],
+            index=['apple._x._base', 'apple._y._base', 'apple._z._base']
+            )
 
         model_name = self.MODEL_PARAMS['MODEL']              
 
@@ -432,7 +459,7 @@ class LFDController(Node):
 
         # Thresholds
         # TOF threshold is used to switch from 'approach' to 'contact' phase
-        self.TOF_THRESHOLD = 70                 # units in mm
+        self.TOF_THRESHOLD = 60                 # units in mm
         # Air pressure threshold is used to tell when a suction cup has engaged.
         self.AIR_PRESSURE_THRESHOLD = 600       # units in hPa        
        
@@ -442,6 +469,8 @@ class LFDController(Node):
         self.ema_scB = EMA(self.ema_alpha)
         self.ema_scC = EMA(self.ema_alpha)
         self.ema_tof = EMA(self.ema_alpha)
+        
+        self.ema_img = EMA(alpha = 0.2)
 
 
     def initialize_arm_poses(self):            
@@ -720,6 +749,54 @@ class LFDController(Node):
         self.tcp_marker_pub.publish(self.tcp_trail_marker)
 
 
+    # === Data saving functions ===
+    def save_metadata(self, filename):
+        """
+        Create json file and save it with the same name as the bag file
+        @param filename:
+        @return:
+        """
+        
+        # --- Open default metadata template for the experiment
+        pkg_share = get_package_share_directory('lfd_apples')
+        template_path = os.path.join(pkg_share, 'data', 'implementation_metadata_template.json')
+
+        with open(template_path, 'r') as template_file:
+            trial_info = json.load(template_file)
+        
+        # Date
+        trial_info['general']['date'] = str(datetime.datetime.now())
+
+        # Update proxy info
+        # apple_id = input("Type the apple id: ")  # Wait for user to press Enter
+        trial_info['proxy']['apple']['id'] = self.apple_id
+        # spur_id = input("Type the spur id: ")  # Wait for user to press Enter
+        trial_info['proxy']['spur']['id'] = self.spur_id
+        trial_info['proxy']['apple']['pose']['position']['x'] =  self.apple_pose_base[0]
+        trial_info['proxy']['apple']['pose']['position']['y'] =  self.apple_pose_base[1]
+        trial_info['proxy']['apple']['pose']['position']['z'] =  self.apple_pose_base[2]
+        trial_info['proxy']['apple']['frame_id'] = 'base'
+        
+
+        # Update controllers info
+        trial_info['controllers']['delta gain'] = self.DELTA_GAIN
+        trial_info['controllers']['approach']['data based'] = self.MODEL_PARAMS
+        trial_info['controllers']['approach']['PI']['P'] = self.POSITION_KP
+        trial_info['controllers']['approach']['PI']['I'] = self.POSITION_KI
+        trial_info['controllers']['approach']['PI']['PI gain'] = self.PI_GAIN
+        trial_info['controllers']['approach']['pixel to meter'] = self.PIXEL_TO_METER_RATE
+        trial_info['controllers']['approach']['states'] = self.APPROACH_STATE_NAME_KEYS
+        trial_info['controllers']['approach']['actions'] = self.ACTION_NAMES
+
+        # Update gripper weight
+        # Gripper weight = 1190 g, Rim weight = 160 g, Gripper + Rim weight = 1350 g
+        trial_info['robot']['gripper']['weight'] =  "1190 g"       
+
+
+        # --- Save metadata in file    
+        with open(filename + '.json', "w") as outfile:
+            json.dump(trial_info, outfile, indent=4)
+
     # === Sensor Topics Callback ====
     def gripper_sensors_callback(self, msg: Int16MultiArray):
 
@@ -748,7 +825,6 @@ class LFDController(Node):
             if self.tof < 100:
                 self.get_logger().info(f"TOF reached: {self.tof} < {self.TOF_THRESHOLD} turning off PI controller")      
                 self.PI_GAIN = 0.0
-
 
 
     def incoming_cam_sim(self):
@@ -884,7 +960,7 @@ class LFDController(Node):
         # ================================================================
            
 
-    def eef_pose_callback(self, msg: PoseStamped):
+    def eef_pose_callback(self, msg: PoseStamped):       
 
         # get pose
         self.eef_pos_x = msg.pose.position.x
@@ -954,12 +1030,13 @@ class LFDController(Node):
 
                 # ====================== Build State ==========================
                 # --- Extract latent image ---
-                self.latent_image = msg.data
+                self.latent_image = np.array(msg.data, dtype=np.float32)
+                self.ema_img.update(self.latent_image)
                 # self.img_time_stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9    # time in seconds
 
                 # --- Combine data ---
                 # self.state = np.concatenate([self.tof_for_state, self.latent_image, self.p_apple_tcp])    
-                self.state = np.concatenate([self.tof_for_state, self.latent_image])    
+                self.state = np.concatenate([self.tof_for_state, self.ema_img.y])    
                             
                 # Combine data, with past steps if model is 'rf' or 'mlp'            
                 # self.X = np.concatenate([self.t_2_data, self.t_1_data, self.state])
@@ -1057,7 +1134,10 @@ class LFDController(Node):
         self.tcp_trail_marker.points.clear()
         self.trail_step = 0
 
-        while rclpy.ok() and self.running_lfd:
+        # Stop from keyboard
+        key = KeyboardListener()
+
+        while rclpy.ok() and self.running_lfd and not key.esc_pressed:
             
             # This runs depending on the flags           
             # 'palm camera callback' has the logic
@@ -1113,8 +1193,6 @@ class LFDController(Node):
         self.get_logger().info(f'Joint velocities: {joint_velocities}')
 
 
-
-
 def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
 
     print("Extracting data and generating plots...")
@@ -1151,16 +1229,11 @@ def main():
     
     node = LFDController(MODEL_PARAMS)    
 
-    # Define location of apple if using apple-prior knowledge from apple localization
-    apple_pose_at_base = pd.Series(
-        [-0.036, 0.91, 0.43],
-        index=['apple._x._base', 'apple._y._base', 'apple._z._base']
-        )
-    node.apple_pose_base = apple_pose_at_base
-
     BASE_DIR = '/home/alejo/Documents/DATA'
     BAG_MAIN_DIR = '07_IL_implementation/bagfiles'
-    EXPERIMENT = "experiment_1_(pull)"
+
+    EXPERIMENT = "experiment_1_(pull)/approach"
+
     BAG_FILEPATH = os.path.join(BASE_DIR, BAG_MAIN_DIR, EXPERIMENT)
     os.makedirs(BAG_FILEPATH, exist_ok=True)
     
@@ -1178,8 +1251,7 @@ def main():
         os.makedirs(os.path.join(BAG_FILEPATH, TRIAL), exist_ok=True)
         # HUMAN_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'human')
         ROBOT_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL)              
-
-        save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))         
+               
 
         # ------------ Step 1: Move robot to home position ---------
         node.get_logger().info("\n\033[1;32m\nSTEP 1: Arm moving to home position... wait\033[0m\n")
@@ -1187,17 +1259,31 @@ def main():
             pass
 
         input("\n\033[1;32m\nSTEP 2: Place apple on the proxy. \nPress ENTER key when done.\033[0m\n")    
-        node.place_rviz_apple()
 
         # ------------ Step 2: Allow free drive if needed ---------
         node.swap_controller(node.arm_controller, node.gravity_controller)
-        time.sleep(1.0)                
+        time.sleep(0.5)                
+
+        node.get_logger().info("\n\033[1;32m\nSTEP 3: Record apple position by bringing gripper close to it (cups gently apple). \nPress ENTER key when you are done.\033[0m\n")        
+        input()   
+        node.swap_controller(node.gravity_controller, node.arm_controller)
+        time.sleep(0.5)          
+
+        # Save proxy state        
+        node.apple_pose_base[:] = [node.eef_pos_x, node.eef_pos_y, node.eef_pos_z]
+        node.apple_id = input("Type the apple id: ")  # Wait for user to press Enter
+        node.spur_id = input("Type the spur id: ")  # Wait for user to press Enter        
+        node.place_rviz_apple()
+
+        node.swap_controller(node.arm_controller, node.gravity_controller)
+        time.sleep(0.5)               
+
         node.get_logger().info("\n\033[1;32m\nSTEP 3: Free-drive arm until apple in camera FOV. \nPress ENTER key when you are done.\033[0m\n")        
         input()    
        
         # ------------ Step 3: Enable Servo Node Cartesian velocity controller ---------
         node.swap_controller(node.gravity_controller, node.twist_controller)
-        time.sleep(1.0)  
+        time.sleep(0.5)  
 
         node.get_logger().info("Enabling Moveit2 Servo Node for twist controller...")
         req = Trigger.Request()        
@@ -1210,8 +1296,9 @@ def main():
 
         # -------------- Step 4: Run lfd controller ----------------        
         input("\n\033[1;32m\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\033[0m\n")     
-        node.initialize_debugging_mode_variables   
         node.DEBUGGING_MODE = False
+        if node.DEBUGGING_MODE: node.initialize_debugging_mode_variables   
+
         node.run_lfd_approach()      
 
         # Save states to CSV        
@@ -1230,6 +1317,8 @@ def main():
 
         # Stop bag recording
         stop_recording_bagfile(robot_rosbag_list)
+
+        node.save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))  
 
         # Check data
         node.get_logger().info("Check ROBOT demo data")         

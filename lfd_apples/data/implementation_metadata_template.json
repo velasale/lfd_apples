@@ -1,9 +1,9 @@
 {
     "general": {
         "date": "2025-10-30 17:47:15.594366",
-        "demonstrator": "Kodi Clair",
-        "demonstrator email": "clairk@oregonstate.edu",
-        "experiment type": "il trials with loose spur",
+        "researcher": "Alejandro Velasquez",
+        "researcher email": "velasale@oregonstate.edu",
+        "experiment type": "IL approach",
         "pick pattern": "pull"
     },
     "robot": {
@@ -11,10 +11,11 @@
         "gripper": {
             "type": "Alejo tandem actuation gripper",
             "pressure @ valve": "70 PSI",
-            "weight": "1350 g"
+            "weight": "1190 g"
         }
     },
     "controllers":{
+        "delta gain": 1000,
         "approach":{
             "states": "TODO",
             "actions": "TODO",
