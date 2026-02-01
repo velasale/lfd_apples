@@ -6,7 +6,7 @@ phases:
     - inhand_cam_features
     # - inhand_cam_bbox
     # - joint_states.pos
-    # - apple_prior    
+    - apple_prior    
     - action_cols
     # - action_cols_at_base_frame
 
