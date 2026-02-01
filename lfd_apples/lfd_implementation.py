@@ -219,7 +219,7 @@ class LFDController(Node):
         # PID GAINS
         # If using deltas, multiply by scaling factor
         # Send actions (twist)       
-        self.INITIAL_PI_GAIN = 0.0                    
+        self.INITIAL_PI_GAIN = 1.0                    
         self.POSITION_KP = 1.25  # 2.0
         self.POSITION_KI = 0.025
 
@@ -1057,8 +1057,8 @@ class LFDController(Node):
                 # self.img_time_stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9    # time in seconds
 
                 # --- Combine data ---
-                # self.state = np.concatenate([self.tof_for_state, self.latent_image, self.p_apple_tcp])    
-                self.state = np.concatenate([self.tof_for_state, self.ema_img.y])    
+                self.state = np.concatenate([self.tof_for_state, self.latent_image, self.p_apple_tcp])    
+                # self.state = np.concatenate([self.tof_for_state, self.ema_img.y])    
                             
                 # Combine data, with past steps if model is 'rf' or 'mlp'            
                 # self.X = np.concatenate([self.t_2_data, self.t_1_data, self.state])
