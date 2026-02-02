@@ -1,7 +1,9 @@
 import os
+import platform
 import json
 from collections import Counter
 from tqdm import tqdm
+from pathlib import Path
 
 
 def collect_json_files(base_dir):
@@ -168,8 +170,10 @@ def complete_json_file(json_files):
 
 def count_apple_proxy_variations(json_files):
 
+    proxy_json_path = Path(__file__).parent / 'data' / 'apple_proxy.json'
+
     # Open reference apple_proxy.json to get all possible variations
-    with open("lfd_apples/data/apple_proxy.json", "r") as ap_prox:
+    with open(proxy_json_path, "r") as ap_prox:
         reference_data = json.load(ap_prox)
     spurs_ref = reference_data.get("spurs", {})
     apples_ref = reference_data.get("apples", {})
@@ -247,8 +251,10 @@ def count_apple_proxy_variations(json_files):
 
 def count_results(json_files):
 
+    proxy_json_path = Path(__file__).parent / 'data' / 'apple_proxy.json'
+
     # Open reference apple_proxy.json to get all possible variations
-    with open("lfd_apples/data/apple_proxy.json", "r") as ap_prox:
+    with open(proxy_json_path, "r") as ap_prox:
         reference_data = json.load(ap_prox)
     spurs_ref = reference_data.get("spurs", {})
     apples_ref = reference_data.get("apples", {})
@@ -328,25 +334,37 @@ def read_comments(json_files):
 
 def main():
 
-    # Path to your main directory
-    BASE_DIR = "/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)"
-    json_files_sd1 = collect_json_files(BASE_DIR)
+    if platform.system() == "Windows":
 
-    BASE_DIR_2 = "/media/alejo/New Volume/01_IL_bagfiles/experiment_4/"
+        BASE_DIR_1 = os.path.join(r'D:',
+                                   '01_IL_bagfiles',
+                                   'experiment_1_(pull)')
+        BASE_DIR_2 = os.path.join(r'E:'
+                                   '01_IL_bagfiles',
+                                   'experiment_1_(pull)')
+        BASE_DIR_3 = os.path.join(r'D:',
+                                   '01_IL_bagfiles',
+                                   'only_human_demos',
+                                   'with_palm_cam')
+
+    else:
+
+        BASE_DIR_1 = "/media/alejo/IL_data/01_IL_bagfiles/experiment_1_(pull)"
+        BASE_DIR_2 = "/media/alejo/New Volume/01_IL_bagfiles/experiment_4/"
+        BASE_DIR_3 = "/media/alejo/IL_data/01_IL_bagfiles/only_human_demos"
+
+
+    # Combine lists
+    json_files_sd1 = collect_json_files(BASE_DIR_1)
     json_files_sd2 = collect_json_files(BASE_DIR_2)
-
-    # Path to your main directory
-    BASE_DIR_3 = "/media/alejo/IL_data/01_IL_bagfiles/only_human_demos"
     json_files_sd3 = collect_json_files(BASE_DIR_3)
 
-    # Combine both lists
     json_files = json_files_sd1 + json_files_sd2 + json_files_sd3
 
-    # complete_json_file(json_files)
-    # count_apple_proxy_variations(json_files)
-    # read_comments(json_files)
-    count_results(json_files)
-
+    # # complete_json_file(json_files)
+    count_apple_proxy_variations(json_files)
+    # # read_comments(json_files)
+    # count_results(json_files)
 
 
 if __name__ == '__main__':

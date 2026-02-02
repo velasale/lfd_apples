@@ -946,7 +946,6 @@ def compare_trajectories():
     ax.legend()    
 
     plt.show()
-    
 
 def main():
     
@@ -967,11 +966,11 @@ if __name__ == '__main__':
 
     # main()
    
-    model = {'model': 'lstm',
-             'SEQ_LEN': 30,
-             'num_layers': 2,
-             'hidden_dim': 1024,
-             'n_inputs': 68}  
+    # model = {'model': 'lstm',
+    #          'SEQ_LEN': 30,
+    #          'num_layers': 2,
+    #          'hidden_dim': 1024,
+    #          'n_inputs': 68}
     
 
     # model = {'model': 'mlp',                            # 'mlp', 'rf'
