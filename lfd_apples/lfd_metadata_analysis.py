@@ -2,8 +2,11 @@ import os
 import platform
 import json
 from collections import Counter
+
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 from pathlib import Path
+import numpy as np
 
 
 def collect_json_files(base_dir):
@@ -331,8 +334,7 @@ def read_comments(json_files):
     return comments
 
 
-
-def main():
+def demonstrations_metadata():
 
     if platform.system() == "Windows":
 
@@ -353,7 +355,6 @@ def main():
         BASE_DIR_2 = "/media/alejo/New Volume/01_IL_bagfiles/experiment_4/"
         BASE_DIR_3 = "/media/alejo/IL_data/01_IL_bagfiles/only_human_demos"
 
-
     # Combine lists
     json_files_sd1 = collect_json_files(BASE_DIR_1)
     json_files_sd2 = collect_json_files(BASE_DIR_2)
@@ -367,5 +368,149 @@ def main():
     # count_results(json_files)
 
 
+def implementation_metadata():
+
+    if platform.system() == "Windows":
+        APPROACH_DIR = os.path.join(r'D:',
+                                     'DATA',
+                                     '07_IL_implementation',
+                                     'bagfiles',
+                                     'experiment_1_(pull)',
+                                     'approach')
+    else:
+        pass
+
+    approach_json_files = collect_json_files(APPROACH_DIR)
+
+    two_inputs_w_servo = []
+    two_inputs_wo_servo = []
+    three_inputs_w_servo = []
+    three_inputs_wo_servo = []
+    two_inputs_w_servo_xy = []
+    two_inputs_wo_servo_xy = []
+    three_inputs_w_servo_xy = []
+    three_inputs_wo_servo_xy = []
+
+    for approach_json_path in approach_json_files:
+
+        with open(approach_json_path, "r") as f:
+            data = json.load(f)
+
+        # Controllers info
+        controllers = data.get("controllers", {})
+        approach_controller = controllers.get("approach", {})
+        pi_gain_controller = approach_controller.get("PI", {}).get("PI gain", {})
+        states = approach_controller.get("states", {})
+
+        # Proxy info
+        proxy = data.get("proxy", {})
+        apple = proxy.get("apple", {})
+        spur = proxy.get("spur", {})
+        apple_id = apple.get("id")
+
+        # Results info
+        results = data.get("results", {})
+        final_pose = results.get("approach metrics", {}).get("final pose", {})
+        approach_res = results.get("approach metrics", {}).get("success", {})
+        approach_sing = results.get("singularity", {})
+
+        xy_error = np.linalg.norm([final_pose[0], final_pose[1]]) * 1000
+        net_error = np.linalg.norm(final_pose) * 1000
+
+        if states == ["tof", "inhand_cam_features"]:
+            # --- TOF + Latent Vector ----
+            if pi_gain_controller == 0.0:
+                # --- Without Visual servo ---
+                two_inputs_wo_servo.append(net_error)
+                two_inputs_wo_servo_xy.append(xy_error)
+
+            else:
+                # --- With Visual servo ----
+                two_inputs_w_servo.append(net_error)
+                two_inputs_w_servo_xy.append(xy_error)
+
+        elif states == ["tof", "inhand_cam_features", "apple_prior"]:
+            # --- TOF + Latent Vector + Prior ----
+            if pi_gain_controller == 0.0:
+                # --- Without Visual servo ---
+                three_inputs_wo_servo.append(net_error)
+                three_inputs_wo_servo_xy.append(xy_error)
+
+            else:
+                # --- With Visual servo ----
+                three_inputs_w_servo.append(net_error)
+                three_inputs_w_servo_xy.append(xy_error)
+
+        print(pi_gain_controller)
+
+    # =============== NET APPROACH ERROR ===============
+    fig, axes = plt.subplots(1, 4, figsize=(12, 4), sharey=True)
+
+    labels = [
+        "2 inputs\nIL twist + v.servo (x,y)",
+        "2 inputs\nIL twist",
+        "2 inputs + prior apple pose\nIL twist + v.servo (x,y)",
+        "2 inputs + prior apple pose\nIL twist",
+    ]
+
+    axes[0].boxplot(two_inputs_w_servo)
+    axes[0].set_xticks([1])
+    axes[0].set_xticklabels([labels[0]])
+
+    axes[1].boxplot(two_inputs_wo_servo)
+    axes[1].set_xticks([1])
+    axes[1].set_xticklabels([labels[1]])
+
+    axes[2].boxplot(three_inputs_w_servo)
+    axes[2].set_xticks([1])
+    axes[2].set_xticklabels([labels[2]])
+
+    axes[3].boxplot(three_inputs_wo_servo)
+    axes[3].set_xticks([1])
+    axes[3].set_xticklabels([labels[3]])
+    for ax in axes:
+        ax.grid(True)
+
+    fig.supylabel("Nearest net pose [mm]")
+    plt.tight_layout()
+
+    # =============== NET APPROACH ERROR ===============
+    fig, axes = plt.subplots(1, 4, figsize=(12, 4), sharey=True)
+
+    labels = [
+        "2 inputs\nIL twist + v.servo (x,y)",
+        "2 inputs\nIL twist",
+        "2 inputs + prior apple pose\nIL twist + v.servo (x,y)",
+        "2 inputs + prior apple pose\nIL twist",
+    ]
+
+    axes[0].boxplot(two_inputs_w_servo_xy)
+    axes[0].set_xticks([1])
+    axes[0].set_xticklabels([labels[0]])
+
+    axes[1].boxplot(two_inputs_wo_servo_xy)
+    axes[1].set_xticks([1])
+    axes[1].set_xticklabels([labels[1]])
+
+    axes[2].boxplot(three_inputs_w_servo_xy)
+    axes[2].set_xticks([1])
+    axes[2].set_xticklabels([labels[2]])
+
+    axes[3].boxplot(three_inputs_wo_servo_xy)
+    axes[3].set_xticks([1])
+    axes[3].set_xticklabels([labels[3]])
+    for ax in axes:
+        ax.grid(True)
+
+    fig.supylabel("Nearest XY pose [mm]")
+    plt.tight_layout()
+
+    plt.show()
+
+    pass
+
+
 if __name__ == '__main__':
-    main()
+    # demonstrations_metadata()
+
+    implementation_metadata()
