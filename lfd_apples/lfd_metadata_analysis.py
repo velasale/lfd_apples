@@ -391,6 +391,15 @@ def implementation_metadata():
     three_inputs_w_servo_xy = []
     three_inputs_wo_servo_xy = []
 
+    two_inputs_w_servo_ctr = 0.0
+    two_inputs_wo_servo_ctr = 0.0
+    three_inputs_w_servo_ctr = 0.0
+    three_inputs_wo_servo_ctr = 0.0
+    two_inputs_w_servo_xy_ctr = 0.0
+    two_inputs_wo_servo_xy_ctr = 0.0
+    three_inputs_w_servo_xy_ctr = 0.0
+    three_inputs_wo_servo_xy_ctr = 0.0
+
     for approach_json_path in approach_json_files:
 
         with open(approach_json_path, "r") as f:
@@ -413,6 +422,7 @@ def implementation_metadata():
         final_pose = results.get("approach metrics", {}).get("final pose", {})
         approach_res = results.get("approach metrics", {}).get("success", {})
         approach_sing = results.get("singularity", {})
+        comments = results.get('comments',{})
 
         xy_error = np.linalg.norm([final_pose[0], final_pose[1]]) * 1000
         net_error = np.linalg.norm(final_pose) * 1000
@@ -424,10 +434,12 @@ def implementation_metadata():
                 two_inputs_wo_servo.append(net_error)
                 two_inputs_wo_servo_xy.append(xy_error)
 
+
             else:
                 # --- With Visual servo ----
                 two_inputs_w_servo.append(net_error)
                 two_inputs_w_servo_xy.append(xy_error)
+
 
         elif states == ["tof", "inhand_cam_features", "apple_prior"]:
             # --- TOF + Latent Vector + Prior ----
@@ -441,7 +453,7 @@ def implementation_metadata():
                 three_inputs_w_servo.append(net_error)
                 three_inputs_w_servo_xy.append(xy_error)
 
-        print(pi_gain_controller)
+        if approach_res and comments != 'N/A': print(approach_json_path)
 
     # =============== NET APPROACH ERROR ===============
     fig, axes = plt.subplots(1, 4, figsize=(12, 4), sharey=True)
