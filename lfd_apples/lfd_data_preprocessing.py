@@ -695,37 +695,40 @@ def find_end_of_phase_1_approach(df, trial, tof_threshold=50):
 
 def find_end_of_phase_2_contact(df, trial, air_pressure_threshold=600, n_cups=2):
 
-    scA_values = df['scA'].values
-    scB_values = df['scB'].values
-    scC_values = df['scC'].values
+    scA_f = pd.Series(
+    gaussian_filter(df['scA'].to_numpy(), 3),
+    index=df.index
+    )
+    scB_f = pd.Series(
+        gaussian_filter(df['scB'].to_numpy(), 3),
+        index=df.index
+    )
+    scC_f = pd.Series(
+        gaussian_filter(df['scC'].to_numpy(), 3),
+        index=df.index
+    )
 
-    scA_filtered = gaussian_filter(scA_values, 3)
-    scB_filtered = gaussian_filter(scB_values, 3)
-    scC_filtered = gaussian_filter(scC_values, 3)
+    num_below = (
+        (scA_f < air_pressure_threshold).astype(int) +
+        (scB_f < air_pressure_threshold).astype(int) +
+        (scC_f < air_pressure_threshold).astype(int)
+    )
 
-    mask_A = scA_filtered < air_pressure_threshold
-    mask_B = scB_filtered < air_pressure_threshold
-    mask_C = scC_filtered < air_pressure_threshold
+    idxs = num_below[num_below >= 2].index
 
-    # Count how many suction cups are below threshold at each time step
-    num_below = mask_A.astype(int) + mask_B.astype(int) + mask_C.astype(int)
-
-    # Indices where at least 2 cups are below threshold
-    indices = np.where(num_below >= 2)[0]  
-
-    if len(indices) == 0:
-        plot_pressure(df, time_vector='timestamp_vector')        
-        print(f'No engagement detected in {trial}, skipping cropping.')       
-
-        plt.show()        
+    if idxs.empty:
+        plot_pressure(df, time_vector='timestamp_vector')
+        print(f'No engagement detected in {trial}, skipping cropping.')
+        plt.show()
         return None
 
-    idx_phase_2_end = indices[0]
+    idx_phase_2_end = idxs[0]
 
     # plot_pressure(df, time_vector='timestamp_vector')
-    # print(f'Index at which at least two suction cups engage in {trial}.')        
-    # time_phase_2_end = df['timestamp_vector'].values[idx_phase_2_end]  
+    # print(f'Index at which at least two suction cups engage in {trial}.')     
+    # time_phase_2_end = df.loc[idx_phase_2_end, 'timestamp_vector']       
     # plt.axvline(x=time_phase_2_end, color='red', linestyle='--', label='Phase 2 End')        
+    # plt.show()
     
 
     return idx_phase_2_end
@@ -733,30 +736,34 @@ def find_end_of_phase_2_contact(df, trial, air_pressure_threshold=600, n_cups=2)
 
 def find_end_of_phase_3_contact(df, trial, total_force_threshold=20):
     
-    fx = df['_wrench._force._x'].values
-    fy = df['_wrench._force._y'].values
-    fz = df['_wrench._force._z'].values
-    tx = df['_wrench._torque._x'].values
-    ty = df['_wrench._torque._y'].values
-    tz = df['_wrench._torque._z'].values
+    idx = df.index
 
-    wrench = [fx, fy, fz, tx, ty, tz]
-    t = np.array(df['timestamp_vector'].to_list(), dtype=float)
+    # --- Wrench signals (NumPy only at the boundary) ---
+    fx_f = pd.Series(
+        gaussian_filter(df['_wrench._force._x'].to_numpy(), 3),
+        index=idx
+    )
+    fy_f = pd.Series(
+        gaussian_filter(df['_wrench._force._y'].to_numpy(), 3),
+        index=idx
+    )
+    fz_f = pd.Series(
+        gaussian_filter(df['_wrench._force._z'].to_numpy(), 3),
+        index=idx
+    )
 
-    # Apply median filter to smooth the signals
-    wrench_filtered = [gaussian_filter(w, 3) for w in wrench]
+    # --- Net force (still indexed) ---
+    net_force = np.sqrt(fx_f**2 + fy_f**2 + fz_f**2)
+
+    # --- Phase boundary ---
+    max_force_idx = net_force.idxmax()
     
-    # Net Forces
-    net_force = np.sqrt(wrench_filtered[0]**2 + wrench_filtered[1]**2 + wrench_filtered[2]**2)
 
-    max_force_idx = np.argmax(net_force)
-    time_phase_3_end = df['timestamp_vector'].values[max_force_idx]  
-       
     # fig = plt.figure()
-    # plt.plot(t, wrench_filtered[0], label='fx')
-    # plt.plot(t, wrench_filtered[1], label='fy')
-    # plt.plot(t, wrench_filtered[2], label='fz')
-    # plt.axvline(x=time_phase_3_end, color='red', linestyle='--', label='Phase 3 End')        
+    # t = df['timestamp_vector'].values    
+    # time_max = df.loc[max_force_idx, 'timestamp_vector']
+    # plt.plot(t, net_force, label='fx')    
+    # plt.axvline(x=time_max, color='red', linestyle='--', label='Phase 3 End')        
     # plt.plot(t, net_force, label='net')
     # plt.legend()
     # plt.show()
@@ -1060,6 +1067,9 @@ def stage_3_crop_data_to_task_phases():
 
     trials_without_engagement = []
 
+    # Double check these:
+    # trials = ['trial_309_downsampled_aligned_data_transformed.csv']
+
     for trial in (trials):
         print(f'\nCropping {trial} into task phases...')        
 
@@ -1095,7 +1105,7 @@ def stage_3_crop_data_to_task_phases():
 
         # === PHASE 2: CONTACT PHASE ===
         # End of phase 2: defined by at least two suction cups engaged
-        idx_phase_2_end = find_end_of_phase_2_contact(df, trial, air_pressure_threshold=600, n_cups=2)
+        idx_phase_2_end = find_end_of_phase_2_contact(df[idx_phase_2_start:], trial, air_pressure_threshold=600, n_cups=2)
         
         if idx_phase_2_end is None:
             trials_without_engagement.append(trial)
@@ -1116,7 +1126,7 @@ def stage_3_crop_data_to_task_phases():
 
         # === PHASE 3: PICK PHASE ===
         # End of phase 3 defined by Max net Force
-        idx_phase_3_end = find_end_of_phase_3_contact(df, trial, total_force_threshold=20)
+        idx_phase_3_end = find_end_of_phase_3_contact(df[idx_phase_3_start:], trial, total_force_threshold=20)
         phase_3_extra_time_end = 2.0
         idx_phase_3_end += int(phase_3_extra_time_end * 30)
 
@@ -1146,6 +1156,13 @@ def stage_3_crop_data_to_task_phases():
     only_human_trials = [f for f in os.listdir(SOURCE_PATH_ONLY_APPROACH) 
                          if os.path.isfile(os.path.join(SOURCE_PATH_ONLY_APPROACH, f)) and f.endswith(".csv")]   
     
+    # only_human_trials = ['trial_10032_downsampled_aligned_data_transformed.csv',
+    #                      'trial_10018_downsampled_aligned_data_transformed.csv',
+    #                      'trial_10048_downsampled_aligned_data_transformed.csv',
+    #                      'trial_10056_downsampled_aligned_data_transformed.csv',
+    #                      'trial_10060_downsampled_aligned_data_transformed.csv',
+    #                      'trial_10041_downsampled_aligned_data_transformed.csv',
+    #                      ]
     for trial in only_human_trials:
 
         print(f'\nONLY HUMAN TRIALS - Cropping {trial} into approach phase...')
