@@ -1075,10 +1075,10 @@ def stage_3_crop_data_to_task_phases():
 
         df = pd.read_csv(os.path.join(SOURCE_PATH, trial))        
                 
-        # ------------------------ First: Define cropping indices --------------------------
-        EXTRA_TIME_END = 1.0
+        # ------------------------ First: Define cropping indices --------------------------        
 
         # === PHASE 1: APPROACH PHASE ===
+        PHASE_1_EXTRA_TIME_END = 0.5
         # End of phase 1: defined by tof < 5cm (contact)        
         idx_phase_1_end, idx_phase_2_start = find_end_of_phase_1_approach(df, trial, tof_threshold=60)
         if idx_phase_1_end is None:
@@ -1095,15 +1095,23 @@ def stage_3_crop_data_to_task_phases():
 
         phase_1_time = 9.0  # in seconds
         idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
-        idx_phase_1_end += int(EXTRA_TIME_END * 30)
+        idx_phase_1_end += int(PHASE_1_EXTRA_TIME_END * 30)
 
         # Crop data for phase 1
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]        
         base_filename = os.path.splitext(trial)[0]
         df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
 
+        fig = plt.figure()
+        t = df['timestamp_vector'].values    
+        time_ref = df.loc[idx_phase_1_end, 'timestamp_vector']
+        plt.plot(t, df['tof'], label='tof')    
+        plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
+        plt.show()
+
 
         # === PHASE 2: CONTACT PHASE ===
+        PHASE_2_EXTRA_TIME_END = 2.0
         # End of phase 2: defined by at least two suction cups engaged
         idx_phase_2_end = find_end_of_phase_2_contact(df[idx_phase_2_start:], trial, air_pressure_threshold=600, n_cups=2)
         
@@ -1115,20 +1123,42 @@ def stage_3_crop_data_to_task_phases():
         if idx_phase_2_end < idx_phase_2_start:
             input(f"Issue with end and start of Contact phase: {trial} ")
 
+        # Check ends at plot
+        fig = plt.figure()
+        t = df['timestamp_vector'].values    
+        time_ref = df.loc[idx_phase_2_end, 'timestamp_vector']
+        plt.plot(t, df['scA'], label='scA')    
+        plt.plot(t, df['scB'], label='scB')   
+        plt.plot(t, df['scC'], label='scC')   
+        plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
+        plt.show()
+
 
         idx_phase_3_start = idx_phase_2_end        
-        idx_phase_2_end += int(EXTRA_TIME_END * 30)
+        idx_phase_2_end += int(PHASE_2_EXTRA_TIME_END * 30)
 
         # Crop data for phase 2
         df_phase_2 = df.iloc[idx_phase_2_start:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
         df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
 
+        
+
 
         # === PHASE 3: PICK PHASE ===
+        PHASE_3_EXTRA_TIME_END = 2.0
         # End of phase 3 defined by Max net Force
-        idx_phase_3_end = find_end_of_phase_3_contact(df[idx_phase_3_start:], trial, total_force_threshold=20)
-        phase_3_extra_time_end = 2.0
-        idx_phase_3_end += int(phase_3_extra_time_end * 30)
+        idx_phase_3_end = find_end_of_phase_3_contact(df[idx_phase_3_start:], trial, total_force_threshold=20)        
+
+        fig = plt.figure()
+        t = df['timestamp_vector'].values    
+        time_ref = df.loc[idx_phase_3_end, 'timestamp_vector']
+        plt.plot(t, df['_wrench._force._x'], label='fx')    
+        plt.plot(t, df['_wrench._force._y'], label='fy')    
+        plt.plot(t, df['_wrench._force._z'], label='fz')    
+        plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
+        plt.show()
+
+        idx_phase_3_end += int(PHASE_3_EXTRA_TIME_END * 30)
 
         # Safety check
         if idx_phase_3_end < idx_phase_3_start:
@@ -1141,6 +1171,10 @@ def stage_3_crop_data_to_task_phases():
         df_phase_3 = df.iloc[idx_phase_3_start:idx_phase_3_end][['timestamp_vector'] + phase_3_pick_cols]
         df_phase_3.to_csv(os.path.join(DESTINATION_PATH, 'phase_3_pick', f"{base_filename}_(phase_3_pick).csv"), index=False)
 
+        
+
+
+        
         # === PHASE 4: DISPOSAL PHASE ===              
         # df_phase_4.to_csv(os.path.join(DESTINATION_PATH, 'phase_4_disposal', f"{base_filename}_(phase_4_disposal).csv"), index=False)
 
@@ -1184,7 +1218,7 @@ def stage_3_crop_data_to_task_phases():
 
         phase_1_time = 7.0  # in seconds
         idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
-        idx_phase_1_end += int(EXTRA_TIME_END * 30)
+        idx_phase_1_end += int(PHASE_1_EXTRA_TIME_END * 30)
 
         # Crop data for phase 1
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]
