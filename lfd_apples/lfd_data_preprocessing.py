@@ -296,7 +296,7 @@ def fix_pressure_values(df):
     In order to not toss away the entire trial dataset, it is better to fix it
     It may not be the cleanest, but it is reasonable
 
-    - For air pressure values that suddenly raised to inf, simply average the other two along those instances
+    - For air pressure values that suddenly raised to inf, simply average the other two during that time window
     - For air pressue channels that dropped to zero, average the other two along the entire trial
     
     :param df: Description
@@ -1034,11 +1034,7 @@ def stage_2_transform_data_to_eef_frame():
         # Save transformed data to CSV files
         base_filename = os.path.splitext(trial)[0]
         df_eef_frame.to_csv(os.path.join(DESTINATION_PATH, f"{base_filename}_transformed.csv"), index=False)
-
-       
-        pass
-        # 
-
+      
 
 def stage_3_crop_data_to_task_phases():
 
@@ -1092,22 +1088,24 @@ def stage_3_crop_data_to_task_phases():
             trials_with_multiple_contacts.append(trial)
             continue
         
+
         # Get apple pose @ base and @tcp frame   
         df = apple_pose_ground_truth(df, idx_phase_1_end)
 
+
+        # Plot approach phase
         fig = plt.figure()
         t = df['timestamp_vector'].values    
         time_ref = df.loc[idx_phase_1_end, 'timestamp_vector']
         plt.plot(t, df['tof'], label='tof')    
         plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
         plt.show()
+        
 
-
+        # Crop and save
         phase_1_time = 9.0  # in seconds
         idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
         idx_phase_1_end += int(PHASE_1_EXTRA_TIME_END * 30)
-
-        # Crop data for phase 1
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]        
         base_filename = os.path.splitext(trial)[0]
         df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
@@ -1126,7 +1124,7 @@ def stage_3_crop_data_to_task_phases():
         if idx_phase_2_end < idx_phase_2_start:
             input(f"Issue with end and start of Contact phase: {trial} ")
 
-        # Check ends at plot
+        # Plot contact and check times
         fig = plt.figure()
         t = df['timestamp_vector'].values    
         time_ref = df.loc[idx_phase_2_end, 'timestamp_vector']
@@ -1135,12 +1133,11 @@ def stage_3_crop_data_to_task_phases():
         plt.plot(t, df['scC'], label='scC')   
         plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
         plt.show()
+        
 
-
+        # Crop and save
         idx_phase_3_start = idx_phase_2_end        
         idx_phase_2_end += int(PHASE_2_EXTRA_TIME_END * 30)
-
-        # Crop data for phase 2
         df_phase_2 = df.iloc[idx_phase_2_start:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]
         df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
 
@@ -1151,6 +1148,7 @@ def stage_3_crop_data_to_task_phases():
         # End of phase 3 defined by Max net Force
         idx_phase_3_end = find_end_of_phase_3_contact(df[idx_phase_3_start:], trial, total_force_threshold=20)        
 
+        # Pot Pick phase to check times
         fig = plt.figure()
         t = df['timestamp_vector'].values    
         time_ref = df.loc[idx_phase_3_end, 'timestamp_vector']
@@ -1169,18 +1167,14 @@ def stage_3_crop_data_to_task_phases():
         if check_singularity(df):
             continue
 
-        # Crop data for phase 3
+        # Crop and save
         df_phase_3 = df.iloc[idx_phase_3_start:idx_phase_3_end][['timestamp_vector'] + phase_3_pick_cols]
         df_phase_3.to_csv(os.path.join(DESTINATION_PATH, 'phase_3_pick', f"{base_filename}_(phase_3_pick).csv"), index=False)
 
         
-        
-        # === PHASE 4: DISPOSAL PHASE ===              
-        # df_phase_4.to_csv(os.path.join(DESTINATION_PATH, 'phase_4_disposal', f"{base_filename}_(phase_4_disposal).csv"), index=False)
-
 
     # ========= ONLY HUMAN DEMOS: USEFUL FOR APPROACH PHASE ==========
-    # Reason: Approach phase doesn't need the wrench topics
+    # Reason: Approach phase doesn't need wrench topics
 
     if platform.system() == "Windows":
         SOURCE_PATH_ONLY_APPROACH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\only_human_demos/with_palm_cam")
@@ -1220,10 +1214,8 @@ def stage_3_crop_data_to_task_phases():
         idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
         idx_phase_1_end += int(PHASE_1_EXTRA_TIME_END * 30)
 
-        # Crop data for phase 1
+        # Crop and save
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]
-
-        # Save cropped data to CSV files
         base_filename = os.path.splitext(trial)[0]
         df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
 
@@ -1401,13 +1393,13 @@ if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
     # stage_2_transform_data_to_eef_frame()
-    stage_3_crop_data_to_task_phases()   
+    # stage_3_crop_data_to_task_phases()   
    
-    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
-    # # phases = ['phase_1_approach']    
-    # for phase in phases:
-    #     for step in [0, 5, 10, 15, 20]:
-    #         stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    # phases = ['phase_1_approach']    
+    for phase in phases:
+        for step in [0]:
+            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
