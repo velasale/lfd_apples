@@ -290,6 +290,46 @@ def apple_pose_ground_truth(df, apple_location_index):
     return df
 
 
+def fix_pressure_values(df):
+    '''
+    Some pressure signals had issues.
+    In order to not toss away the entire trial dataset, it is better to fix it
+    It may not be the cleanest, but it is reasonable
+
+    - For air pressure values that suddenly raised to inf, simply average the other two along those instances
+    - For air pressue channels that dropped to zero, average the other two along the entire trial
+    
+    :param df: Description
+    '''
+
+
+    # # --- Air Pressure Signals Check
+    # Air Pressure Lower threshold
+    pr_dn_thr = 150
+    if (df['scA'] < pr_dn_thr).any() or (df['scB'] < pr_dn_thr).any() or (df['scC'] < pr_dn_thr).any():       
+
+        if (df['scA'] < pr_dn_thr).any():           
+            df['scA'] = df[['scB', 'scC']].mean(axis=1)           
+
+        if (df['scB'] < pr_dn_thr).any():
+            df['scB'] = df[['scA', 'scC']].mean(axis=1)
+
+
+    # Air Pressure Upper Threshold
+    pr_up_thr = 1100
+    if (df['scA'] > pr_up_thr).any() or (df['scB'] > pr_up_thr).any() or (df['scC'] > pr_up_thr).any():
+      
+        if (df['scB'] > pr_up_thr).any():
+            mask = df['scB'] > pr_up_thr
+            df.loc[mask, 'scB'] = df.loc[mask, ['scA', 'scC']].mean(axis=1)
+        
+        if (df['scC'] > pr_up_thr).any():
+            mask = df['scC'] > pr_up_thr
+            df.loc[mask, 'scC'] = df.loc[mask, ['scA', 'scB']].mean(axis=1)
+    
+    return df
+
+
 # ============ Topic-specific downsampling functions ===========
 def downsample_pressure_and_tof_data(df, raw_data_path, compare_plots=True):
     
@@ -833,8 +873,8 @@ def stage_2_transform_data_to_eef_frame():
         SOURCE_PATH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\experiment_1_(pull)")
         DESTINATION_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)\experiment_1_(pull)")
     else:
-        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)')
-        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)')
+        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam')
+        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/only_human_demos/with_palm_cam') #experiment_1_(pull)')
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
@@ -957,6 +997,10 @@ def stage_2_transform_data_to_eef_frame():
         delta_angular_eef_df = pd.DataFrame(delta_angular_eef_array_filtered, columns=['Δ_ori_eef._x._eef_frame',
                                                                                        'Δ_ori_eef._y._eef_frame',
                                                                                        'Δ_ori_eef._z._eef_frame'])
+        
+        # ========= Safe Check of Air pressures =======
+        df = fix_pressure_values(df)
+
 
         # Combine with original DataFrame
         df_eef_frame = pd.concat([df, v_eef_df, w_eef_df, delta_linear_eef_df, delta_angular_eef_df], axis=1)
@@ -1281,14 +1325,14 @@ def stage_5_fix_hw_issues():
 if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
-    # stage_2_transform_data_to_eef_frame()
+    stage_2_transform_data_to_eef_frame()
     # stage_3_crop_data_to_task_phases()   
    
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
-    # phases = ['phase_1_approach']    
-    for phase in phases:
-        for step in [0, 5, 10, 15, 20]:
-            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
+    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    # # phases = ['phase_1_approach']    
+    # for phase in phases:
+    #     for step in [0, 5, 10, 15, 20]:
+    #         stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
