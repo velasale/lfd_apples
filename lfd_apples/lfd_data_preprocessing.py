@@ -1091,7 +1091,13 @@ def stage_3_crop_data_to_task_phases():
         # Get apple pose @ base and @tcp frame   
         df = apple_pose_ground_truth(df, idx_phase_1_end)
 
-        # idx_phase_2_start = idx_phase_1_end
+        fig = plt.figure()
+        t = df['timestamp_vector'].values    
+        time_ref = df.loc[idx_phase_1_end, 'timestamp_vector']
+        plt.plot(t, df['tof'], label='tof')    
+        plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
+        plt.show()
+
 
         phase_1_time = 9.0  # in seconds
         idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
@@ -1102,14 +1108,7 @@ def stage_3_crop_data_to_task_phases():
         base_filename = os.path.splitext(trial)[0]
         df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
 
-        fig = plt.figure()
-        t = df['timestamp_vector'].values    
-        time_ref = df.loc[idx_phase_1_end, 'timestamp_vector']
-        plt.plot(t, df['tof'], label='tof')    
-        plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
-        plt.show()
-
-
+        
         # === PHASE 2: CONTACT PHASE ===
         PHASE_2_EXTRA_TIME_END = 2.0
         # End of phase 2: defined by at least two suction cups engaged
@@ -1143,7 +1142,6 @@ def stage_3_crop_data_to_task_phases():
 
         
 
-
         # === PHASE 3: PICK PHASE ===
         PHASE_3_EXTRA_TIME_END = 2.0
         # End of phase 3 defined by Max net Force
@@ -1172,8 +1170,6 @@ def stage_3_crop_data_to_task_phases():
         df_phase_3.to_csv(os.path.join(DESTINATION_PATH, 'phase_3_pick', f"{base_filename}_(phase_3_pick).csv"), index=False)
 
         
-
-
         
         # === PHASE 4: DISPOSAL PHASE ===              
         # df_phase_4.to_csv(os.path.join(DESTINATION_PATH, 'phase_4_disposal', f"{base_filename}_(phase_4_disposal).csv"), index=False)
