@@ -330,6 +330,21 @@ def fix_pressure_values(df):
     return df
 
 
+def check_singularity(df):
+    '''
+    Whenever there is a Singuality with Franka Arm, wrench drops to zero.
+    Hence we need to remove this data
+    
+    :param df: Description
+    '''
+
+    # -- Force Singularity Check
+    if (df['_wrench._force._x'].abs() < 1e-4).any(): 
+        return True
+    
+    else:
+        return False
+
 # ============ Topic-specific downsampling functions ===========
 def downsample_pressure_and_tof_data(df, raw_data_path, compare_plots=True):
     
@@ -1025,10 +1040,7 @@ def stage_3_crop_data_to_task_phases():
     if platform.system() == "Windows":
         SOURCE_PATH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\experiment_1_(pull)")
         DESTINATION_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)\experiment_1_(pull)")
-    else:
-        SOURCE_PATH = Path("/media/alejo/IL_data/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)")
-        DESTINATION_PATH = Path("/media/alejo/IL_data/03_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)") 
-
+    else:      
         SOURCE_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)')
         DESTINATION_PATH = Path('/home/alejo/Documents/DATA/04_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)')
 
@@ -1054,11 +1066,11 @@ def stage_3_crop_data_to_task_phases():
         df = pd.read_csv(os.path.join(SOURCE_PATH, trial))        
                 
         # ------------------------ First: Define cropping indices --------------------------
-        EXTRA_TIME_END = 0.5
+        EXTRA_TIME_END = 1.0
 
         # === PHASE 1: APPROACH PHASE ===
         # End of phase 1: defined by tof < 5cm (contact)        
-        idx_phase_1_end, idx_phase_2_start = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
+        idx_phase_1_end, idx_phase_2_start = find_end_of_phase_1_approach(df, trial, tof_threshold=60)
         if idx_phase_1_end is None:
             trials_without_contact.append(trial)
             continue  # Skip cropping for this trial
@@ -1071,7 +1083,7 @@ def stage_3_crop_data_to_task_phases():
 
         # idx_phase_2_start = idx_phase_1_end
 
-        phase_1_time = 7.0  # in seconds
+        phase_1_time = 9.0  # in seconds
         idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
         idx_phase_1_end += int(EXTRA_TIME_END * 30)
 
@@ -1084,10 +1096,15 @@ def stage_3_crop_data_to_task_phases():
         # === PHASE 2: CONTACT PHASE ===
         # End of phase 2: defined by at least two suction cups engaged
         idx_phase_2_end = find_end_of_phase_2_contact(df, trial, air_pressure_threshold=600, n_cups=2)
-
+        
         if idx_phase_2_end is None:
             trials_without_engagement.append(trial)
             continue  # Skip cropping for this trial
+
+        # Safety check
+        if idx_phase_2_end < idx_phase_2_start:
+            input(f"Issue with end and start of Contact phase: {trial} ")
+
 
         idx_phase_3_start = idx_phase_2_end        
         idx_phase_2_end += int(EXTRA_TIME_END * 30)
@@ -1100,8 +1117,15 @@ def stage_3_crop_data_to_task_phases():
         # === PHASE 3: PICK PHASE ===
         # End of phase 3 defined by Max net Force
         idx_phase_3_end = find_end_of_phase_3_contact(df, trial, total_force_threshold=20)
-        phase_3_extra_time_end = 1.5
+        phase_3_extra_time_end = 2.0
         idx_phase_3_end += int(phase_3_extra_time_end * 30)
+
+        # Safety check
+        if idx_phase_3_end < idx_phase_3_start:
+            input(f"Issue with end and start of Contact phase: {trial} ")
+
+        if check_singularity(df):
+            continue
 
         # Crop data for phase 3
         df_phase_3 = df.iloc[idx_phase_3_start:idx_phase_3_end][['timestamp_vector'] + phase_3_pick_cols]
@@ -1325,8 +1349,8 @@ def stage_5_fix_hw_issues():
 if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
-    stage_2_transform_data_to_eef_frame()
-    # stage_3_crop_data_to_task_phases()   
+    # stage_2_transform_data_to_eef_frame()
+    stage_3_crop_data_to_task_phases()   
    
     # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
     # # phases = ['phase_1_approach']    
