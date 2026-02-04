@@ -43,27 +43,27 @@ def plot_trial(trial_path, plot_channels = False):
             plot_channels = True
 
 
-    # # Air Pressure Upper Threshold
-    # pr_up_thr = 1100
-    # if (scA > pr_up_thr).any() or (scB > pr_up_thr).any() or (scC > pr_up_thr).any():
-    #     trial_n = trial_path.split('trial_')[1]
-    #     trial_n = trial_n.split('_downsampled')[0]
-    #     print(f'trial {trial_n} with pressure issues')
+    # Air Pressure Upper Threshold
+    pr_up_thr = 1100
+    if (scA > pr_up_thr).any() or (scB > pr_up_thr).any() or (scC > pr_up_thr).any():
+        trial_n = trial_path.split('trial_')[1]
+        trial_n = trial_n.split('_downsampled')[0]
+        print(f'trial {trial_n} with pressure issues')
                 
 
-    #     if (scB > pr_up_thr).any():
-    #         mask = trial_df['scB'] > pr_up_thr
-    #         trial_df.loc[mask, 'scB'] = trial_df.loc[mask, ['scA', 'scC']].mean(axis=1)
+        if (scB > pr_up_thr).any():
+            mask = trial_df['scB'] > pr_up_thr
+            trial_df.loc[mask, 'scB'] = trial_df.loc[mask, ['scA', 'scC']].mean(axis=1)
 
-    #         scB = trial_df['scB'].values #/ 10
-    #         plot_channels = True
+            scB = trial_df['scB'].values #/ 10
+            plot_channels = True
         
-    #     if (scC > pr_up_thr).any():
-    #         mask = trial_df['scC'] > pr_up_thr
-    #         trial_df.loc[mask, 'scC'] = trial_df.loc[mask, ['scA', 'scB']].mean(axis=1)
+        if (scC > pr_up_thr).any():
+            mask = trial_df['scC'] > pr_up_thr
+            trial_df.loc[mask, 'scC'] = trial_df.loc[mask, ['scA', 'scB']].mean(axis=1)
 
-    #         scC = trial_df['scC'].values #/ 10
-    #         plot_channels = True
+            scC = trial_df['scC'].values #/ 10
+            plot_channels = True
 
 
     fx = trial_df['_wrench._force._x'].values
@@ -308,23 +308,24 @@ def plot_batch_trials():
 
 
 
-    csv_files = [
-        os.path.join(base_folder, f)
-        for f in os.listdir(base_folder)
-        if f.endswith('.csv')
-    ]
+    # csv_files = [
+    #     os.path.join(base_folder, f)
+    #     for f in os.listdir(base_folder)
+    #     if f.endswith('.csv')
+    # ]
     
-    for trial in csv_files:
-        # print(trial)
-        plot_trial(trial)
+    # for trial in csv_files:
+    #     # print(trial)
+    #     plot_trial(trial)
 
-    # # ============= UNCOMMENT THIS TO PLOT THESE SPECIFIC TRIALS =============
-    # # cool_trials = [38, 70, 33, 105, 185, 75, 60, 71]
-    # for trial in cool_trials:
-    #     trial_name = 'trial_' + str(trial) + '_downsampled_aligned_data_transformed.csv'
-    #     trial_path = os.path.join(base_folder, trial_name)
+    # ============= UNCOMMENT THIS TO PLOT THESE SPECIFIC TRIALS =============
+    # cool_trials = [38, 70, 33, 105, 185, 75, 60, 71]
+    cool_trials = [92]
+    for trial in cool_trials:
+        trial_name = 'trial_' + str(trial) + '_downsampled_aligned_data_transformed.csv'
+        trial_path = os.path.join(base_folder, trial_name)
     
-    #     plot_trial(trial_path)
+        plot_trial(trial_path)
 
 
 

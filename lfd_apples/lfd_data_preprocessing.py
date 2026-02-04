@@ -326,6 +326,10 @@ def fix_pressure_values(df):
         if (df['scC'] > pr_up_thr).any():
             mask = df['scC'] > pr_up_thr
             df.loc[mask, 'scC'] = df.loc[mask, ['scA', 'scB']].mean(axis=1)
+
+        if (df['scA'] > pr_up_thr).any():
+            mask = df['scA'] > pr_up_thr
+            df.loc[mask, 'scA'] = df.loc[mask, ['scB', 'scC']].mean(axis=1)
     
     return df
 
@@ -895,8 +899,8 @@ def stage_2_transform_data_to_eef_frame():
         SOURCE_PATH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\experiment_1_(pull)")
         DESTINATION_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)\experiment_1_(pull)")
     else:
-        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/only_human_demos/with_palm_cam')
-        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/only_human_demos/with_palm_cam') #experiment_1_(pull)')
+        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)')
+        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)')
 
     trials = [f for f in os.listdir(SOURCE_PATH)
              if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
@@ -1068,7 +1072,7 @@ def stage_3_crop_data_to_task_phases():
     trials_without_engagement = []
 
     # Double check these:
-    # trials = ['trial_309_downsampled_aligned_data_transformed.csv']
+    # trials = ['trial_92_downsampled_aligned_data_transformed.csv']
 
     for trial in (trials):
         print(f'\nCropping {trial} into task phases...')        
