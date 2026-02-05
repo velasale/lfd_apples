@@ -485,6 +485,11 @@ def infer_actions(regressor, PHASE = 'phase_1_approach', TRIALS_SET = 'test_tria
     if PHASE == 'phase_2_contact':
         lin_range = 2e-4 / 3
         ang_range = 6e-4 / 3
+    if PHASE == 'phase_3_pick':
+        lin_range = 1e-3 
+        ang_range = 1e-3 
+
+
     y_lims = np.array([[-lin_range, lin_range], [-ang_range, ang_range]])
 
     model_title = regressor['model'] + '_layers:_' + str(regressor['num_layers']) + '_dim:_' + str(regressor['hidden_dim'])
@@ -966,11 +971,11 @@ if __name__ == '__main__':
 
     # main()
    
-    # model = {'model': 'lstm',
-    #          'SEQ_LEN': 30,
-    #          'num_layers': 2,
-    #          'hidden_dim': 1024,
-    #          'n_inputs': 68}
+    model = {'model': 'lstm',
+             'SEQ_LEN': 30,
+             'num_layers': 2,
+             'hidden_dim': 1024,
+             'n_inputs': 13}
     
 
     # model = {'model': 'mlp',                            # 'mlp', 'rf'
@@ -978,7 +983,7 @@ if __name__ == '__main__':
     #          }                
 
     infer_actions(model,
-                  PHASE = 'phase_1_approach', 
+                  PHASE = 'phase_3_pick', 
                   TRIALS_SET = 'test_trials.csv',
                   TRIAL_ID = 'random')     # either 'random' or an int number
    
