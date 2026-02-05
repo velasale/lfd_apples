@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib as mpl
+from scipy.ndimage import gaussian_filter, median_filter, gaussian_filter1d
 
 
 def plot_trial(trial_path, plot_channels = False):
@@ -233,7 +234,7 @@ def trial_phases_durations(trial_path):
     idx_tof_thr = np.where(tof < 50)[0]
     time_tof_thr = time[idx_tof_thr[0]]
 
-    approach_start = max(time_tof_thr - 7.0, 0)
+    approach_start = max(time_tof_thr - 9.0, 0)
     approach_end = time_tof_thr + 0.5
     approach_duration = approach_end - approach_start
 
@@ -328,20 +329,23 @@ def plot_batch_trials():
         plot_trial(trial_path)
 
 
-
-def phases_stats():
+def phases_stats_from_reading_entire_trial():
 
     # === Build Path ===
     base_folder_1 = os.path.join(r'D:',
                                'DATA',
                                '03_IL_preprocessed_(transformed_to_eef)',
                                'experiment_1_(pull)')
+   
 
     base_folder_2 = os.path.join(r'D:',
                                'DATA',
                                '03_IL_preprocessed_(transformed_to_eef)',
                                'only_human_demos',
                                'with_palm_cam')
+
+    base_folder_1 = '/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)'
+    base_folder_2 = '/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/only_human_demos/with_palm_cam'
 
 
     base_folders = [base_folder_1, base_folder_2]
@@ -409,9 +413,102 @@ def phases_stats():
     plt.show()
 
 
+def phases_stats_from_last_row():
+
+    # Approahc Path:
+    base_folder = '/home/alejo/Documents/DATA/04_IL_preprocessed_(cropped_per_phase)/experiment_1_(pull)/'
+
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']
+
+
+    for phase in phases:
+
+        csv_files = [
+                os.path.join(base_folder,phase, f)
+                for f in os.listdir(os.path.join(base_folder,phase,))
+                if f.endswith('.csv')
+        ]
+
+        phase_times =[]
+        for trial in csv_files:
+
+            trial_df = pd.read_csv(trial)
+            time = trial_df['timestamp_vector'].values
+
+            elapsed_time = time[-1] - time[0]
+            phase_times.append(elapsed_time)
+
+        print(f'{phase} mean Time: ', np.mean(phase_times), np.std(phase_times))
+
+
+def compare_losses_plots():
+
+    base = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)'   
+
+    phases = ['phase_1_approach','phase_2_contact','phase_3_pick']    
+
+    inputs_list = [['tof__inhand_cam_features__apple_prior'],                                   # approach inputs
+                   ['tof__air_pressure__wrench__apple_prior'],                                  # contact inputs
+                   ['tof__air_pressure__wrench__apple_prior', 'tof__air_pressure__wrench']]     # pick inputs
+    
+
+    colors = ['red', 'green', 'blue', 'black', 'gray']
+
+    for phase, inputs in zip(phases, inputs_list):       
+
+        for input in inputs:
+
+            plt.figure(figsize=(10, 5))
+
+            npz_folder = os.path.join(base, phase, '0_timesteps', input)
+
+            # Find npz files
+            npz_files = [
+                os.path.join(npz_folder, f)
+                for f in os.listdir(os.path.join(npz_folder))
+                if f.endswith('.npz')
+            ]
+
+            for file, color in zip(npz_files, colors):
+                
+                data = np.load(file)
+
+                train_loss = data['train_losses']
+                val_loss = data['val_losses']
+
+                filtered_train_loss = gaussian_filter(train_loss, 2)
+                filtered_val_loss = gaussian_filter(val_loss, 2)
+
+                
+                name = file.split(input)[1]
+                name = name.split('_lstm')[0]
+                
+                plt.plot(filtered_train_loss, label=f'Tr Loss {name}', color=color, linestyle='--')
+                plt.plot(filtered_val_loss, label=f'Val Loss {name}', color=color)
+                plt.plot(train_loss, color=color, alpha=0.4)
+                plt.plot(val_loss, color=color, alpha=0.4)
+
+            plt.xlabel('Epochs')
+            plt.ylabel('Loss')
+            plt.title(f'Training and Validation Loss Over Time\n{phase}\n{input}')
+            plt.ylim([0,1])
+            plt.legend()
+            plt.grid(True)
+        
+    plt.show()
+    
+
+
+
+
+
+
+
 if __name__ == '__main__':
 
     
-    plot_batch_trials()
+    # plot_batch_trials()
    
-    # phases_stats()
+    # phases_stats_from_reading_entire_trial()
+    # phases_stats_from_last_row()
+    compare_losses_plots()
