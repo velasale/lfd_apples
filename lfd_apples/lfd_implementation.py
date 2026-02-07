@@ -94,12 +94,12 @@ class EMA():
         return self.y
 
 
-class LoadController():
+class LoadPhaseController():
     '''
     Convenient Class to load all the lstm model properties
     '''
 
-    def __init__(self, MODEL_PARAMS):
+    def __init__(self, MODEL_PARAMS, device):
 
         self.SEQ_LEN = MODEL_PARAMS['SEQ_LEN']
         self.PHASE = MODEL_PARAMS['PHASE']
@@ -107,7 +107,7 @@ class LoadController():
         self.HIDDEN_DIM = MODEL_PARAMS['HIDDEN_DIM']
         self.NUM_LAYERS = MODEL_PARAMS['NUM_LAYERS']
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")            
+        self.device = device
 
         self.load_info_from_yaml()
         self.define_paths()
@@ -126,7 +126,7 @@ class LoadController():
 
         # States   
         self.STATE_NAMES, self.STATE_NAME_KEYS = get_phase_columns(cfg, self.PHASE)
-        self.N_STATES = len(self.STATE_NAMES)
+        self.N_STATES = len(self.STATE_NAMES) - self.N_ACTIONS
 
 
     def define_paths(self):
@@ -200,9 +200,9 @@ class LoadController():
 
     def normalize_x(self, x):
 
-        print('X-Tensor shape:', x)
+        # print('X-Tensor shape:', x)
         x_n = (x - self.X_MEAN)/self.X_STD
-        print('normalized X-Tensor shape:', x_n)
+        # print('normalized X-Tensor shape:', x_n)
         return x_n
     
 
@@ -213,7 +213,7 @@ class LoadController():
     def forward(self, x):
         x_n = self.normalize_x(x)
         y_n = self.MODEL(x_n)
-        print('normalized Y-Tensor shape:', y_n)
+        # print('normalized Y-Tensor shape:', y_n)
         return self.denormalize_y(y_n)
 
 
@@ -481,9 +481,10 @@ class LFDController(Node):
         self.pick_state_buffer = deque(maxlen = self.PICK_MODEL_PARAMS['SEQ_LEN'])
 
         # Models
-        self.APPROACH_CONTROLLER = LoadController(self.APPROACH_MODEL_PARAMS)
-        self.CONTACT_CONTROLLER = LoadController(self.CONTACT_MODEL_PARAMS)
-        self.PICK_CONTROLLER = LoadController(self.PICK_MODEL_PARAMS)        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")    
+        self.APPROACH_CONTROLLER = LoadPhaseController(self.APPROACH_MODEL_PARAMS, self.device)
+        self.CONTACT_CONTROLLER = LoadPhaseController(self.CONTACT_MODEL_PARAMS, self.device)
+        self.PICK_CONTROLLER = LoadPhaseController(self.PICK_MODEL_PARAMS, self.device)        
 
 
     def initialize_debugging_mode_variables(self, trial='trial_1'):
@@ -533,6 +534,7 @@ class LFDController(Node):
                 
 
         # Load actions
+        self.ACTION_NAMES = self.APPROACH_CONTROLLER.ACTION_NAMES
         self.approach_debugging_actions_pd = self.approach_debugging_demo_pd[self.ACTION_NAMES]
         self.contact_debugging_actions_pd = self.contact_debugging_demo_pd[self.ACTION_NAMES]
         self.pick_debugging_actions_pd = self.pick_debugging_demo_pd[self.ACTION_NAMES]
@@ -797,7 +799,7 @@ class LFDController(Node):
         trial_info['controllers']['approach']['PI']['I'] = self.POSITION_KI
         trial_info['controllers']['approach']['PI']['PI gain'] = self.INITIAL_PI_GAIN
         trial_info['controllers']['approach']['pixel to meter'] = self.PIXEL_TO_METER_RATE
-        trial_info['controllers']['approach']['states'] = self.APPROACH_STATE_NAME_KEYS
+        trial_info['controllers']['approach']['states'] = self.APPROACH_CONTROLLER.STATE_NAME_KEYS
         trial_info['controllers']['approach']['actions'] = self.ACTION_NAMES
 
 
@@ -834,28 +836,7 @@ class LFDController(Node):
         self.scups_state = np.array([self.scA, self.scB, self.scC])        
         self.tof_state = np.array([self.tof])       
 
-        # Increase Count
-        if self.scA < self.AIR_PRESSURE_THRESHOLD and not self.scA_previous_state:
-            self.scA_previous_state = True
-            self.scups_engaged +=1
-        if self.scB < self.AIR_PRESSURE_THRESHOLD and not self.scB_previous_state:
-            self.scB_previous_state = True
-            self.scups_engaged +=1
-        if self.scC < self.AIR_PRESSURE_THRESHOLD and not self.scC_previous_state:
-            self.scC_previous_state = True
-            self.scups_engaged +=1
-        # Decrease Count
-        if self.scA > self.AIR_PRESSURE_THRESHOLD and self.scA_previous_state:
-            self.scA_previous_state = False
-            self.scups_engaged -=1
-        if self.scB > self.AIR_PRESSURE_THRESHOLD and self.scB_previous_state:
-            self.scB_previous_state = True
-            self.scups_engaged -=1
-        if self.scC > self.AIR_PRESSURE_THRESHOLD and self.scC_previous_state:
-            self.scC_previous_state = True
-            self.scups_engaged -=1
-
-
+        
         # State machine triggers: Approach --> Contact --> Pick
         if self.running_lfd_approach:
             
@@ -864,7 +845,9 @@ class LFDController(Node):
                 self.running_lfd_approach = False                
                 self.send_stop_message()
 
+                self.scups_engaged = 0
                 self.running_lfd_contact = True
+
 
             if self.tof < 100:
                 self.get_logger().info(f"TOF reached: {self.tof} < {self.TOF_THRESHOLD} turning off PI controller")      
@@ -872,13 +855,40 @@ class LFDController(Node):
 
 
         if self.running_lfd_contact:
-            self.get_logger().info(f"CONTACT Controller running: {self.scups_engaged} suction cups engaged")   
+            # self.get_logger().info(f"CONTACT Controller running: {self.scups_engaged} suction cups engaged")   
 
             # Count engaged suction cups
             if self.scups_engaged > 2:
                 self.get_logger().info(f"More than two cups engaged, switching to Pick controller")    
                 self.running_lfd_contact = False              
                 self.running_lfd_pick = True
+            
+                # Increase Count
+            if self.scA < self.AIR_PRESSURE_THRESHOLD and not self.scA_previous_state:
+                self.scA_previous_state = True
+                self.scups_engaged +=1
+                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+            if self.scB < self.AIR_PRESSURE_THRESHOLD and not self.scB_previous_state:
+                self.scB_previous_state = True
+                self.scups_engaged +=1
+                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+            if self.scC < self.AIR_PRESSURE_THRESHOLD and not self.scC_previous_state:
+                self.scC_previous_state = True
+                self.scups_engaged +=1
+                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+            # Decrease Count
+            if self.scA > self.AIR_PRESSURE_THRESHOLD and self.scA_previous_state:
+                self.scA_previous_state = False
+                self.scups_engaged -=1
+                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+            if self.scB > self.AIR_PRESSURE_THRESHOLD and self.scB_previous_state:
+                self.scB_previous_state = True
+                self.scups_engaged -=1
+                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+            if self.scC > self.AIR_PRESSURE_THRESHOLD and self.scC_previous_state:
+                self.scC_previous_state = True
+                self.scups_engaged -=1
+                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
         
 
         if self.running_lfd_pick:
@@ -1089,12 +1099,12 @@ class LFDController(Node):
 
     def eef_wrench_callback(self, msg: WrenchStamped):
     
-        self.eef_fx = msg.force.x
-        self.eef_fy = msg.force.y
-        self.eef_fz = msg.force.z
-        self.eef_tx = msg.torque.x
-        self.eef_ty = msg.torque.y
-        self.eef_tz = msg.torque.z
+        self.eef_fx = msg.wrench.force.x
+        self.eef_fy = msg.wrench.force.y
+        self.eef_fz = msg.wrench.force.z
+        self.eef_tx = msg.wrench.torque.x
+        self.eef_ty = msg.wrench.torque.y
+        self.eef_tz = msg.wrench.torque.z
 
         self.wrench_state = np.array([self.eef_fx, self.eef_fy, self.eef_fz, self.eef_tx, self.eef_ty, self.eef_tz])
 
@@ -1207,10 +1217,10 @@ class LFDController(Node):
                 self.contact_state_buffer.append(self.state)
 
                 # Wait until buffer filled
-                if not len(self.approach_state_buffer) == self.CONTACT_MODEL_PARAMS['SEQ_LEN']:
+                if not len(self.contact_state_buffer) == self.CONTACT_MODEL_PARAMS['SEQ_LEN']:
                     pass
                 else:
-                    self.X = np.stack(self.approach_state_buffer)
+                    self.X = np.stack(self.contact_state_buffer)
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
                     self.Y = self.CONTACT_CONTROLLER.forward(self.X_tensor)
 
@@ -1234,10 +1244,10 @@ class LFDController(Node):
                 self.pick_state_buffer.append(self.state)
 
                 # Wait until buffer filled
-                if not len(self.approach_state_buffer) == self.PICK_MODEL_PARAMS['SEQ_LEN']:
+                if not len(self.pick_state_buffer) == self.PICK_MODEL_PARAMS['SEQ_LEN']:
                     pass
                 else:
-                    self.X = np.stack(self.approach_state_buffer)
+                    self.X = np.stack(self.pick_state_buffer)
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
                     self.Y = self.PICK_CONTROLLER.forward(self.X_tensor)
 
@@ -1253,8 +1263,8 @@ class LFDController(Node):
                     self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
 
 
-            self.get_logger().info(f'Target actions in eef frame: {self.Y}')         
-            self.get_logger().info(f"palm camera callback sending topic")
+            # self.get_logger().info(f'Target actions in eef frame: {self.Y}')         
+            # self.get_logger().info(f"palm camera callback sending topic")
 
 
         if self.running_lfd and self.DEBUGGING_MODE:
@@ -1382,9 +1392,9 @@ def main():
     
     PICK_MODEL_PARAMS = {'MODEL': 'lstm',
                          'PHASE': 'phase_3_pick',
-                         'SEQ_LEN': 5,
-                         'NUM_LAYERS': 1,
-                         'HIDDEN_DIM': 64
+                         'SEQ_LEN': 30,
+                         'NUM_LAYERS': 2,
+                         'HIDDEN_DIM': 1024
                         }  
     
     node = LFDController(APPROACH_MODEL_PARAMS, CONTACT_MODEL_PARAMS, PICK_MODEL_PARAMS)    

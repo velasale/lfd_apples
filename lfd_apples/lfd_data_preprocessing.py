@@ -1067,6 +1067,7 @@ def stage_3_crop_data_to_task_phases():
 
     trials_without_engagement = []
 
+    plot_phase_triggers = False
     # Double check these:
     # trials = ['trial_92_downsampled_aligned_data_transformed.csv']
 
@@ -1094,12 +1095,13 @@ def stage_3_crop_data_to_task_phases():
 
 
         # Plot approach phase
-        fig = plt.figure()
-        t = df['timestamp_vector'].values    
-        time_ref = df.loc[idx_phase_1_end, 'timestamp_vector']
-        plt.plot(t, df['tof'], label='tof')    
-        plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
-        plt.show()
+        if plot_phase_triggers:
+            fig = plt.figure()
+            t = df['timestamp_vector'].values    
+            time_ref = df.loc[idx_phase_1_end, 'timestamp_vector']
+            plt.plot(t, df['tof'], label='tof')    
+            plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
+            plt.show()
         
 
         # Crop and save
@@ -1125,14 +1127,15 @@ def stage_3_crop_data_to_task_phases():
             input(f"Issue with end and start of Contact phase: {trial} ")
 
         # Plot contact and check times
-        fig = plt.figure()
-        t = df['timestamp_vector'].values    
-        time_ref = df.loc[idx_phase_2_end, 'timestamp_vector']
-        plt.plot(t, df['scA'], label='scA')    
-        plt.plot(t, df['scB'], label='scB')   
-        plt.plot(t, df['scC'], label='scC')   
-        plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
-        plt.show()
+        if plot_phase_triggers:
+            fig = plt.figure()
+            t = df['timestamp_vector'].values    
+            time_ref = df.loc[idx_phase_2_end, 'timestamp_vector']
+            plt.plot(t, df['scA'], label='scA')    
+            plt.plot(t, df['scB'], label='scB')   
+            plt.plot(t, df['scC'], label='scC')   
+            plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
+            plt.show()
         
 
         # Crop and save
@@ -1149,14 +1152,15 @@ def stage_3_crop_data_to_task_phases():
         idx_phase_3_end = find_end_of_phase_3_contact(df[idx_phase_3_start:], trial, total_force_threshold=20)        
 
         # Pot Pick phase to check times
-        fig = plt.figure()
-        t = df['timestamp_vector'].values    
-        time_ref = df.loc[idx_phase_3_end, 'timestamp_vector']
-        plt.plot(t, df['_wrench._force._x'], label='fx')    
-        plt.plot(t, df['_wrench._force._y'], label='fy')    
-        plt.plot(t, df['_wrench._force._z'], label='fz')    
-        plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
-        plt.show()
+        if plot_phase_triggers:
+            fig = plt.figure()
+            t = df['timestamp_vector'].values    
+            time_ref = df.loc[idx_phase_3_end, 'timestamp_vector']
+            plt.plot(t, df['_wrench._force._x'], label='fx')    
+            plt.plot(t, df['_wrench._force._y'], label='fy')    
+            plt.plot(t, df['_wrench._force._z'], label='fz')    
+            plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
+            plt.show()
 
         idx_phase_3_end += int(PHASE_3_EXTRA_TIME_END * 30)
 
@@ -1393,13 +1397,13 @@ if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
     # stage_2_transform_data_to_eef_frame()
-    # stage_3_crop_data_to_task_phases()   
+    stage_3_crop_data_to_task_phases()   
    
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
-    # phases = ['phase_1_approach']    
-    for phase in phases:
-        for step in [0]:
-            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
+    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    # # phases = ['phase_1_approach']    
+    # for phase in phases:
+    #     for step in [0]:
+    #         stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)

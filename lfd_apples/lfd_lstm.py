@@ -63,7 +63,7 @@ class LSTMRegressor(nn.Module):
     
 
 
-def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=1e-4):
+def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=1e-5):
     '''
     Docstring for train
     
@@ -133,7 +133,7 @@ def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500
         scheduler.step(val_loss)
 
         # --- Early stopping check ---
-        patience = 100
+        patience = 200
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             epochs_no_improve = 0
@@ -202,7 +202,7 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
     test_ds   = TensorDataset(lfd_dataset.X_test_tensor_norm, lfd_dataset.Y_test_tensor_norm)
 
      
-    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=False)
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE)
     test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE)
 
@@ -281,13 +281,13 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
 
 if __name__ == '__main__':
 
-    
-    phases = ['phase_1_approach']
+    # Models Parameters
+    phases = ['phase_3_pick']
     hidden_dim_list = [1024]
     num_layers_list = [2]
-
     seq_lens = [30]
 
+    # Train model for each combination
     for phase in phases:
         print(f'\n------------------ {phase}-------------------')
 
@@ -306,6 +306,7 @@ if __name__ == '__main__':
 
                     print(f'\n--- Number of Hidden dim: {hidden_dim} ---')
 
+                    # lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=8, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
                     lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=64, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
     
         

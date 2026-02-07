@@ -445,15 +445,19 @@ def compare_losses_plots():
 
     base = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)'   
 
-    phases = ['phase_1_approach','phase_2_contact','phase_3_pick']    
+    phases = ['phase_1_approach']    
+    inputs_list = [['tof__inhand_cam_features__apple_prior']]    
 
-    inputs_list = [['tof__inhand_cam_features__apple_prior'],                                   # approach inputs
-                   ['tof__air_pressure__wrench__apple_prior'],                                  # contact inputs
-                   ['tof__air_pressure__wrench__apple_prior', 'tof__air_pressure__wrench']]     # pick inputs
+    phases = ['phase_2_contact'] 
+    inputs_list = [['tof__air_pressure__wrench__apple_prior', 'tof__air_pressure__apple_prior']]    
+
+    # phases = ['phase_3_pick']
+    # inputs_list = [['tof__air_pressure__wrench__apple_prior',
+    #                 'tof__air_pressure__wrench',
+    #                 'tof__wrench__apple_prior'
+    #                 ]]
+
     
-
-    colors = ['red', 'green', 'blue', 'black', 'gray']
-
     for phase, inputs in zip(phases, inputs_list):       
 
         for input in inputs:
@@ -469,7 +473,7 @@ def compare_losses_plots():
                 if f.endswith('.npz')
             ]
 
-            for file, color in zip(npz_files, colors):
+            for file in npz_files:
                 
                 data = np.load(file)
 
@@ -479,14 +483,43 @@ def compare_losses_plots():
                 filtered_train_loss = gaussian_filter(train_loss, 2)
                 filtered_val_loss = gaussian_filter(val_loss, 2)
 
+                x_tr = len(filtered_train_loss) - 1
+                y_tr = filtered_train_loss[-1]
+
+                x_val = len(filtered_val_loss) - 1
+                y_val = filtered_val_loss[-1]
+
                 
                 name = file.split(input)[1]
                 name = name.split('_lstm')[0]
+
+                cmap = plt.cm.tab10   # or viridis, plasma, tab20
+                color = cmap(np.random.rand())
                 
-                plt.plot(filtered_train_loss, label=f'Tr Loss {name}', color=color, linestyle='--')
+                # plt.figure(figsize=(10, 5))
+
+                # plt.plot(filtered_train_loss, label=f'Tr Loss {name}', color=color, linestyle='--')
                 plt.plot(filtered_val_loss, label=f'Val Loss {name}', color=color)
-                plt.plot(train_loss, color=color, alpha=0.4)
+                # plt.plot(train_loss, color=color, alpha=0.4)
                 plt.plot(val_loss, color=color, alpha=0.4)
+                plt.text(
+                    x_tr,
+                    y_tr,
+                    f'Tr {name}',
+                    color=color,
+                    fontsize=9,
+                    va='center'
+                )
+
+                plt.text(
+                    x_val,
+                    y_val,
+                    f'Val {name}',
+                    color=color,
+                    fontsize=9,
+                    va='center'
+                )
+                
 
             plt.xlabel('Epochs')
             plt.ylabel('Loss')
@@ -496,10 +529,9 @@ def compare_losses_plots():
             plt.grid(True)
         
     plt.show()
+            
+            
     
-
-
-
 
 
 

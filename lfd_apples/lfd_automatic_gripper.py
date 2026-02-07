@@ -13,7 +13,7 @@ class GripperController(Node):
         super().__init__('gripper_controller')
 
         # Parameters
-        self.declare_parameter('distance_threshold', 50)   # mm
+        self.declare_parameter('distance_threshold', 60)   # mm
         self.declare_parameter('pressure_threshold', 600)  # hPa
         self.declare_parameter('release_timer', 20)        # sec
 
