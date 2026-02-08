@@ -8,7 +8,7 @@ from pathlib import Path
 import torch
 from collections import deque
 from ament_index_python.packages import get_package_share_directory
-import sys, termios, tty, threading
+import sys, termios, tty, threading, select
 
 # Custom imports
 from lfd_apples.listen_franka import main as listen_main
@@ -22,15 +22,12 @@ from lfd_apples.lfd_lstm import LSTMRegressor
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
-from std_msgs.msg import Int16MultiArray
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Int16MultiArray, Float32MultiArray, Bool
 from std_srvs.srv import SetBool, Trigger
-from geometry_msgs.msg import PoseStamped, TwistStamped, Twist, WrenchStamped
-from sensor_msgs.msg import Image
+from geometry_msgs.msg import PoseStamped, TwistStamped, Twist, WrenchStamped, Point
+from sensor_msgs.msg import Image, JointState
 from visualization_msgs.msg import Marker
-from geometry_msgs.msg import Point
 from control_msgs.action import FollowJointTrajectory
-from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectoryPoint
 from controller_manager_msgs.srv import SwitchController, LoadController, ListControllers
 
@@ -51,29 +48,38 @@ import numpy as np
 print("NumPy version:", np.__version__)
 
 from scipy.spatial.transform import Rotation as R
-
 import matplotlib.pyplot as plt
+
 
 
 # --- Handy Objects ---
 class KeyboardListener:
     def __init__(self):
         self.esc_pressed = False
+        self._stop = False
         self.thread = threading.Thread(target=self.listen, daemon=True)
         self.thread.start()
 
     def listen(self):
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
+
+        # cbreak: char-by-char input WITHOUT breaking the terminal
+        tty.setcbreak(fd)
+
         try:
-            tty.setraw(fd)
-            while True:
-                ch = sys.stdin.read(1)
-                if ch == '\x1b':  # ESC
-                    self.esc_pressed = True
-                    break
+            while not self._stop and not self.esc_pressed:
+                # Non-blocking check for input
+                rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+                if rlist:
+                    ch = sys.stdin.read(1)
+                    if ch == '\x1b':  # ESC
+                        self.esc_pressed = True
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    def stop(self):
+        self._stop = True
 
 
 class EMA():
@@ -254,38 +260,32 @@ class LFDController(Node):
             Int16MultiArray,
             'microROS/sensor_data',
             self.gripper_sensors_callback,
-            10)
-        
+            10)        
         self.eef_pose_sub = self.create_subscription(
             PoseStamped,
             '/franka_robot_state_broadcaster/current_pose',
             self.eef_pose_callback,
-            10)
-        
+            10)        
         self.eef_pose_sub = self.create_subscription(
             PoseStamped,
             '/franka_robot_state_broadcaster/current_pose',
             self.eef_pose_callback,
-            10)
-        
+            10)        
         self.eef_wrench_sub = self.create_subscription(
             WrenchStamped,
             '/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame',
             self.eef_wrench_callback,
-            10)     
-        
+            10)        
         self.palm_camera_sub = self.create_subscription(
             Float32MultiArray,
             'lfd/latent_image',
             self.palm_camera_callback,
-            10)       
-        
+            10)        
         self.joint_states_sub = self.create_subscription(
             JointState,
             '/joint_states',
             self.joint_states_callback,
-            10)  # Dummy subscriber to ensure joint states are available
-        
+            10)  # Dummy subscriber to ensure joint states are available        
         self.bbox_center_sub = self.create_subscription(
             Int16MultiArray,
             'lfd/bbox_center',
@@ -313,6 +313,10 @@ class LFDController(Node):
             Marker,
             '/lfd/apple',
             10) 
+        self.apple_probing_pub = self.create_publisher(
+            Bool,
+            'lfd/apple_probing_apple',
+            10)
 
 
     def initialize_ros_service_clients(self):
@@ -355,13 +359,13 @@ class LFDController(Node):
         # Converts 'm' and 'rad' deltas into m/s and rad/s
         # In our case, delta_eef_pose was calculated for delta_times = 0.001 sec, 
         # hence, we use a gain of 1000 (1/0.001sec) to convert m to m/sec.
-        self.DELTA_GAIN = 1000
+        self.DELTA_GAIN = 0#1000
         # self.DELTA_GAIN = 1500    # I used this one for command interface = position
 
         # PID GAINS
         # If using deltas, multiply by scaling factor
         # Send actions (twist)       
-        self.INITIAL_PI_GAIN = 1.0                    
+        self.INITIAL_PI_GAIN = 0.0#1.0                    
         self.POSITION_KP = 1.25  # 2.0
         self.POSITION_KI = 0.025
 
@@ -588,6 +592,7 @@ class LFDController(Node):
         self.contact_accomplished = False
         self.pick_accomplished = False
         self.data_ready = False
+        self.flag_PI = False
 
         self.running_lfd = False
         self.running_lfd_approach = False
@@ -762,6 +767,13 @@ class LFDController(Node):
         self.tcp_marker_pub.publish(self.tcp_trail_marker)
 
 
+    def apple_probing_flag(self, value: bool):
+        
+        self.probing_flag = Bool()        
+        self.probing_flag.data = value
+        self.apple_probing_pub.publish(self.probing_flag)
+
+
     # === Data saving functions ===
     def save_metadata(self, filename):
         """
@@ -841,16 +853,16 @@ class LFDController(Node):
         if self.running_lfd_approach:
             
             if self.tof < self.TOF_THRESHOLD:
-                self.get_logger().info(f"TOF threshold reached: {self.tof} < {self.TOF_THRESHOLD}")             
-                self.running_lfd_approach = False                
-                self.send_stop_message()
+                self.get_logger().warning(f"TOF threshold reached: {self.tof:.2f} < {self.TOF_THRESHOLD} --> CONTACT")     
+                self.running_lfd_approach = False                                
 
                 self.scups_engaged = 0
                 self.running_lfd_contact = True
 
 
-            if self.tof < 100:
-                self.get_logger().info(f"TOF reached: {self.tof} < {self.TOF_THRESHOLD} turning off PI controller")      
+            if self.tof < 100 and not self.flag_PI:
+                self.get_logger().warning(f"TOF: {self.tof:.2f} < 100, switching PI off")
+                self.flag_PI = True
                 self.PI_GAIN = 0.0
 
 
@@ -859,11 +871,11 @@ class LFDController(Node):
 
             # Count engaged suction cups
             if self.scups_engaged > 2:
-                self.get_logger().info(f"More than two cups engaged, switching to Pick controller")    
+                self.get_logger().warning(f"More than 2 cups engaged --> PICK")    
                 self.running_lfd_contact = False              
                 self.running_lfd_pick = True
             
-                # Increase Count
+            # Increase Count
             if self.scA < self.AIR_PRESSURE_THRESHOLD and not self.scA_previous_state:
                 self.scA_previous_state = True
                 self.scups_engaged +=1
@@ -876,23 +888,26 @@ class LFDController(Node):
                 self.scC_previous_state = True
                 self.scups_engaged +=1
                 self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+
             # Decrease Count
             if self.scA > self.AIR_PRESSURE_THRESHOLD and self.scA_previous_state:
                 self.scA_previous_state = False
                 self.scups_engaged -=1
                 self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
             if self.scB > self.AIR_PRESSURE_THRESHOLD and self.scB_previous_state:
-                self.scB_previous_state = True
+                self.scB_previous_state = False
                 self.scups_engaged -=1
                 self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
             if self.scC > self.AIR_PRESSURE_THRESHOLD and self.scC_previous_state:
-                self.scC_previous_state = True
+                self.scC_previous_state = False
                 self.scups_engaged -=1
                 self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
         
 
         if self.running_lfd_pick:
-            self.get_logger().info(f"PICK controller running")   
+
+            pass
+            # self.get_logger().info(f"PICK controller running")   
             
             # if condition TBD:
             #   self.running_lfd_pick = False
@@ -1130,10 +1145,8 @@ class LFDController(Node):
 
                 # --- Combine data ---
                 self.state = np.concatenate([self.tof_state, self.latent_image, self.p_apple_tcp])    
-                # self.state = np.concatenate([self.tof_for_state, self.ema_img.y])    
-                            
-                # Combine data, with past steps if model is 'rf' or 'mlp'            
-                # self.X = np.concatenate([self.t_2_data, self.t_1_data, self.state])
+                # self.state = np.concatenate([self.tof_for_state, self.ema_img.y])                   
+
                 self.approach_state_buffer.append(self.state)        # Update buffer
 
                 if not len(self.approach_state_buffer) == self.APPROACH_MODEL_PARAMS['SEQ_LEN']:
@@ -1141,43 +1154,12 @@ class LFDController(Node):
                 else:
                     self.X = np.stack(self.approach_state_buffer)
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
-
-                    # print('X Tensor shape:', self.X_tensor.shape)
-                
-                    # # --- Normalize State ---                        
-                    # self.X_norm = (self.X_tensor - self.APPROACH_X_MEAN) / self.APPROACH_X_STD
-                    # print('X Tensor normalized shape:', self.X_norm.shape)
-
-                    # # --- Append as row in DataFrame ---
-                    # self.lfd_states_df = pd.concat([
-                    #     self.lfd_states_df, 
-                    #     # pd.DataFrame([self.t_data_norm])
-                    #     pd.DataFrame([self.X_norm])
-                    # ], ignore_index=True)
-                
-                    # ======================= Predict Actions ======================
-                    # Predict normalized actions
-                    # self.Y_norm = self.LFD_MODEL.predict(self.X_norm.reshape(1, -1))
-                    # self.Y_norm = self.LFD_APPROACH_MODEL(self.X_norm)
-                    # print('Y Tensor normalized shape:', self.Y_norm.shape)
-
-                    # # Denormalize actions
-                    # self.Y = self.Y_norm * self.APPROACH_Y_STD + self.APPROACH_Y_MEAN
-
                     self.Y = self.APPROACH_CONTROLLER.forward(self.X_tensor)
                     self.Y = self.Y.squeeze()  
                     
                     # Move tensor to cpu
                     self.Y = self.Y.detach().cpu().numpy()
                 
-                    # y = self.Y
-                    # # --- Append as row in DataFrame ---
-                    # self.lfd_actions_df = pd.concat([
-                    #     self.lfd_actions_df, 
-                    #     # pd.DataFrame([self.t_data_norm])
-                    #     pd.DataFrame([y])
-                    #     ], ignore_index=True)
-                    # self.get_logger().info(f'Target actions in eef frame: {y}')                     
 
                     # Adjust velocities with feedback from goal pose               
                     self.sum_pos_x_error += self.bbox_pos_x_error
@@ -1199,21 +1181,24 @@ class LFDController(Node):
                     self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
 
-                    
 
-                    # Combine data, with past steps if model is 'rf' or 'mlp'    
-                    # Add actions to State Space to pass them to the next time steps
-                    # self.t_2_data = self.t_1_data
-                    # if self.KEEP_ACTIONS_MEMORY:
-                    #     self.t_1_data = np.concatenate([self.state, self.Y])
-                    # else:
-                    #     self.t_1_data = self.state
+                    actions_str = np.array2string(
+                        self.Y,
+                        precision=6,
+                        suppress_small=True,
+                        separator=' ',
+                        max_line_width=np.inf
+                    )                    
+                    self.get_logger().info(f'APPROACH actions: {actions_str}')
+                                        
                         
 
             if self.running_lfd_contact:
 
                 # Combine data and update sequence buffer
                 self.state = np.concatenate([self.tof_state, self.scups_state, self.p_apple_tcp])    
+                state_str = np.array2string(self.state, precision=2, separator=',', suppress_small=True)                
+                self.get_logger().info(f"CONTACT state: {state_str}")                
                 self.contact_state_buffer.append(self.state)
 
                 # Wait until buffer filled
@@ -1235,12 +1220,26 @@ class LFDController(Node):
                     self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
 
+                    actions_str = np.array2string(
+                        self.Y,
+                        precision=6,
+                        suppress_small=True,
+                        separator=' ',
+                        max_line_width=np.inf
+                    )
+
+                    self.get_logger().info(f'CONTACT actions: {actions_str}')
+                            
+
 
             if self.running_lfd_pick:
 
                 # Combine data and update sequence buffer
                 # tof, air_pressure, wrench, apple_prior
                 self.state = np.concatenate([self.tof_state, self.scups_state, self.wrench_state, self.p_apple_tcp])    
+                state_str = np.array2string(self.state, precision=6, separator=',', suppress_small=True)                
+                self.get_logger().info(f"PICK state: {state_str}")   
+
                 self.pick_state_buffer.append(self.state)
 
                 # Wait until buffer filled
@@ -1262,9 +1261,16 @@ class LFDController(Node):
                     self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
 
+                    actions_str = np.array2string(
+                        self.Y,
+                        precision=6,
+                        suppress_small=True,
+                        separator=' ',
+                        max_line_width=np.inf
+                    )
+                    self.get_logger().info(f'PICK actions: {actions_str}')
+                          
 
-            # self.get_logger().info(f'Target actions in eef frame: {self.Y}')         
-            # self.get_logger().info(f"palm camera callback sending topic")
 
 
         if self.running_lfd and self.DEBUGGING_MODE:
@@ -1276,7 +1282,7 @@ class LFDController(Node):
     # === Action Functions ====
     def run_lfd_controller(self):       
 
-        self.get_logger().info("Starting run_lfd_approach: publishing twists from palm_camera_callback until TOF < threshold.")
+        self.get_logger().info("Starting run_lfd_controller.")
         self.running_lfd = True
         self.running_lfd_approach = True
         self.sum_pos_x_error = 0.0
@@ -1291,12 +1297,13 @@ class LFDController(Node):
         key = KeyboardListener()
 
         while rclpy.ok() and self.running_lfd and not key.esc_pressed:
+       
             
             # This runs depending on the flags           
             # 'palm camera callback' has the logic
 
             rclpy.spin_once(self,timeout_sec=0.0)
-            time.sleep(0.001)
+            time.sleep(0.01)
         
         self.send_stop_message()
         self.running_lfd = False
@@ -1375,6 +1382,8 @@ def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
 def main():
 
     rclpy.init()
+    YELLOW = "\033[1;33m"
+    RESET = "\033[0m"
 
     APPROACH_MODEL_PARAMS = {'MODEL': 'lstm',
                              'PHASE': 'phase_1_approach',
@@ -1406,6 +1415,8 @@ def main():
 
     BAG_FILEPATH = os.path.join(BASE_DIR, BAG_MAIN_DIR, EXPERIMENT)
     os.makedirs(BAG_FILEPATH, exist_ok=True)
+
+    SLEEP_TIME = 0.25
     
     batch_size = 10
     node.get_logger().info(f"Starting lfd implementation with robot, session of {batch_size} demos.")    
@@ -1413,7 +1424,7 @@ def main():
 
     for demo in range(batch_size):
 
-        node.get_logger().info("\033[1;32m\n---------- Press ENTER key to start lfd implementation trial {}/10 ----------\033[0m".format(demo+1))
+        node.get_logger().info(f"{YELLOW}\n\n---------- Press ENTER key to start lfd implementation trial {demo+1}/10 ----------\n{RESET}")
         input()  
       
         # ------------ Step 0: Initial configuration ----------------
@@ -1421,54 +1432,61 @@ def main():
         os.makedirs(os.path.join(BAG_FILEPATH, TRIAL), exist_ok=True)
         # HUMAN_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'human')
         ROBOT_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL)              
+
+        node.initialize_state_and_models()
+        node.initialize_signal_variables_and_thresholds()
+        node.initialize_flags()               
                
 
         # ------------ Step 1: Move robot to home position ---------
-        node.get_logger().info("\n\033[1;32m\nSTEP 1: Arm moving to home position... wait\033[0m\n")
+        node.get_logger().info(f"{YELLOW}\n\nSTEP 1: Arm moving to home position... wait.\n{RESET}")
         while not node.move_to_home():
             pass
 
 
         # ------------ Step 2: Place apple and record position ------       
-        input("\n\033[1;32m\nSTEP 2: Place apple on the proxy. \nPress ENTER key when done.\033[0m\n")    
+        node.get_logger().info(f"{YELLOW}\n\nSTEP 2: Place apple on the proxy. \nPress ENTER key when done.\n{RESET}")    
+        input()
        
         node.swap_controller(node.arm_controller, node.gravity_controller)
-        time.sleep(0.5)                
+        time.sleep(SLEEP_TIME)                
 
-        node.get_logger().info("\n\033[1;32m\nSTEP 3: Record apple position by bringing gripper close to it (cups gently apple). \nPress ENTER key when you are done.\033[0m\n")        
-        input()   
+        node.apple_probing_flag(True)
+        node.get_logger().info(f"{YELLOW}\n\nSTEP 3: Record apple position by bringing gripper close to it (cups gently apple).\nPress ENTER key when you are done.\n{RESET}")        
+        input()           
         node.swap_controller(node.gravity_controller, node.arm_controller)
-        time.sleep(0.5)          
+        time.sleep(SLEEP_TIME)          
 
         # Save proxy state        
         node.apple_pose_base[:] = [node.eef_pos_x, node.eef_pos_y, node.eef_pos_z]
-        node.apple_id = input("Type the apple id: ")  # Wait for user to press Enter
-        node.spur_id = input("Type the spur id: ")  # Wait for user to press Enter        
+        node.apple_id = input("Type the apple id: ")    # Wait for user to press Enter
+        node.spur_id = input("Type the spur id: ")      # Wait for user to press Enter        
         node.place_rviz_apple()
 
         node.swap_controller(node.arm_controller, node.gravity_controller)
-        time.sleep(0.5)               
+        time.sleep(SLEEP_TIME)               
 
 
         # ------------- Step 3: Place arm at a feasbile initial pose --------
-        node.get_logger().info("\n\033[1;32m\nSTEP 3: Free-drive arm until apple in camera FOV. \nPress ENTER key when you are done.\033[0m\n")        
+        node.get_logger().info(f"{YELLOW}\n\nSTEP 3: Free-drive arm until apple in camera FOV. \nPress ENTER key when you are done.\n{RESET}")        
         input()    
        
         # Moveit 2 - Servo node
+        node.apple_probing_flag(False)
         node.swap_controller(node.gravity_controller, node.twist_controller)
-        time.sleep(0.5)  
-        node.get_logger().info("Enabling Moveit2 Servo Node for twist controller...")
+        time.sleep(SLEEP_TIME)          
         req = Trigger.Request()        
         node.servo_node_client.call_async(req)
-        time.sleep(0.5)        
+        node.get_logger().info("Moveit2 Servo Node enabled")
+        time.sleep(SLEEP_TIME)        
 
         # Start recording bag
-        robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
-
+        # robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
 
 
         # -------------- Step 4: Run lfd controller ----------------        
-        input("\n\033[1;32m\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\033[0m\n")     
+        node.get_logger().info(f"{YELLOW}\n\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\n{RESET}")     
+        input()
 
         node.DEBUGGING_MODE = False
         if node.DEBUGGING_MODE: node.initialize_debugging_mode_variables   
@@ -1484,15 +1502,15 @@ def main():
         node.get_logger().info(f"LFD approach actions saved to {csv_path}")               
 
 
-
         # -------------- Step 5: Dispose apple ----------------
-        input("\n\033[1;32m\nSTEP 5: Press ENTER key to dispose apple.\033[0m\n")
+        node.get_logger().info(f"{YELLOW}\n\nSTEP 5: Press ENTER key to dispose apple.\n{RESET}")
+        input()
         
         node.swap_controller(node.twist_controller, node.arm_controller)
-        time.sleep(1.0)  
+        time.sleep(SLEEP_TIME)  
 
         # Stop bag recording
-        stop_recording_bagfile(robot_rosbag_list)
+        # stop_recording_bagfile(robot_rosbag_list)
         node.save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))  
 
         # Check data
