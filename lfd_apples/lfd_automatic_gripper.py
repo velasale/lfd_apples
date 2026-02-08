@@ -3,12 +3,13 @@ from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.task import Future
 
-from std_msgs.msg import Int16MultiArray
+from std_msgs.msg import Int16MultiArray, Bool
 from std_srvs.srv import SetBool
 from geometry_msgs.msg import PoseStamped
 
 
 class GripperController(Node):
+
     def __init__(self):
         super().__init__('gripper_controller')
 
@@ -21,12 +22,14 @@ class GripperController(Node):
         self.pressure_threshold = self.get_parameter('pressure_threshold').value
         self.timer_value = self.get_parameter('release_timer').value
 
-        # Subscribers
+        # Topic Subscribers
         self.distance_sub = self.create_subscription(
             Int16MultiArray, 'microROS/sensor_data', self.gripper_sensors_callback, 10)
         self.eef_pose_sub = self.create_subscription(
             PoseStamped, '/franka_robot_state_broadcaster/current_pose', self.eef_pose_callback, 10)
-
+        self.probing_apple_sub = self.create_subscription(
+            Bool, 'lfd/apple_probing_apple', self.probing_apple_callback, 10)
+        
         # Service Clients
         self.valve_client = self.create_client(SetBool, 'microROS/toggle_valve')
         self.fingers_client = self.create_client(SetBool, 'microROS/move_stepper')
@@ -45,6 +48,7 @@ class GripperController(Node):
         self.flag_init = False
         self.cooldown = False  # NEW: prevents immediate rearming
         self.auto_off_timer = None
+        self.flag_probing_apple = False
 
         # Parameters
         self.apple_disposal_coord = [-0.46, 0.47, 0.22]       
@@ -63,48 +67,51 @@ class GripperController(Node):
 
     # ----------------------- Main Sensor Callback -----------------------
     def gripper_sensors_callback(self, msg: Int16MultiArray):
-        if (not self.cooldown) and (not self.flag_init):
-            self.get_logger().info("--- State 0 ---: Initialization: Valve OFF, Fingers IN")
-            self.fingers_and_valve_reset()
-            self.flag_init = True
 
-        # Target close
-        if (not self.cooldown) and (not self.flag_distance) and (0 < msg.data[3] < self.distance_threshold):
-            self.get_logger().info(f"--- State 1 ---: Target close ({msg.data[3]} < {self.distance_threshold}), valve ON")
-            req = SetBool.Request()
-            req.data = True
-            self.valve_client.call_async(req)
-            self.flag_distance = True
+        if not self.flag_probing_apple:
 
-        # Target moved away
-        elif self.flag_distance and (msg.data[3] > self.distance_threshold):
-            self.get_logger().info(f"--- State 0 ---: Target moved away ({msg.data[3]} > {self.distance_threshold}), resetting gripper")
-            req = SetBool.Request()
-            req.data = False
-            self.valve_client.call_async(req)
-            self.flag_distance = False
-            self.destroy_timer_safe("auto_off_timer")
+            if (not self.cooldown) and (not self.flag_init):
+                self.get_logger().info("--- State 0 ---: Initialization: Valve OFF, Fingers IN")
+                self.fingers_and_valve_reset()
+                self.flag_init = True
 
-        # Check pressure → engage fingers & start timer
-        cnt = 0
-        if msg.data[0] < self.pressure_threshold:
-            cnt +=1
-        if msg.data[1] < self.pressure_threshold:
-            cnt +=1
-        if msg.data[2] < self.pressure_threshold:
-            cnt +=1
+            # Target close
+            if (not self.cooldown) and (not self.flag_distance) and (0 < msg.data[3] < self.distance_threshold):
+                self.get_logger().info(f"--- State 1 ---: Target close ({msg.data[3]} < {self.distance_threshold}), valve ON")
+                req = SetBool.Request()
+                req.data = True
+                self.valve_client.call_async(req)
+                self.flag_distance = True
 
-        if (not self.cooldown) and (not self.flag_engagement) and cnt >1:
-            self.get_logger().info(f"--- State 2 ---: Pressures {msg.data[:3]} < {self.pressure_threshold}, cups engaged, deploying fingers")
-            req = SetBool.Request()
-            req.data = True
-            self.fingers_client.call_async(req)
-            self.flag_engagement = True
+            # Target moved away
+            elif self.flag_distance and (msg.data[3] > self.distance_threshold):
+                self.get_logger().info(f"--- State 0 ---: Target moved away ({msg.data[3]} > {self.distance_threshold}), resetting gripper")
+                req = SetBool.Request()
+                req.data = False
+                self.valve_client.call_async(req)
+                self.flag_distance = False
+                self.destroy_timer_safe("auto_off_timer")
 
-            # Start one-shot auto-off timer
-            if self.auto_off_timer is None:
-                self.get_logger().info(f"Starting auto-off timer ({self.timer_value} s)...")
-                self.auto_off_timer = self.create_timer(self.timer_value, self.auto_off_callback)
+            # Check pressure → engage fingers & start timer
+            cnt = 0
+            if msg.data[0] < self.pressure_threshold:
+                cnt +=1
+            if msg.data[1] < self.pressure_threshold:
+                cnt +=1
+            if msg.data[2] < self.pressure_threshold:
+                cnt +=1
+
+            if (not self.cooldown) and (not self.flag_engagement) and cnt >1:
+                self.get_logger().info(f"--- State 2 ---: Pressures {msg.data[:3]} < {self.pressure_threshold}, cups engaged, deploying fingers")
+                req = SetBool.Request()
+                req.data = True
+                self.fingers_client.call_async(req)
+                self.flag_engagement = True
+
+                # Start one-shot auto-off timer
+                if self.auto_off_timer is None:
+                    self.get_logger().info(f"Starting auto-off timer ({self.timer_value} s)...")
+                    self.auto_off_timer = self.create_timer(self.timer_value, self.auto_off_callback)
 
     # ----------------------- Auto-off Timer -----------------------
     def auto_off_callback(self):
@@ -129,6 +136,10 @@ class GripperController(Node):
             self.flag_disposal = True
             self.destroy_timer_safe("auto_off_timer")
             self.fingers_and_valve_reset()
+
+    def probing_apple_callback(self, msg: Bool):
+        
+        self.flag_probing_apple = msg.data
 
     # ----------------------- Reset Sequence -----------------------
     def fingers_and_valve_reset(self):
