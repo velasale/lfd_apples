@@ -109,12 +109,12 @@ def generate_launch_description():
             ),
 
 
-        # # Yolo Node
-        # Node(
-        #         package='lfd_apples',
-        #         executable='yolo_latent_node',
-        #         name='yolo_node',
-        #         output='screen'
-        # ),        
+        # Yolo Node
+        Node(
+                package='lfd_apples',
+                executable='yolo_latent_node',
+                name='yolo_node',
+                # output='screen'
+        ),        
             
     ])

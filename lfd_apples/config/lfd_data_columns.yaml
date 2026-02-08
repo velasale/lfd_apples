@@ -33,7 +33,7 @@ phases:
     - tof
     - air_pressure
     - wrench
-    # - joint_states.pos
+    - joint_states.pos
     - action_cols
     # - action_cols_at_base_frame
 

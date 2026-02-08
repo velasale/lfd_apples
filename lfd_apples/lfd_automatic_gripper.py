@@ -16,7 +16,7 @@ class GripperController(Node):
         # Parameters
         self.declare_parameter('distance_threshold', 60)   # mm
         self.declare_parameter('pressure_threshold', 600)  # hPa
-        self.declare_parameter('release_timer', 20)        # sec
+        self.declare_parameter('release_timer', 60)        # sec
 
         self.distance_threshold = self.get_parameter('distance_threshold').value
         self.pressure_threshold = self.get_parameter('pressure_threshold').value

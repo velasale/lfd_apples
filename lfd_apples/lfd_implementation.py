@@ -359,15 +359,15 @@ class LFDController(Node):
         # Converts 'm' and 'rad' deltas into m/s and rad/s
         # In our case, delta_eef_pose was calculated for delta_times = 0.001 sec, 
         # hence, we use a gain of 1000 (1/0.001sec) to convert m to m/sec.
-        self.DELTA_GAIN = 0#1000
+        self.DELTA_GAIN = 1200
         # self.DELTA_GAIN = 1500    # I used this one for command interface = position
 
         # PID GAINS
         # If using deltas, multiply by scaling factor
         # Send actions (twist)       
-        self.INITIAL_PI_GAIN = 0.0#1.0                    
-        self.POSITION_KP = 1.25  # 2.0
-        self.POSITION_KI = 0.025
+        self.INITIAL_PI_GAIN = 1.0                    
+        self.POSITION_KP = 1.5  # 2.0
+        self.POSITION_KI = 0.020
 
         PIXELS = 320
         DISTANCE_IN_M = 0.1   
@@ -553,13 +553,13 @@ class LFDController(Node):
         self.AIR_PRESSURE_THRESHOLD = 600       # units in hPa        
        
         # Gripper Signal Variables with Exponential Moving Average
-        self.ema_alpha = 0.5
+        self.ema_alpha = 0.75
         self.ema_scA = EMA(self.ema_alpha)
         self.ema_scB = EMA(self.ema_alpha)
         self.ema_scC = EMA(self.ema_alpha)
         self.ema_tof = EMA(self.ema_alpha)
         
-        self.ema_img = EMA(alpha = 0.2)
+        self.ema_img = EMA(alpha = 0.75)
 
         # Number of suction cups engaged
         self.scA_previous_state = False
@@ -879,29 +879,29 @@ class LFDController(Node):
             if self.scA < self.AIR_PRESSURE_THRESHOLD and not self.scA_previous_state:
                 self.scA_previous_state = True
                 self.scups_engaged +=1
-                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+                self.get_logger().warning(f" {self.scups_engaged} suction cups engaged")   
             if self.scB < self.AIR_PRESSURE_THRESHOLD and not self.scB_previous_state:
                 self.scB_previous_state = True
                 self.scups_engaged +=1
-                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+                self.get_logger().warning(f" {self.scups_engaged} suction cups engaged")   
             if self.scC < self.AIR_PRESSURE_THRESHOLD and not self.scC_previous_state:
                 self.scC_previous_state = True
                 self.scups_engaged +=1
-                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+                self.get_logger().warning(f" {self.scups_engaged} suction cups engaged")   
 
             # Decrease Count
             if self.scA > self.AIR_PRESSURE_THRESHOLD and self.scA_previous_state:
                 self.scA_previous_state = False
                 self.scups_engaged -=1
-                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+                self.get_logger().warning(f" {self.scups_engaged} suction cups engaged")   
             if self.scB > self.AIR_PRESSURE_THRESHOLD and self.scB_previous_state:
                 self.scB_previous_state = False
                 self.scups_engaged -=1
-                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+                self.get_logger().warning(f" {self.scups_engaged} suction cups engaged")   
             if self.scC > self.AIR_PRESSURE_THRESHOLD and self.scC_previous_state:
                 self.scC_previous_state = False
                 self.scups_engaged -=1
-                self.get_logger().info(f" {self.scups_engaged} suction cups engaged")   
+                self.get_logger().warning(f" {self.scups_engaged} suction cups engaged")   
         
 
         if self.running_lfd_pick:
@@ -1166,24 +1166,32 @@ class LFDController(Node):
                     self.sum_pos_y_error += self.bbox_pos_y_error
 
                     # Linear Velocities                   
-                    self.target_cmd.twist.linear.x = 1.0 * float(self.Y[0]) * self.DELTA_GAIN \
+                    self.target_cmd.twist.linear.x = 0.0 * (float(self.Y[0]) * self.DELTA_GAIN \
                                                         + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_x_error \
-                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_x_error
+                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_x_error)
 
-                    self.target_cmd.twist.linear.y = 1.0 * float(self.Y[1]) * self.DELTA_GAIN \
+                    self.target_cmd.twist.linear.y = 0.0 * (float(self.Y[1]) * self.DELTA_GAIN \
                                                         + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_y_error \
-                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error
+                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error)
 
-                    self.target_cmd.twist.linear.z = 1.0 * float(self.Y[2]) * self.DELTA_GAIN
+                    self.target_cmd.twist.linear.z = 1e-2 #1.0 * float(self.Y[2]) * self.DELTA_GAIN
 
                     # Angular Velocities
-                    self.target_cmd.twist.angular.x = 1.0 * float(self.Y[3]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.x = 0.0 * float(self.Y[3]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.y = 0.0 * float(self.Y[4]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.z = 0.0 * float(self.Y[5]) * self.DELTA_GAIN
 
+
+                    twist_array = np.array([self.target_cmd.twist.linear.x,
+                                            self.target_cmd.twist.linear.y,
+                                            self.target_cmd.twist.linear.z,
+                                            self.target_cmd.twist.angular.x,
+                                            self.target_cmd.twist.angular.y,
+                                            self.target_cmd.twist.angular.z
+                                            ])
 
                     actions_str = np.array2string(
-                        self.Y,
+                        twist_array,
                         precision=6,
                         suppress_small=True,
                         separator=' ',
@@ -1220,8 +1228,16 @@ class LFDController(Node):
                     self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
 
+                    twist_array = np.array([self.target_cmd.twist.linear.x,
+                                            self.target_cmd.twist.linear.y,
+                                            self.target_cmd.twist.linear.z,
+                                            self.target_cmd.twist.angular.x,
+                                            self.target_cmd.twist.angular.y,
+                                            self.target_cmd.twist.angular.z
+                                            ])
+
                     actions_str = np.array2string(
-                        self.Y,
+                        twist_array,
                         precision=6,
                         suppress_small=True,
                         separator=' ',
@@ -1261,8 +1277,16 @@ class LFDController(Node):
                     self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
 
+                    twist_array = np.array([self.target_cmd.twist.linear.x,
+                                            self.target_cmd.twist.linear.y,
+                                            self.target_cmd.twist.linear.z,
+                                            self.target_cmd.twist.angular.x,
+                                            self.target_cmd.twist.angular.y,
+                                            self.target_cmd.twist.angular.z
+                                            ])
+                    
                     actions_str = np.array2string(
-                        self.Y,
+                        twist_array,
                         precision=6,
                         suppress_small=True,
                         separator=' ',
@@ -1481,8 +1505,7 @@ def main():
         time.sleep(SLEEP_TIME)        
 
         # Start recording bag
-        # robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
-
+        robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
 
         # -------------- Step 4: Run lfd controller ----------------        
         node.get_logger().info(f"{YELLOW}\n\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\n{RESET}")     
@@ -1510,7 +1533,7 @@ def main():
         time.sleep(SLEEP_TIME)  
 
         # Stop bag recording
-        # stop_recording_bagfile(robot_rosbag_list)
+        stop_recording_bagfile(robot_rosbag_list)
         node.save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))  
 
         # Check data

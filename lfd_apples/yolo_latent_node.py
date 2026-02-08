@@ -186,8 +186,8 @@ class YoloLatentVector(Node):
 
                     bbox_center = [filtered_cx, filtered_cy]
 
-                # Bounding Box center at Image frame:
-                self.get_logger().info(f"BBox center at Image frame: {bbox_center}\n")               
+                # Bounding Box center at Image frame:                
+                # self.get_logger().info(f"BBox center at Image frame: {bbox_center}\n")               
                 cx_img_frame = int(bbox_center[0])
                 cy_img_frame = - int(bbox_center[1])             # Invert Y axis back for img frame 
                 cv2.circle(raw_image, (cx_img_frame, cy_img_frame), radius=5, color=(0, 0, 255), thickness=-1)
@@ -196,7 +196,7 @@ class YoloLatentVector(Node):
 
                 # Bounding Box center at TCP frame:
                 cx_tcp_frame, cy_tcp_frame = transform_point_image_to_frame(cx_img_frame, cy_img_frame, img_w/2, img_h/2, theta=angle)               
-                self.get_logger().info(f"Bbox center @ tcp frame: {cx_tcp_frame}, {cy_tcp_frame}\n")       
+                # self.get_logger().info(f"Bbox center @ tcp frame: {cx_tcp_frame}, {cy_tcp_frame}\n")       
                 cv2.putText(raw_image, f"({cx_tcp_frame},{cy_tcp_frame})", (cx_img_frame + 10, cy_img_frame),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 1)               
 

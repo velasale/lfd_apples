@@ -1114,7 +1114,7 @@ def stage_3_crop_data_to_task_phases():
 
         
         # === PHASE 2: CONTACT PHASE ===
-        PHASE_2_EXTRA_TIME_END = 2.0
+        PHASE_2_EXTRA_TIME_END = 1.0
         # End of phase 2: defined by at least two suction cups engaged
         idx_phase_2_end = find_end_of_phase_2_contact(df[idx_phase_2_start:], trial, air_pressure_threshold=600, n_cups=2)
         
@@ -1137,6 +1137,8 @@ def stage_3_crop_data_to_task_phases():
             plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
             plt.show()
         
+        # Adjust stast of contact
+        idx_phase_2_start -= int(0.5 * 30)
 
         # Crop and save
         idx_phase_3_start = idx_phase_2_end        
