@@ -220,7 +220,15 @@ class LoadPhaseController():
         x_n = self.normalize_x(x)
         y_n = self.MODEL(x_n)
         # print('normalized Y-Tensor shape:', y_n)
-        return self.denormalize_y(y_n)
+
+        y_dn = self.denormalize_y(y_n)
+
+        y_dn = y_dn.squeeze()
+
+        # Move tensor to cpu
+        y_dn = y_dn.detach().cpu().numpy()
+        
+        return y_dn
 
 
 
@@ -359,15 +367,15 @@ class LFDController(Node):
         # Converts 'm' and 'rad' deltas into m/s and rad/s
         # In our case, delta_eef_pose was calculated for delta_times = 0.001 sec, 
         # hence, we use a gain of 1000 (1/0.001sec) to convert m to m/sec.
-        self.DELTA_GAIN = 1200
+        self.DELTA_GAIN = 1100
         # self.DELTA_GAIN = 1500    # I used this one for command interface = position
 
         # PID GAINS
         # If using deltas, multiply by scaling factor
         # Send actions (twist)       
-        self.INITIAL_PI_GAIN = 1.0                    
-        self.POSITION_KP = 1.5  # 2.0
-        self.POSITION_KI = 0.020
+        self.INITIAL_PI_GAIN = 0.0                    
+        self.POSITION_KP = 1.25  # 2.0
+        self.POSITION_KI = 0.010
 
         PIXELS = 320
         DISTANCE_IN_M = 0.1   
@@ -1154,11 +1162,7 @@ class LFDController(Node):
                 else:
                     self.X = np.stack(self.approach_state_buffer)
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
-                    self.Y = self.APPROACH_CONTROLLER.forward(self.X_tensor)
-                    self.Y = self.Y.squeeze()  
-                    
-                    # Move tensor to cpu
-                    self.Y = self.Y.detach().cpu().numpy()
+                    self.Y = self.APPROACH_CONTROLLER.forward(self.X_tensor)                    
                 
 
                     # Adjust velocities with feedback from goal pose               
@@ -1216,17 +1220,15 @@ class LFDController(Node):
                     self.X = np.stack(self.contact_state_buffer)
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
                     self.Y = self.CONTACT_CONTROLLER.forward(self.X_tensor)
-
-                    self.Y = self.Y.squeeze()  
-                    self.Y = self.Y.detach().cpu().numpy()
+                  
 
                     # Twist predictions
-                    self.target_cmd.twist.linear.x = 0.0 * float(self.Y[0]) * self.DELTA_GAIN
-                    self.target_cmd.twist.linear.y = 0.0 * float(self.Y[1]) * self.DELTA_GAIN
-                    self.target_cmd.twist.linear.z = 0.025 #1.0 * float(self.Y[2]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.x = 0.0 * float(self.Y[3]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.y = 0.0 * float(self.Y[4]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.z = 0.0 * float(self.Y[5]) * self.DELTA_GAIN
+                    self.target_cmd.twist.linear.x = 1.0 * float(self.Y[0]) * self.DELTA_GAIN
+                    self.target_cmd.twist.linear.y = 1.0 * float(self.Y[1]) * self.DELTA_GAIN
+                    self.target_cmd.twist.linear.z = 1.0 * float(self.Y[2]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.x = 1.0 * float(self.Y[3]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
 
                     twist_array = np.array([self.target_cmd.twist.linear.x,
                                             self.target_cmd.twist.linear.y,
@@ -1265,9 +1267,7 @@ class LFDController(Node):
                     self.X = np.stack(self.pick_state_buffer)
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
                     self.Y = self.PICK_CONTROLLER.forward(self.X_tensor)
-
-                    self.Y = self.Y.squeeze()  
-                    self.Y = self.Y.detach().cpu().numpy()
+                   
 
                     # Twist predictions
                     self.target_cmd.twist.linear.x = 1.0 * float(self.Y[0]) * self.DELTA_GAIN
