@@ -321,21 +321,42 @@ class DatasetForLearning():
         # Plot distribution of Y_train_norm. All values should be around the same order of magnitude
         plt.figure(figsize=(12, 8))
         for i in range(3):
-            # Linear velocities (left column)
-            plt.subplot(3, 2, 2*i + 1)
-            plt.hist(self.Y_train_norm[:, i], bins=50, alpha=0.7)
-            plt.title(f'Linear velocity component {i}')
-            plt.xlabel('Value')
-            plt.ylabel('Frequency')
-            plt.grid(True)
 
-            # Angular velocities (right column)
-            plt.subplot(3, 2, 2*i + 2)
-            plt.hist(self.Y_train_norm[:, i + 3], bins=50, alpha=0.7)
-            plt.title(f'Angular velocity component {i}')
-            plt.xlabel('Value')
-            plt.ylabel('Frequency')
-            plt.grid(True)
+            if i< 3:
+                # Linear velocities (left column)
+                plt.subplot(4, 2, 2*i + 1)
+                plt.hist(self.Y_train_norm[:, i], bins=50, alpha=0.7)
+                plt.title(f'Linear velocity component {i}')
+                plt.xlabel('Value')
+                plt.ylabel('Frequency')
+                plt.grid(True)
+
+                # Angular velocities (right column)
+                plt.subplot(4, 2, 2*i + 2)
+                plt.hist(self.Y_train_norm[:, i + 3], bins=50, alpha=0.7)
+                plt.title(f'Angular velocity component {i}')
+                plt.xlabel('Value')
+                plt.ylabel('Frequency')
+                plt.grid(True)
+            
+            if i == 3:
+                plt.subplot(4, 2, 2*i + 1)
+                plt.hist(self.Y_train_norm[:, i + 3], bins=50, alpha=0.7)
+                plt.title(f'suction')
+                plt.xlabel('Value')
+                plt.ylabel('Frequency')
+                plt.grid(True)
+
+                plt.subplot(4, 2, 2*i + 2)
+                plt.hist(self.Y_train_norm[:, i + 4], bins=50, alpha=0.7)
+                plt.title(f'fingers')
+                plt.xlabel('Value')
+                plt.ylabel('Frequency')
+                plt.grid(True)
+        
+
+
+        # Also plot Gripper Actions
 
         plt.tight_layout()
         plt.savefig(os.path.join(self.DESTINATION_PATH, 'Y_train_normalized_distribution.png'), dpi=300)

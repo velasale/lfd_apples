@@ -542,5 +542,5 @@ if __name__ == '__main__':
     # plot_batch_trials()
    
     # phases_stats_from_reading_entire_trial()
-    # phases_stats_from_last_row()
-    compare_losses_plots()
+    phases_stats_from_last_row()
+    # compare_losses_plots()

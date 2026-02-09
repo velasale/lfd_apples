@@ -63,7 +63,7 @@ class LSTMRegressor(nn.Module):
     
 
 
-def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=1e-5):
+def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=1e-4):
     '''
     Docstring for train
     
@@ -202,7 +202,7 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
     test_ds   = TensorDataset(lfd_dataset.X_test_tensor_norm, lfd_dataset.Y_test_tensor_norm)
 
      
-    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=False)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE)
     test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE)
 
@@ -282,10 +282,10 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
 if __name__ == '__main__':
 
     # Models Parameters
-    phases = ['phase_2_contact']
-    hidden_dim_list = [64]
-    num_layers_list = [1]
-    seq_lens = [5]
+    phases = ['phase_1_approach']
+    hidden_dim_list = [1024]
+    num_layers_list = [2]
+    seq_lens = [30]
 
     # Train model for each combination
     for phase in phases:
@@ -306,7 +306,7 @@ if __name__ == '__main__':
 
                     print(f'\n--- Number of Hidden dim: {hidden_dim} ---')
 
-                    lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=8, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
-                    # lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=64, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
+                    # lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=8, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
+                    lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=64, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
     
         

@@ -263,6 +263,8 @@ def apple_pose_ground_truth(df, apple_location_index):
     ''' Get ground truth of apple location
     '''
 
+    APPLE_DIAMETER = 80E-3     # Apple diameter in m
+
     # @ base frame
     apple_pose_at_base_ground_truth = df.iloc[apple_location_index][['_pose._position._x', '_pose._position._y', '_pose._position._z']]    
     df['apple._x._base'] = apple_pose_at_base_ground_truth.values[0]
@@ -285,6 +287,10 @@ def apple_pose_ground_truth(df, apple_location_index):
     p_apple_ee = np.einsum("nij,nj->ni", R_base_ee.transpose(0, 2, 1), delta_base)
 
     df[["apple._x._ee", "apple._y._ee", "apple._z._ee"]] = p_apple_ee
+
+    # Adjust the location of the apple
+    # When tof is 50mm, the location of the center needs to be adjusted in the z axis by apple radius
+    df[["apple._z._ee"]] += APPLE_DIAMETER/2
 
 
     return df
@@ -348,6 +354,47 @@ def check_singularity(df):
     
     else:
         return False
+
+
+def define_gripper_action(df, action, air_idx, value):    
+    
+    df.loc[int(air_idx):, action] = value
+
+    return df
+    
+
+def check_suction_off(df, trial):
+    
+    scA_f = pd.Series(
+        df['scA'].to_numpy(),
+        index=df.index
+    )
+    scB_f = pd.Series(
+        df['scB'].to_numpy(),
+        index=df.index
+    )
+    scC_f = pd.Series(
+        df['scC'].to_numpy(),
+        index=df.index
+    )
+
+    air_upper_threshold = 980
+
+    num_below = (
+        (scA_f > air_upper_threshold).astype(int) +
+        (scB_f > air_upper_threshold).astype(int) +
+        (scC_f > air_upper_threshold).astype(int)
+    )
+
+    # Index when at least two cups are engaged:
+    idxs = num_below[num_below >= 3].index
+
+    if idxs.empty:
+        print(f'No air turned off detected in {trial}')
+        return None
+   
+    return idxs[0]
+
 
 # ============ Topic-specific downsampling functions ===========
 def downsample_pressure_and_tof_data(df, raw_data_path, compare_plots=True):
@@ -718,6 +765,7 @@ def find_end_of_phase_2_contact(df, trial, air_pressure_threshold=600, n_cups=2)
         (scC_f < air_pressure_threshold).astype(int)
     )
 
+    # Index when at least two cups are engaged:
     idxs = num_below[num_below >= 2].index
 
     if idxs.empty:
@@ -1075,24 +1123,28 @@ def stage_3_crop_data_to_task_phases():
         print(f'\nCropping {trial} into task phases...')        
 
         df = pd.read_csv(os.path.join(SOURCE_PATH, trial))        
+
+        df['suction'] = 0.0
+        df['fingers'] = 0.0
                 
         # ------------------------ First: Define cropping indices --------------------------        
 
         # === PHASE 1: APPROACH PHASE ===
-        PHASE_1_EXTRA_TIME_END = 0.5
+        PHASE_1_EXTRA_TIME_END = 1.0
         # End of phase 1: defined by tof < 5cm (contact)        
-        idx_phase_1_end, idx_phase_2_start = find_end_of_phase_1_approach(df, trial, tof_threshold=60)
+        idx_phase_1_end, idx_phase_2_start = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
         if idx_phase_1_end is None:
             trials_without_contact.append(trial)
             continue  # Skip cropping for this trial
         elif idx_phase_1_end == "Multiple":
             trials_with_multiple_contacts.append(trial)
-            continue
-        
+            continue           
 
         # Get apple pose @ base and @tcp frame   
-        df = apple_pose_ground_truth(df, idx_phase_1_end)
+        df = apple_pose_ground_truth(df, idx_phase_1_end)        
 
+        # Add gripper actions
+        df = define_gripper_action(df, 'suction', idx_phase_1_end, 1.0)
 
         # Plot approach phase
         if plot_phase_triggers:
@@ -1105,7 +1157,7 @@ def stage_3_crop_data_to_task_phases():
         
 
         # Crop and save
-        phase_1_time = 9.0  # in seconds
+        phase_1_time = 8.0  # in seconds
         idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
         idx_phase_1_end += int(PHASE_1_EXTRA_TIME_END * 30)
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]        
@@ -1122,6 +1174,9 @@ def stage_3_crop_data_to_task_phases():
             trials_without_engagement.append(trial)
             continue  # Skip cropping for this trial
 
+        # Add gripper actions
+        df = define_gripper_action(df, 'fingers', idx_phase_2_end + 0.5*30, 1.0)
+        
         # Safety check
         if idx_phase_2_end < idx_phase_2_start:
             input(f"Issue with end and start of Contact phase: {trial} ")
@@ -1137,8 +1192,11 @@ def stage_3_crop_data_to_task_phases():
             plt.axvline(x=time_ref, color='red', linestyle='--', label='Phase 3 End')    
             plt.show()
         
-        # Adjust stast of contact
-        idx_phase_2_start -= int(0.5 * 30)
+        # Adjust start of contact
+        # idx_phase_2_start -= int(0.5 * 30)
+
+        # Get gripper actions
+
 
         # Crop and save
         idx_phase_3_start = idx_phase_2_end        
@@ -1171,10 +1229,17 @@ def stage_3_crop_data_to_task_phases():
             input(f"Issue with end and start of Contact phase: {trial} ")
 
         if check_singularity(df):
-            continue
+            continue        
 
         # Crop and save
         df_phase_3 = df.iloc[idx_phase_3_start:idx_phase_3_end][['timestamp_vector'] + phase_3_pick_cols]
+
+        # Check if the cropped time suction was switched off
+        idx_off = check_suction_off(df_phase_3, trial)
+        if idx_off:
+            df_phase_3 = define_gripper_action(df_phase_3, 'suction', idx_off, 0.0)
+
+
         df_phase_3.to_csv(os.path.join(DESTINATION_PATH, 'phase_3_pick', f"{base_filename}_(phase_3_pick).csv"), index=False)
 
         
@@ -1202,6 +1267,9 @@ def stage_3_crop_data_to_task_phases():
         print(f'\nONLY HUMAN TRIALS - Cropping {trial} into approach phase...')
 
         df = pd.read_csv(os.path.join(SOURCE_PATH_ONLY_APPROACH, trial))        
+
+        df['suction'] = 0.0
+        df['fingers'] = 0.0
                 
         # ------------------------ First: Define cropping indices --------------------------
         # End of phase 1: defined by tof < 5cm (contact)        
@@ -1214,7 +1282,10 @@ def stage_3_crop_data_to_task_phases():
             continue
         
         # Get apple pose @ base and @tcp frame   
-        df = apple_pose_ground_truth(df, idx_phase_1_end)
+        df = apple_pose_ground_truth(df, idx_phase_1_end)        
+
+        # Add gripper actions
+        df = define_gripper_action(df, 'suction', idx_phase_1_end, 1.0)
 
         phase_1_time = 7.0  # in seconds
         idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
@@ -1399,13 +1470,13 @@ if __name__ == '__main__':
 
     # stage_1_align_and_downsample()
     # stage_2_transform_data_to_eef_frame()
-    stage_3_crop_data_to_task_phases()   
+    # stage_3_crop_data_to_task_phases()   
    
-    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
     # # phases = ['phase_1_approach']    
-    # for phase in phases:
-    #     for step in [0]:
-    #         stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
+    for phase in phases:
+        for step in [0]:
+            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)

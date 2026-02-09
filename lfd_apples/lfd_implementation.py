@@ -548,7 +548,7 @@ class LFDController(Node):
 
         # Thresholds
         # TOF threshold is used to switch from 'approach' to 'contact' phase
-        self.TOF_THRESHOLD = 60                 # units in mm
+        self.TOF_THRESHOLD = 40                 # units in mm
         # Air pressure threshold is used to tell when a suction cup has engaged.
         self.AIR_PRESSURE_THRESHOLD = 600       # units in hPa        
        
@@ -1174,7 +1174,7 @@ class LFDController(Node):
                                                         + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_y_error \
                                                         + self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error)
 
-                    self.target_cmd.twist.linear.z = 1e-2 #1.0 * float(self.Y[2]) * self.DELTA_GAIN
+                    self.target_cmd.twist.linear.z = 0.025 #1.0 * float(self.Y[2]) * self.DELTA_GAIN
 
                     # Angular Velocities
                     self.target_cmd.twist.angular.x = 0.0 * float(self.Y[3]) * self.DELTA_GAIN
@@ -1221,12 +1221,12 @@ class LFDController(Node):
                     self.Y = self.Y.detach().cpu().numpy()
 
                     # Twist predictions
-                    self.target_cmd.twist.linear.x = 1.0 * float(self.Y[0]) * self.DELTA_GAIN
-                    self.target_cmd.twist.linear.y = 1.0 * float(self.Y[1]) * self.DELTA_GAIN
-                    self.target_cmd.twist.linear.z = 1.0 * float(self.Y[2]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.x = 1.0 * float(self.Y[3]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
+                    self.target_cmd.twist.linear.x = 0.0 * float(self.Y[0]) * self.DELTA_GAIN
+                    self.target_cmd.twist.linear.y = 0.0 * float(self.Y[1]) * self.DELTA_GAIN
+                    self.target_cmd.twist.linear.z = 0.025 #1.0 * float(self.Y[2]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.x = 0.0 * float(self.Y[3]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.y = 0.0 * float(self.Y[4]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.z = 0.0 * float(self.Y[5]) * self.DELTA_GAIN
 
                     twist_array = np.array([self.target_cmd.twist.linear.x,
                                             self.target_cmd.twist.linear.y,

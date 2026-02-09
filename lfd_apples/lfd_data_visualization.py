@@ -972,10 +972,10 @@ if __name__ == '__main__':
     # main()
    
     model = {'model': 'lstm',
-             'SEQ_LEN': 5,
-             'num_layers': 1,
-             'hidden_dim': 64,
-             'n_inputs': 7}
+             'SEQ_LEN': 30,
+             'num_layers': 2,
+             'hidden_dim': 1024,
+             'n_inputs': 68}
     
 
     # model = {'model': 'mlp',                            # 'mlp', 'rf'
@@ -983,7 +983,7 @@ if __name__ == '__main__':
     #          }                
 
     infer_actions(model,
-                  PHASE = 'phase_2_contact', 
+                  PHASE = 'phase_1_approach', 
                   TRIALS_SET = 'test_trials.csv',
                   TRIAL_ID = 'random')     # either 'random' or an int number
    

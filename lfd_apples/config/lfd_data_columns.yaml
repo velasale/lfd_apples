@@ -74,6 +74,9 @@ action_cols:
   - Δ_ori_eef._y._eef_frame
   - Δ_ori_eef._z._eef_frame
 
+  # Gripper actions
+  # - suction
+  # - fingers
 
 # ======================= STATE SPACE ========================
 # --- Prior knowledge ---
