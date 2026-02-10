@@ -7,6 +7,7 @@ phases:
     # - inhand_cam_bbox
     # - joint_states.pos
     - apple_prior    
+    # - suction
     - action_cols
     # - action_cols_at_base_frame
 
@@ -14,18 +15,22 @@ phases:
   phase_2_contact:
     - tof
     - air_pressure
-    # - wrench
-    # - joint_states.pos
+    - wrench
+    # - joint_states.pos    
     - apple_prior    
+    # - suction
+    # - fingers
     - action_cols
     # - action_cols_at_base_frame
 
   phase_3_pick:
-    - tof
-    - air_pressure
+    # - tof
+    # - air_pressure
     - wrench
     # - joint_states.pos
     - apple_prior
+    # - suction
+    # - fingers
     - action_cols
     # - action_cols_at_base_frame
 
@@ -97,6 +102,12 @@ air_pressure:
 
 tof:
   - tof
+
+suction:
+  - suction
+
+fingers:
+  - fingers
 
 inhand_cam_features:
   prefix: "f"

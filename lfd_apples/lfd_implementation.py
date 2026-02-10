@@ -273,12 +273,7 @@ class LFDController(Node):
             PoseStamped,
             '/franka_robot_state_broadcaster/current_pose',
             self.eef_pose_callback,
-            10)        
-        self.eef_pose_sub = self.create_subscription(
-            PoseStamped,
-            '/franka_robot_state_broadcaster/current_pose',
-            self.eef_pose_callback,
-            10)        
+            10)               
         self.eef_wrench_sub = self.create_subscription(
             WrenchStamped,
             '/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame',
@@ -484,6 +479,7 @@ class LFDController(Node):
 
         self.apple_pose_min_dist = 1e3
 
+        # State and Actions book-keeping
         self.lfd_states_df = pd.DataFrame()
         self.lfd_actions_df = pd.DataFrame()              
 
@@ -497,6 +493,9 @@ class LFDController(Node):
         self.APPROACH_CONTROLLER = LoadPhaseController(self.APPROACH_MODEL_PARAMS, self.device)
         self.CONTACT_CONTROLLER = LoadPhaseController(self.CONTACT_MODEL_PARAMS, self.device)
         self.PICK_CONTROLLER = LoadPhaseController(self.PICK_MODEL_PARAMS, self.device)        
+
+        # Actions
+        self.current_twist_cmd_base = np.array([0.0, 0.0, 0.0])
 
 
     def initialize_debugging_mode_variables(self, trial='trial_1'):
@@ -574,6 +573,11 @@ class LFDController(Node):
         self.scB_previous_state = False
         self.scC_previous_state = False
         self.scups_engaged = 0
+
+        self.prev_time = None
+        self.sum_vel_x_error = 0.0
+        self.sum_vel_y_error = 0.0
+        self.sum_vel_z_error = 0.0
 
 
     def initialize_arm_poses(self):            
@@ -1056,7 +1060,7 @@ class LFDController(Node):
            
 
     def eef_pose_callback(self, msg: PoseStamped):       
-
+        
         # get pose
         self.eef_pos_x = msg.pose.position.x
         self.eef_pos_y = msg.pose.position.y
@@ -1074,11 +1078,37 @@ class LFDController(Node):
                                   self.eef_ori_z,
                                   self.eef_ori_w])
         
-        # self.eef_pos_x_error = self.goal_pose[0] - self.eef_pos_x
-        # self.eef_pos_y_error = self.goal_pose[1] - self.eef_pos_y
-        # self.eef_pos_z_error = self.goal_pose[2] - self.eef_pos_z
+        # TCP velocities
+        t = msg.header.stamp.sec + 1e-9 * msg.header.stamp.nanosec
+        p = np.array([
+            msg.pose.position.x,
+            msg.pose.position.y,
+            msg.pose.position.z
+        ])
 
-        # Update sensors average since last action
+        q = np.array([
+            msg.pose.orientation.x,
+            msg.pose.orientation.y,
+            msg.pose.orientation.z,
+            msg.pose.orientation.w
+        ])
+
+        if self.prev_time is not None:
+            dt = t - self.prev_time
+            if dt > 1e-4:
+                self.v_base = (p - self.prev_p) / dt
+
+                # Optional angular velocity
+                R_prev = R.from_quat(self.prev_q)
+                R_now  = R.from_quat(q)
+                R_err = R_prev.inv() * R_now
+                self.omega_base = R_err.as_rotvec() / dt
+
+        self.R_now = R.from_quat(q).as_matrix()
+
+        self.prev_p = p
+        self.prev_q = q
+        self.prev_time = t        
     
 
     def joint_states_callback(self, msg: JointState):
@@ -1161,9 +1191,15 @@ class LFDController(Node):
                     pass
                 else:
                     self.X = np.stack(self.approach_state_buffer)
+
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
                     self.Y = self.APPROACH_CONTROLLER.forward(self.X_tensor)                    
+                    # Note: These twists are given in the tcp frame.
                 
+                    # Save state and action rows in DataFrames
+                    self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)
+                    self.lfd_actions_df = pd.concat([self.lfd_actions_df, pd.DataFrame([self.Y[-1]])], ignore_index=True)
+
 
                     # Adjust velocities with feedback from goal pose               
                     self.sum_pos_x_error += self.bbox_pos_x_error
@@ -1178,12 +1214,20 @@ class LFDController(Node):
                                                         + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_y_error \
                                                         + self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error)
 
-                    self.target_cmd.twist.linear.z = 0.025 #1.0 * float(self.Y[2]) * self.DELTA_GAIN
+                    self.target_cmd.twist.linear.z = 0.01 #1.0 * float(self.Y[2]) * self.DELTA_GAIN
 
                     # Angular Velocities
                     self.target_cmd.twist.angular.x = 0.0 * float(self.Y[3]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.y = 0.0 * float(self.Y[4]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.z = 0.0 * float(self.Y[5]) * self.DELTA_GAIN
+
+
+                    #============= Transform twist from tcp to base ===========
+                    current_twist_cmd_tcp = np.array([self.target_cmd.twist.linear.x,
+                                                    self.target_cmd.twist.linear.y,
+                                                    self.target_cmd.twist.linear.z])
+                    
+                    self.current_twist_cmd_base = self.R_now @ current_twist_cmd_tcp
 
 
                     twist_array = np.array([self.target_cmd.twist.linear.x,
@@ -1220,6 +1264,10 @@ class LFDController(Node):
                     self.X = np.stack(self.contact_state_buffer)
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
                     self.Y = self.CONTACT_CONTROLLER.forward(self.X_tensor)
+
+                    # Save state and action rows in DataFrames
+                    self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)
+                    self.lfd_actions_df = pd.concat([self.lfd_actions_df, pd.DataFrame([self.Y[-1]])], ignore_index=True)
                   
 
                     # Twist predictions
@@ -1267,6 +1315,10 @@ class LFDController(Node):
                     self.X = np.stack(self.pick_state_buffer)
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
                     self.Y = self.PICK_CONTROLLER.forward(self.X_tensor)
+
+                    # Save state and action rows in DataFrames
+                    self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)
+                    self.lfd_actions_df = pd.concat([self.lfd_actions_df, pd.DataFrame([self.Y[-1]])], ignore_index=True)
                    
 
                     # Twist predictions
@@ -1311,6 +1363,11 @@ class LFDController(Node):
         self.running_lfd_approach = True
         self.sum_pos_x_error = 0.0
         self.sum_pos_y_error = 0.0
+
+        self.sum_vel_x_error = 0.0
+        self.sum_vel_y_error = 0.0
+        self.sum_vel_z_error = 0.0
+
         self.PI_GAIN = self.INITIAL_PI_GAIN     
 
         # Rviz: Clear previous trail       
@@ -1342,12 +1399,29 @@ class LFDController(Node):
         self.last_cmd_time = self.get_clock().now()
 
         if dt <= 0.0:
-            return
+            return             
      
-        
-        self.current_cmd.twist = self.target_cmd.twist  
-        self.current_cmd.header.frame_id = "fr3_hand_tcp"
 
+        #============= Feedback from current tcp speed ============
+        kp= 3
+        ki= 0.5
+        vel_x_error = self.current_twist_cmd_base[0] - self.v_base[0]
+        vel_y_error = self.current_twist_cmd_base[1] - self.v_base[1]
+        vel_z_error = self.current_twist_cmd_base[2] - self.v_base[2]
+
+        self.sum_vel_x_error += vel_x_error
+        self.sum_vel_y_error += vel_y_error
+        self.sum_vel_z_error += vel_z_error
+
+        self.current_cmd.twist.linear.x = kp*vel_x_error + ki*self.sum_vel_x_error
+        self.current_cmd.twist.linear.y = kp*vel_y_error + ki*self.sum_vel_y_error
+        self.current_cmd.twist.linear.z = kp*vel_z_error + ki*self.sum_vel_z_error
+
+        # self.v_base is computed at base 
+        self.current_cmd.header.frame_id = "fr3_link0"
+
+        # self.current_cmd.header.frame_id = "fr3_hand_tcp"
+        
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
         self.servo_pub.publish(self.current_cmd)
 

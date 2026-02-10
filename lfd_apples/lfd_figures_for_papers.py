@@ -446,23 +446,26 @@ def compare_losses_plots():
     base = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)'   
 
     phases = ['phase_1_approach']    
-    inputs_list = [['tof__inhand_cam_features__apple_prior']]    
+    inputs_list = [['tof__inhand_cam_features__apple_prior', 'tof__inhand_cam_features__apple_prior__suction']]    
 
-    phases = ['phase_2_contact'] 
-    inputs_list = [['tof__air_pressure__wrench__apple_prior', 'tof__air_pressure__apple_prior']]    
+    # phases = ['phase_2_contact'] 
+    # inputs_list = [['tof__air_pressure__apple_prior__suction__fingers', 'tof__air_pressure__apple_prior']]    
 
     # phases = ['phase_3_pick']
     # inputs_list = [['tof__air_pressure__wrench__apple_prior',
-    #                 'tof__air_pressure__wrench',
-    #                 'tof__wrench__apple_prior'
+    #                 'tof__air_pressure__wrench__apple_prior__suction__fingers',
+    #                 # 'tof__air_pressure__wrench',
+    #                 # 'tof__wrench__apple_prior'
     #                 ]]
 
     
     for phase, inputs in zip(phases, inputs_list):       
 
+        plt.figure(figsize=(10, 5))
+
         for input in inputs:
 
-            plt.figure(figsize=(10, 5))
+            
 
             npz_folder = os.path.join(base, phase, '0_timesteps', input)
 
@@ -498,9 +501,9 @@ def compare_losses_plots():
                 
                 # plt.figure(figsize=(10, 5))
 
-                # plt.plot(filtered_train_loss, label=f'Tr Loss {name}', color=color, linestyle='--')
+                plt.plot(filtered_train_loss, label=f'Tr Loss {name}', color=color, linestyle='--')
                 plt.plot(filtered_val_loss, label=f'Val Loss {name}', color=color)
-                # plt.plot(train_loss, color=color, alpha=0.4)
+                plt.plot(train_loss, color=color, alpha=0.4)
                 plt.plot(val_loss, color=color, alpha=0.4)
                 plt.text(
                     x_tr,
@@ -521,12 +524,12 @@ def compare_losses_plots():
                 )
                 
 
-            plt.xlabel('Epochs')
-            plt.ylabel('Loss')
-            plt.title(f'Training and Validation Loss Over Time\n{phase}\n{input}')
-            plt.ylim([0,1])
-            plt.legend()
-            plt.grid(True)
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.title(f'Training and Validation Loss Over Time\n{phase}\n{input}')
+        plt.ylim([0,1])
+        plt.legend()
+        plt.grid(True)
         
     plt.show()
             
@@ -542,5 +545,5 @@ if __name__ == '__main__':
     # plot_batch_trials()
    
     # phases_stats_from_reading_entire_trial()
-    phases_stats_from_last_row()
-    # compare_losses_plots()
+    # phases_stats_from_last_row()
+    compare_losses_plots()

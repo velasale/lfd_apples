@@ -975,7 +975,7 @@ if __name__ == '__main__':
              'SEQ_LEN': 30,
              'num_layers': 2,
              'hidden_dim': 1024,
-             'n_inputs': 68}
+             'n_inputs': 13}
     
 
     # model = {'model': 'mlp',                            # 'mlp', 'rf'
@@ -983,7 +983,7 @@ if __name__ == '__main__':
     #          }                
 
     infer_actions(model,
-                  PHASE = 'phase_1_approach', 
+                  PHASE = 'phase_3_pick', 
                   TRIALS_SET = 'test_trials.csv',
                   TRIAL_ID = 'random')     # either 'random' or an int number
    

@@ -282,10 +282,10 @@ def lfd_lstm(SEQ_LEN=10, BATCH_SIZE = 4, phase='phase_1_approach', hidden_dim = 
 if __name__ == '__main__':
 
     # Models Parameters
-    phases = ['phase_1_approach']
+    phases = ['phase_3_pick', 'phase_1_approach']
     hidden_dim_list = [1024]
     num_layers_list = [2]
-    seq_lens = [30]
+    seq_lens = [30, 40, 50]
 
     # Train model for each combination
     for phase in phases:
