@@ -12,16 +12,16 @@ def plot_trial(trial_path, plot_channels = False):
     trial_df = pd.read_csv(trial_path)
 
     time = trial_df['timestamp_vector'].values
-    tof = trial_df['tof'].values
+    tof = trial_df['tof'].values / 10
 
-    scA = trial_df['scA'].values #/ 10
-    scB = trial_df['scB'].values #/ 10
-    scC = trial_df['scC'].values #/ 10
+    scA = trial_df['scA'].values / 10
+    scB = trial_df['scB'].values / 10
+    scC = trial_df['scC'].values / 10
 
 
     # # --- Air Pressure Signals Check
     # Aire Pressure Lower threshold
-    pr_dn_thr = 220
+    pr_dn_thr = 22 # 220
     if (scA < pr_dn_thr).any() or (scB < pr_dn_thr).any() or (scC < pr_dn_thr).any():
         trial_n = trial_path.split('trial_')[1]
         trial_n = trial_n.split('_downsampled')[0]
@@ -45,7 +45,7 @@ def plot_trial(trial_path, plot_channels = False):
 
 
     # Air Pressure Upper Threshold
-    pr_up_thr = 1100
+    pr_up_thr = 110 #1100
     if (scA > pr_up_thr).any() or (scB > pr_up_thr).any() or (scC > pr_up_thr).any():
         trial_n = trial_path.split('trial_')[1]
         trial_n = trial_n.split('_downsampled')[0]
@@ -86,25 +86,25 @@ def plot_trial(trial_path, plot_channels = False):
     idx_max_fnet = np.argmax(fnet)
     time_max_fnet = time[idx_max_fnet]
 
-    idx_tof_thr = np.where(tof < 50)[0]
+    idx_tof_thr = np.where(tof < 5)[0]
     time_tof_thr = time[idx_tof_thr[0]]
 
     try:
-        idx_sca_thr = np.where(scA < 600)[0]
+        idx_sca_thr = np.where(scA < 60)[0]
         time_sca_thr = time[idx_sca_thr][0]
     except IndexError:
         time_sca_thr = 0
 
 
     try:
-        idx_scb_thr = np.where(scB < 600)[0]
+        idx_scb_thr = np.where(scB < 60)[0]
         time_scb_thr = time[idx_scb_thr][0]
     except IndexError:
         time_scb_thr = 0
 
 
     try:
-        idx_scc_thr = np.where(scC < 600)[0]
+        idx_scc_thr = np.where(scC < 60)[0]
         time_scc_thr = time[idx_scc_thr][0]
     except IndexError:
         time_scc_thr = 0
@@ -126,10 +126,11 @@ def plot_trial(trial_path, plot_channels = False):
     pick_end = time_max_fnet + 1.5
 
 
-    
+    plot_channels = True
 
     if plot_channels: 
-        fig, ax_tof = plt.subplots(figsize=(10, 5))
+        # fig, ax_tof = plt.subplots(figsize=(9, 5))      # Size for Demontrations Figure
+        fig, ax_tof = plt.subplots(figsize=(7.25, 5))  # Size for Demontrations Figure
 
         # === Shade background for phases ===
         ax_tof.axvspan(approach_start, approach_end, color='tab:blue', alpha=0.1, label='Approach')
@@ -138,47 +139,47 @@ def plot_trial(trial_path, plot_channels = False):
 
         # === ToF axis (left) ===
         color_tof = 'tab:blue'
-        ax_tof.plot(time, tof, color=color_tof, label='ToF', linewidth=2.0)
+        ax_tof.plot(time, tof, color=color_tof, label='TOF', linewidth=2.0)
         ax_tof.set_xlabel('Elapsed time [s]')
-        ax_tof.set_ylabel('ToF [mm]', color=color_tof)
+        ax_tof.set_ylabel('TOF [cm]', color=color_tof)
         ax_tof.tick_params(axis='y', colors=color_tof)
-        ax_tof.set_ylim(0, 320)
+        ax_tof.set_ylim(0, 32)
 
         # --- ToF threshold ---
-        ax_tof.axhline(50, color=color_tof, linestyle=':', linewidth=1)
+        ax_tof.axhline(5, color=color_tof, linestyle=':', linewidth=1)
         ax_tof.text(
-            time[10], 50,
-            'ToF approach threshold= 50 mm',
+            time[10]+6, 5,
+            'TOF threshold',
             color=color_tof,
             va='bottom', ha='left',
-            fontsize=12
+            fontsize=14
         )
 
         # === Suction cups axis (right 1) ===
         ax_sc = ax_tof.twinx()
         color_sc = 'tab:orange'
-        ax_sc.plot(time, scA, '--', color=color_sc, label='SC A', linewidth=2.0)
-        ax_sc.plot(time, scB, '--', color=color_sc, alpha=0.7, label='SC B', linewidth=2.0)
-        ax_sc.plot(time, scC, '--', color=color_sc, alpha=0.4, label='SC C', linewidth=2.0)
-        ax_sc.set_ylabel('Air pressure [hPa]', color=color_sc)
+        ax_sc.plot(time, scA, '--', color=color_sc, label='scA', linewidth=2.0)
+        ax_sc.plot(time, scB, '--', color=color_sc, alpha=0.7, label='scB', linewidth=2.0)
+        ax_sc.plot(time, scC, '--', color=color_sc, alpha=0.4, label='scC', linewidth=2.0)
+        ax_sc.set_ylabel('Air pressure [kPa]', color=color_sc, labelpad=-3)
         ax_sc.tick_params(axis='y', colors=color_sc)
-        ax_sc.set_ylim(0, 1500)
+        ax_sc.set_ylim(0, 120)
 
         # --- Pressure threshold ---
-        ax_sc.axhline(600, color=color_sc, linestyle=':', linewidth=1)
+        ax_sc.axhline(60, color=color_sc, linestyle=':', linewidth=1)
         ax_sc.text(
-            time[10], 600,
-            'Air Pressure contact threshold= 600',
+            time[10]+6, 60,
+            'APS threshold',
             color=color_sc,
             va='bottom', ha='left',
-            fontsize=12
+            fontsize=14
         )
 
         # === Force axis (right 2) ===
         ax_force = ax_tof.twinx()
         ax_force.spines['right'].set_position(('axes', 1.15))
         color_force = 'tab:red'
-        ax_force.plot(time, fnet, ':', color=color_force, label='Net force', linewidth=2.0)
+        ax_force.plot(time, fnet, ':', color=color_force, label='net force', linewidth=2.0)
         ax_force.set_ylabel('Force [N]', color=color_force)
         ax_force.tick_params(axis='y', colors=color_force)
         ax_force.set_ylim(0, 20)
@@ -190,21 +191,21 @@ def plot_trial(trial_path, plot_channels = False):
                 + ax_force.get_lines()
         )
         labels = [l.get_label() for l in lines]
-        ax_tof.legend(lines, labels, loc='upper right', fontsize=12)
-        ax_tof.set_xlim(left=0)
-        ax_tof.set_xlim(right=max(time))
+        ax_force.legend(lines, labels, loc='upper left',  bbox_to_anchor=(0.0, 0.92), fontsize=12)
+        ax_tof.set_xlim(left=6)
+        ax_tof.set_xlim(right=29)#max(time))
 
         # === Add labels for shaded regions ===
         y_text = ax_tof.get_ylim()[1] * 0.99  # slightly below top of ToF axis
-        ax_tof.text((approach_start + approach_end) / 2, y_text, 'Approach',
-                    color='tab:blue', ha='center', va='top', fontsize=12, fontweight='bold')
-        ax_tof.text((contact_start + contact_end) / 2, y_text, 'Contact',
-                    color='tab:orange', ha='center', va='top', fontsize=12, fontweight='bold')
-        ax_tof.text((pick_start + pick_end) / 2, y_text, 'Pick',
-                    color='tab:red', ha='center', va='top', fontsize=12, fontweight='bold')
+        ax_tof.text((approach_start + approach_end) / 2, y_text, 'approach',
+                    color='tab:blue', ha='center', va='top', fontsize=14, fontweight='bold')
+        ax_tof.text((contact_start + contact_end) / 2, y_text, 'contact',
+                    color='tab:orange', ha='center', va='top', fontsize=14, fontweight='bold')
+        ax_tof.text((pick_start + pick_end) / 2, y_text, 'pick',
+                    color='tab:red', ha='center', va='top', fontsize=14, fontweight='bold')
 
         plt.tight_layout()
-        plt.title(trial_path)
+        # plt.title(trial_path)
         plt.show()
 
 
@@ -289,22 +290,22 @@ def plot_batch_trials():
     plt.rcParams.update({
         "font.family": "serif",
         "axes.labelsize": 15,
-        "axes.titlesize": 10,
+        "axes.titlesize": 15,
         "xtick.labelsize": 15,
         "ytick.labelsize": 15,
         "legend.fontsize": 15
     })
 
     # === Build Path ===
-    # base_folder = os.path.join(r'D:',
+    base_folder = os.path.join(r'D:',
+                               'IL_DATA_BACKUP',
+                               '03_IL_preprocessed_(transformed_to_eef)',
+                               'experiment_1_(pull)')
+    
+    # base_folder = os.path.join('/media/alejo/IL_data',
     #                            'DATA',
     #                            '03_IL_preprocessed_(transformed_to_eef)',
     #                            'experiment_1_(pull)')
-    
-    base_folder = os.path.join('/media/alejo/IL_data',
-                               'DATA',
-                               '03_IL_preprocessed_(transformed_to_eef)',
-                               'experiment_1_(pull)')
                             #    'only_human_demos/with_palm_cam')
 
 
@@ -321,7 +322,7 @@ def plot_batch_trials():
 
     # ============= UNCOMMENT THIS TO PLOT THESE SPECIFIC TRIALS =============
     # cool_trials = [38, 70, 33, 105, 185, 75, 60, 71]
-    cool_trials = [92]
+    cool_trials = [38]
     for trial in cool_trials:
         trial_name = 'trial_' + str(trial) + '_downsampled_aligned_data_transformed.csv'
         trial_path = os.path.join(base_folder, trial_name)
@@ -443,30 +444,52 @@ def phases_stats_from_last_row():
 
 def compare_losses_plots():
 
-    base = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)'   
 
-    phases = ['phase_1_approach']    
-    inputs_list = [['tof__inhand_cam_features__apple_prior', 'tof__inhand_cam_features__apple_prior__suction']]    
+    plt.rcParams.update({
+        "font.family": "serif",
+        "axes.labelsize": 15,
+        "axes.titlesize": 10,
+        "xtick.labelsize": 15,
+        "ytick.labelsize": 15,
+        "legend.fontsize": 15
+    })
 
-    phases = ['phase_2_contact'] 
-    inputs_list = [['tof__air_pressure__apple_prior__suction__fingers',
-                    # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
-                    'tof__air_pressure__apple_prior'
-                    ]]    
+
+    base = os.path.join(r'D:',
+                         'DATA',
+                         '06_IL_learning',
+                         'experiment_1_(pull)')
+
+
+    # base = 'D:\06_IL_learning\experiment_1_(pull)'
+    # base = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)'
+
+    phases = ['phase_1_approach']
+    color = 'blue'
+    inputs_list = [['tof__inhand_cam_features__apple_prior']] #, 'tof__inhand_cam_features__apple_prior__suction']]
+
+    # phases = ['phase_2_contact']
+    # inputs_list = [['tof__air_pressure__apple_prior']]
+    #
+    #                 # 'tof__air_pressure__apple_prior__suction__fingers',
+    #                 # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
+    #                 # 'tof__air_pressure__apple_prior'
+    #                 # ]]
 
     # phases = ['phase_3_pick']
-    # inputs_list = [['tof__air_pressure__wrench__apple_prior',
-    #                 'tof__air_pressure__wrench__apple_prior__suction__fingers',
-    #                 'wrench__apple_prior',
-    #                 'wrench'
+    # color = 'red'
+    # inputs_list = [['tof__air_pressure__wrench__apple_prior']]
+    #                 # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
+    #                 # 'wrench__apple_prior',
+    #                 # 'wrench'
     #                 # 'tof__air_pressure__wrench',
     #                 # 'tof__wrench__apple_prior'
-    #                 ]]
+    #                 # ]]
 
     
     for phase, inputs in zip(phases, inputs_list):       
 
-        plt.figure(figsize=(10, 5))      
+        plt.figure(figsize=(7, 5))
 
         
         for input in inputs:
@@ -489,7 +512,7 @@ def compare_losses_plots():
                 train_loss = data['train_losses']
                 val_loss = data['val_losses']
 
-                if min(val_loss) < 0.745:
+                if min(val_loss) < 2:
 
                     filtered_train_loss = gaussian_filter(train_loss, 2)
                     filtered_val_loss = gaussian_filter(val_loss, 2)
@@ -505,56 +528,52 @@ def compare_losses_plots():
                     name = name.split('_lstm')[0]
 
                     cmap = plt.cm.tab10   # or viridis, plasma, tab20
-                    color = cmap(np.random.rand())
+                    # color = cmap(np.random.rand())
                     
                     # plt.figure(figsize=(10, 5))
 
-                    plt.plot(filtered_train_loss, label=f'Tr Loss {name}', color=color, linestyle='--')
-                    plt.plot(filtered_val_loss, label=f'Val Loss {name}', color=color)
-                    # plt.plot(train_loss, color=color, alpha=0.4)
-                    # plt.plot(val_loss, color=color, alpha=0.4)
 
-                    plt.text(
-                        x_tr,
-                        y_tr,
-                        f'Tr {name}\n{input}',
-                        color=color,
-                        fontsize=9,
-                        va='center'
-                    )
+                    plt.plot(filtered_train_loss, label=f'contact - tr. loss', color=color, linestyle='--')
+                    plt.plot(filtered_val_loss, label=f'contact - val. loss', color=color)
+                    plt.plot(train_loss, color=color, alpha=0.4)
+                    plt.plot(val_loss, color=color, alpha=0.4)
 
-                    plt.text(
-                        x_val,
-                        y_val,
-                        f'Val {name}\n{input}',
-                        color=color,
-                        fontsize=9,
-                        va='center'
-                    )
+                    # plt.text(
+                    #     x_tr,
+                    #     y_tr,
+                    #     f'Tr {name}\n{input}',
+                    #     color=color,
+                    #     fontsize=9,
+                    #     va='center'
+                    # )
+                    #
+                    # plt.text(
+                    #     x_val,
+                    #     y_val,
+                    #     f'Val {name}\n{input}',
+                    #     color=color,
+                    #     fontsize=9,
+                    #     va='center'
+                    # )
                 
 
                     plt.xlabel('Epochs')
-                    plt.ylabel('Loss')
-                    plt.title(f'Training and Validation Loss Over Time\n{phase}\n{input}')
-                    plt.ylim([0,1.2])
+                    plt.ylabel('Loss [MSE]')
+                    # plt.title(f'Training and Validation Loss Over Time\n{phase}\n{input}')
+                    plt.ylim([0, 1.0])
+                    plt.xlim([0, 250])
                     plt.legend()
                     plt.minorticks_on()
                     plt.grid(True, which='major')
                     plt.grid(True, which='minor', linestyle=':', linewidth=0.5)
-            
-        plt.show()
-            
-            
-    
 
-
+    # plt.tight_layout()
+    plt.show()
 
 
 if __name__ == '__main__':
 
-    
-    # plot_batch_trials()
-   
+    plot_batch_trials()
     # phases_stats_from_reading_entire_trial()
     # phases_stats_from_last_row()
-    compare_losses_plots()
+    # compare_losses_plots()
