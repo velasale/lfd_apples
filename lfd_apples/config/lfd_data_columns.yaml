@@ -15,11 +15,11 @@ phases:
   phase_2_contact:
     - tof
     - air_pressure
-    - wrench
+    # - wrench
     # - joint_states.pos    
     - apple_prior    
-    # - suction
-    # - fingers
+    - suction
+    - fingers
     - action_cols
     # - action_cols_at_base_frame
 

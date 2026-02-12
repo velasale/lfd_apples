@@ -448,12 +448,17 @@ def compare_losses_plots():
     phases = ['phase_1_approach']    
     inputs_list = [['tof__inhand_cam_features__apple_prior', 'tof__inhand_cam_features__apple_prior__suction']]    
 
-    # phases = ['phase_2_contact'] 
-    # inputs_list = [['tof__air_pressure__apple_prior__suction__fingers', 'tof__air_pressure__apple_prior']]    
+    phases = ['phase_2_contact'] 
+    inputs_list = [['tof__air_pressure__apple_prior__suction__fingers',
+                    # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
+                    'tof__air_pressure__apple_prior'
+                    ]]    
 
     # phases = ['phase_3_pick']
     # inputs_list = [['tof__air_pressure__wrench__apple_prior',
     #                 'tof__air_pressure__wrench__apple_prior__suction__fingers',
+    #                 'wrench__apple_prior',
+    #                 'wrench'
     #                 # 'tof__air_pressure__wrench',
     #                 # 'tof__wrench__apple_prior'
     #                 ]]
@@ -461,11 +466,12 @@ def compare_losses_plots():
     
     for phase, inputs in zip(phases, inputs_list):       
 
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(10, 5))      
 
+        
         for input in inputs:
 
-            
+            # plt.figure(figsize=(10, 5))            
 
             npz_folder = os.path.join(base, phase, '0_timesteps', input)
 
@@ -483,55 +489,60 @@ def compare_losses_plots():
                 train_loss = data['train_losses']
                 val_loss = data['val_losses']
 
-                filtered_train_loss = gaussian_filter(train_loss, 2)
-                filtered_val_loss = gaussian_filter(val_loss, 2)
+                if min(val_loss) < 0.745:
 
-                x_tr = len(filtered_train_loss) - 1
-                y_tr = filtered_train_loss[-1]
+                    filtered_train_loss = gaussian_filter(train_loss, 2)
+                    filtered_val_loss = gaussian_filter(val_loss, 2)
 
-                x_val = len(filtered_val_loss) - 1
-                y_val = filtered_val_loss[-1]
+                    x_tr = len(filtered_train_loss) - 1
+                    y_tr = filtered_train_loss[-1]
 
+                    x_val = len(filtered_val_loss) - 1
+                    y_val = filtered_val_loss[-1]
+
+                    
+                    name = file.split(input)[1]
+                    name = name.split('_lstm')[0]
+
+                    cmap = plt.cm.tab10   # or viridis, plasma, tab20
+                    color = cmap(np.random.rand())
+                    
+                    # plt.figure(figsize=(10, 5))
+
+                    plt.plot(filtered_train_loss, label=f'Tr Loss {name}', color=color, linestyle='--')
+                    plt.plot(filtered_val_loss, label=f'Val Loss {name}', color=color)
+                    # plt.plot(train_loss, color=color, alpha=0.4)
+                    # plt.plot(val_loss, color=color, alpha=0.4)
+
+                    plt.text(
+                        x_tr,
+                        y_tr,
+                        f'Tr {name}\n{input}',
+                        color=color,
+                        fontsize=9,
+                        va='center'
+                    )
+
+                    plt.text(
+                        x_val,
+                        y_val,
+                        f'Val {name}\n{input}',
+                        color=color,
+                        fontsize=9,
+                        va='center'
+                    )
                 
-                name = file.split(input)[1]
-                name = name.split('_lstm')[0]
 
-                cmap = plt.cm.tab10   # or viridis, plasma, tab20
-                color = cmap(np.random.rand())
-                
-                # plt.figure(figsize=(10, 5))
-
-                plt.plot(filtered_train_loss, label=f'Tr Loss {name}', color=color, linestyle='--')
-                plt.plot(filtered_val_loss, label=f'Val Loss {name}', color=color)
-                plt.plot(train_loss, color=color, alpha=0.4)
-                plt.plot(val_loss, color=color, alpha=0.4)
-                plt.text(
-                    x_tr,
-                    y_tr,
-                    f'Tr {name}',
-                    color=color,
-                    fontsize=9,
-                    va='center'
-                )
-
-                plt.text(
-                    x_val,
-                    y_val,
-                    f'Val {name}',
-                    color=color,
-                    fontsize=9,
-                    va='center'
-                )
-                
-
-        plt.xlabel('Epochs')
-        plt.ylabel('Loss')
-        plt.title(f'Training and Validation Loss Over Time\n{phase}\n{input}')
-        plt.ylim([0,1])
-        plt.legend()
-        plt.grid(True)
-        
-    plt.show()
+                    plt.xlabel('Epochs')
+                    plt.ylabel('Loss')
+                    plt.title(f'Training and Validation Loss Over Time\n{phase}\n{input}')
+                    plt.ylim([0,1.2])
+                    plt.legend()
+                    plt.minorticks_on()
+                    plt.grid(True, which='major')
+                    plt.grid(True, which='minor', linestyle=':', linewidth=0.5)
+            
+        plt.show()
             
             
     

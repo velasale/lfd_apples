@@ -495,7 +495,8 @@ class LFDController(Node):
         self.PICK_CONTROLLER = LoadPhaseController(self.PICK_MODEL_PARAMS, self.device)        
 
         # Actions
-        self.current_twist_cmd_base = np.array([0.0, 0.0, 0.0])
+        self.current_twist_linear_cmd_base = np.array([0.0, 0.0, 0.0])
+        self.current_twist_angular_cmd_base = np.array([0.0, 0.0, 0.0])
 
 
     def initialize_debugging_mode_variables(self, trial='trial_1'):
@@ -1193,8 +1194,7 @@ class LFDController(Node):
                     self.X = np.stack(self.approach_state_buffer)
 
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
-                    self.Y = self.APPROACH_CONTROLLER.forward(self.X_tensor)                    
-                    # Note: These twists are given in the tcp frame.
+                    self.Y = self.APPROACH_CONTROLLER.forward(self.X_tensor)        # TWIST predicions in TCP frame                                        
                 
                     # Save state and action rows in DataFrames
                     self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)
@@ -1206,28 +1206,32 @@ class LFDController(Node):
                     self.sum_pos_y_error += self.bbox_pos_y_error
 
                     # Linear Velocities                   
-                    self.target_cmd.twist.linear.x = 0.0 * (float(self.Y[0]) * self.DELTA_GAIN \
-                                                        + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_x_error \
-                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_x_error)
+                    self.target_cmd.twist.linear.x = 0.0 #1.0 * (float(self.Y[0]) * self.DELTA_GAIN \
+                                                        #+ self.PI_GAIN * self.POSITION_KP * self.bbox_pos_x_error \
+                                                        #+ self.PI_GAIN * self.POSITION_KI * self.sum_pos_x_error)
 
-                    self.target_cmd.twist.linear.y = 0.0 * (float(self.Y[1]) * self.DELTA_GAIN \
-                                                        + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_y_error \
-                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error)
+                    self.target_cmd.twist.linear.y = 0.0 #0.0 * (float(self.Y[1]) * self.DELTA_GAIN \
+                                                        #+ self.PI_GAIN * self.POSITION_KP * self.bbox_pos_y_error \
+                                                        #+ self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error)
 
-                    self.target_cmd.twist.linear.z = 0.01 #1.0 * float(self.Y[2]) * self.DELTA_GAIN
+                    self.target_cmd.twist.linear.z = 0.1 #1.0 * float(self.Y[2]) * self.DELTA_GAIN
 
                     # Angular Velocities
-                    self.target_cmd.twist.angular.x = 0.0 * float(self.Y[3]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.y = 0.0 * float(self.Y[4]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.z = 0.0 * float(self.Y[5]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.x = 0.0# * float(self.Y[3]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.y = 0.0# * float(self.Y[4]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.z = 0.0# * float(self.Y[5]) * self.DELTA_GAIN
 
 
-                    #============= Transform twist from tcp to base ===========
-                    current_twist_cmd_tcp = np.array([self.target_cmd.twist.linear.x,
-                                                    self.target_cmd.twist.linear.y,
-                                                    self.target_cmd.twist.linear.z])
-                    
-                    self.current_twist_cmd_base = self.R_now @ current_twist_cmd_tcp
+                    #============= Transform TWIST (from tcp to base frame) ===========
+                    current_twist_linear_cmd_tcp = np.array([self.target_cmd.twist.linear.x,
+                                                            self.target_cmd.twist.linear.y,
+                                                            self.target_cmd.twist.linear.z])                
+                    current_twist_angular_cmd_tcp = np.array([self.target_cmd.twist.angular.x,
+                                                              self.target_cmd.twist.angular.y,
+                                                              self.target_cmd.twist.angular.z])          
+                              
+                    self.current_twist_linear_cmd_base = self.R_now @ current_twist_linear_cmd_tcp
+                    self.current_twist_angular_cmd_base = self.R_now @ current_twist_angular_cmd_tcp
 
 
                     twist_array = np.array([self.target_cmd.twist.linear.x,
@@ -1246,6 +1250,16 @@ class LFDController(Node):
                         max_line_width=np.inf
                     )                    
                     self.get_logger().info(f'APPROACH actions: {actions_str}')
+
+                    
+                    base_actions_str = np.array2string(
+                        self.current_twist_linear_cmd_base ,
+                        precision=6,
+                        suppress_small=True,
+                        separator=' ',
+                        max_line_width=np.inf
+                    )                    
+                    self.get_logger().info(f'APPROACH BASE actions: {base_actions_str}')
                                         
                         
 
@@ -1367,6 +1381,13 @@ class LFDController(Node):
         self.sum_vel_x_error = 0.0
         self.sum_vel_y_error = 0.0
         self.sum_vel_z_error = 0.0
+        self.sum_ang_x_error = 0.0
+        self.sum_ang_y_error = 0.0
+        self.sum_ang_z_error = 0.0
+
+        self.previous_vel_x_error = 0.0
+        self.previous_vel_y_error = 0.0
+        self.previous_vel_z_error = 0.0
 
         self.PI_GAIN = self.INITIAL_PI_GAIN     
 
@@ -1403,19 +1424,58 @@ class LFDController(Node):
      
 
         #============= Feedback from current tcp speed ============
-        kp= 3
-        ki= 0.5
-        vel_x_error = self.current_twist_cmd_base[0] - self.v_base[0]
-        vel_y_error = self.current_twist_cmd_base[1] - self.v_base[1]
-        vel_z_error = self.current_twist_cmd_base[2] - self.v_base[2]
-
+        kp_lin = 1
+        ki_lin = 1e-6
+        kd_lin = 0
+                       
+       
+        # Proportional
+        vel_x_error = self.current_twist_linear_cmd_base[0] - self.v_base[0]
+        vel_y_error = self.current_twist_linear_cmd_base[1] - self.v_base[1]
+        vel_z_error = self.current_twist_linear_cmd_base[2] - self.v_base[2]
+    
+        # Integral
         self.sum_vel_x_error += vel_x_error
         self.sum_vel_y_error += vel_y_error
-        self.sum_vel_z_error += vel_z_error
+        self.sum_vel_z_error += vel_z_error       
 
-        self.current_cmd.twist.linear.x = kp*vel_x_error + ki*self.sum_vel_x_error
-        self.current_cmd.twist.linear.y = kp*vel_y_error + ki*self.sum_vel_y_error
-        self.current_cmd.twist.linear.z = kp*vel_z_error + ki*self.sum_vel_z_error
+        # Derivative
+        d_vel_x_error = (self.previous_vel_x_error - vel_x_error)/dt
+        d_vel_y_error = (self.previous_vel_y_error - vel_y_error)/dt
+        d_vel_z_error = (self.previous_vel_z_error - vel_z_error)/dt
+
+        # Record current values for next derivative
+        self.previous_vel_x_error = vel_x_error
+        self.previous_vel_y_error = vel_y_error
+        self.previous_vel_z_error = vel_z_error
+
+
+        thr = 0.001
+        # PID 
+        if abs(self.current_twist_linear_cmd_base[0]) < thr:            
+            self.current_cmd.twist.linear.x = kp_lin*vel_x_error + ki_lin*self.sum_vel_x_error + kd_lin*d_vel_x_error
+        else:
+            self.current_cmd.twist.linear.x = self.current_twist_linear_cmd_base[0]
+
+        if abs(self.current_twist_linear_cmd_base[1]) < thr:
+            self.current_cmd.twist.linear.y = kp_lin*vel_y_error + ki_lin*self.sum_vel_y_error + kd_lin*d_vel_y_error
+        else:
+            self.current_cmd.twist.linear.y = self.current_twist_linear_cmd_base[1]
+
+        if abs(self.current_twist_linear_cmd_base[2]) < thr:
+            self.current_cmd.twist.linear.z = kp_lin*vel_z_error + ki_lin*self.sum_vel_z_error + kd_lin*d_vel_z_error
+        else:
+            self.current_cmd.twist.linear.z = self.current_twist_linear_cmd_base[2]  
+   
+        
+
+        self.current_cmd.twist.linear.x = self.current_twist_linear_cmd_base[0]
+        self.current_cmd.twist.linear.y = self.current_twist_linear_cmd_base[1]
+        self.current_cmd.twist.linear.z = self.current_twist_linear_cmd_base[2]         
+
+        self.current_cmd.twist.angular.x = self.current_twist_angular_cmd_base[0] 
+        self.current_cmd.twist.angular.y = self.current_twist_angular_cmd_base[1] 
+        self.current_cmd.twist.angular.z = self.current_twist_angular_cmd_base[2] 
 
         # self.v_base is computed at base 
         self.current_cmd.header.frame_id = "fr3_link0"
@@ -1542,6 +1602,8 @@ def main():
             pass
 
 
+        # COMMENT FROM HERE ==========
+
         # ------------ Step 2: Place apple and record position ------       
         node.get_logger().info(f"{YELLOW}\n\nSTEP 2: Place apple on the proxy. \nPress ENTER key when done.\n{RESET}")    
         input()
@@ -1581,12 +1643,17 @@ def main():
         # Start recording bag
         robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
 
+
+
         # -------------- Step 4: Run lfd controller ----------------        
         node.get_logger().info(f"{YELLOW}\n\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\n{RESET}")     
         input()
 
         node.DEBUGGING_MODE = False
         if node.DEBUGGING_MODE: node.initialize_debugging_mode_variables   
+
+        # ============ UNTIL HERE
+        # node.swap_controller(node.arm_controller, node.twist_controller)
 
         node.run_lfd_controller()      
 
@@ -1607,7 +1674,7 @@ def main():
         time.sleep(SLEEP_TIME)  
 
         # Stop bag recording
-        stop_recording_bagfile(robot_rosbag_list)
+        # stop_recording_bagfile(robot_rosbag_list)
         node.save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))  
 
         # Check data

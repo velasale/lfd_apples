@@ -63,7 +63,7 @@ class LSTMRegressor(nn.Module):
     
 
 
-def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=1e-4):
+def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=1e-5):
     '''
     Docstring for train
     
@@ -283,9 +283,11 @@ if __name__ == '__main__':
 
     # Models Parameters
     phases = ['phase_3_pick', 'phase_1_approach']
-    hidden_dim_list = [1024]
+    hidden_dim_list = [64]
     num_layers_list = [2]
-    seq_lens = [30, 40, 50]
+    seq_lens = [10]
+
+    phases = ['phase_2_contact']
 
     # Train model for each combination
     for phase in phases:
@@ -307,6 +309,6 @@ if __name__ == '__main__':
                     print(f'\n--- Number of Hidden dim: {hidden_dim} ---')
 
                     # lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=8, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
-                    lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=64, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
+                    lfd_lstm(SEQ_LEN=SEQ_LEN, BATCH_SIZE=16, phase=phase, hidden_dim = hidden_dim, num_layers = num_layers)
     
         
