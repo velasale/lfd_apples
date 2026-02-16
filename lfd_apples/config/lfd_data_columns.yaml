@@ -8,6 +8,7 @@ phases:
     # - joint_states.pos
     - apple_prior    
     # - suction
+    - previous_deltas
     - action_cols
     # - action_cols_at_base_frame
 
@@ -17,9 +18,10 @@ phases:
     - air_pressure
     # - wrench
     # - joint_states.pos    
-    - apple_prior    
-    - suction
-    - fingers
+    - apple_prior        
+    # - suction
+    # - fingers
+    - previous_deltas
     - action_cols
     # - action_cols_at_base_frame
 
@@ -31,6 +33,7 @@ phases:
     - apple_prior
     # - suction
     # - fingers
+    - previous_deltas
     - action_cols
     # - action_cols_at_base_frame
 
@@ -78,21 +81,27 @@ action_cols:
   - Δ_ori_eef._x._eef_frame
   - Δ_ori_eef._y._eef_frame
   - Δ_ori_eef._z._eef_frame
-
-  # Gripper actions
-  # - suction
-  # - fingers
+ 
 
 # ======================= STATE SPACE ========================
 # --- Prior knowledge ---
 apple_prior:
-  # - apple._x._base
-  # - apple._y._base
-  # - apple._z._base
+  - apple._x._base
+  - apple._y._base
+  - apple._z._base
   - apple._x._ee
   - apple._y._ee
   - apple._z._ee
 
+previous_deltas:
+  # Previous action can be useful as input to the model, especially for predicting contact-rich phases
+  - prev_Δ_lin_eef._x._eef_frame
+  - prev_Δ_lin_eef._y._eef_frame
+  - prev_Δ_lin_eef._z._eef_frame
+  - prev_Δ_ori_eef._x._eef_frame
+  - prev_Δ_ori_eef._y._eef_frame
+  - prev_Δ_ori_eef._z._eef_frame
+  
 
 # --- Gripper State Space --- 
 air_pressure:
@@ -153,14 +162,6 @@ joint_states:
     - eff_joint_6
     - eff_joint_7
 
-ee_pose:
-  - _pose._position._x
-  - _pose._position._y
-  - _pose._position._z
-  - _pose._orientation._x
-  - _pose._orientation._y
-  - _pose._orientation._z
-  - _pose._orientation._w
 
 
 

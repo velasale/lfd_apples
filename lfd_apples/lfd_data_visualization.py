@@ -952,6 +952,9 @@ def compare_trajectories():
 
     plt.show()
 
+
+
+
 def main():
     
     folder = '/media/alejo/IL_data/03_IL_preprocessed/experiment_1_(pull)/phase_1_approach'
@@ -972,10 +975,10 @@ if __name__ == '__main__':
     # main()
    
     model = {'model': 'lstm',
-             'SEQ_LEN': 10,
+             'SEQ_LEN': 5,
              'num_layers': 1,
              'hidden_dim': 64,
-             'n_inputs': 9}
+             'n_inputs': 16}
     
 
     # model = {'model': 'mlp',                            # 'mlp', 'rf'
@@ -985,7 +988,7 @@ if __name__ == '__main__':
     infer_actions(model,
                   PHASE = 'phase_2_contact', 
                   TRIALS_SET = 'test_trials.csv',
-                  TRIAL_ID = 88)#'random')     # either 'random' or an int number
+                  TRIAL_ID = 'random')     # either 'random' or an int number
    
         
     # infer_actions_all_set(model,                          

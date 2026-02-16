@@ -63,7 +63,7 @@ class LSTMRegressor(nn.Module):
     
 
 
-def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=1e-5):
+def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500, lr=0.5e-4):
     '''
     Docstring for train
     
@@ -133,7 +133,7 @@ def train(model, train_loader, val_loader, Y_train_mean, Y_train_std, epochs=500
         scheduler.step(val_loss)
 
         # --- Early stopping check ---
-        patience = 200
+        patience = 100
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             epochs_no_improve = 0
@@ -284,8 +284,8 @@ if __name__ == '__main__':
     # Models Parameters
     phases = ['phase_3_pick', 'phase_1_approach']
     hidden_dim_list = [64]
-    num_layers_list = [2]
-    seq_lens = [10]
+    num_layers_list = [1]
+    seq_lens = [5]
 
     phases = ['phase_2_contact']
 

@@ -451,30 +451,32 @@ def compare_losses_plots():
         "axes.titlesize": 10,
         "xtick.labelsize": 15,
         "ytick.labelsize": 15,
-        "legend.fontsize": 15
+        "legend.fontsize": 10,
     })
 
 
-    base = os.path.join(r'D:',
-                         'DATA',
-                         '06_IL_learning',
-                         'experiment_1_(pull)')
+
+    # base = os.path.join(r'D:',
+    #                      'DATA',
+    #                      '06_IL_learning',
+    #                      'experiment_1_(pull)')
 
 
     # base = 'D:\06_IL_learning\experiment_1_(pull)'
-    # base = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)'
+
+
+    base = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)'
 
     phases = ['phase_1_approach']
     color = 'blue'
     inputs_list = [['tof__inhand_cam_features__apple_prior']] #, 'tof__inhand_cam_features__apple_prior__suction']]
 
-    # phases = ['phase_2_contact']
-    # inputs_list = [['tof__air_pressure__apple_prior']]
-    #
-    #                 # 'tof__air_pressure__apple_prior__suction__fingers',
-    #                 # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
-    #                 # 'tof__air_pressure__apple_prior'
-    #                 # ]]
+    phases = ['phase_2_contact']
+    color = 'orange'
+    inputs_list = [['tof__air_pressure__apple_prior',                        
+                    'tof__air_pressure__apple_prior__suction__fingers']]
+                    # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
+                    
 
     # phases = ['phase_3_pick']
     # color = 'red'
@@ -512,7 +514,7 @@ def compare_losses_plots():
                 train_loss = data['train_losses']
                 val_loss = data['val_losses']
 
-                if min(val_loss) < 2:
+                if min(val_loss) < 0.75:# and len(train_loss) > 1500:
 
                     filtered_train_loss = gaussian_filter(train_loss, 2)
                     filtered_val_loss = gaussian_filter(val_loss, 2)
@@ -528,15 +530,15 @@ def compare_losses_plots():
                     name = name.split('_lstm')[0]
 
                     cmap = plt.cm.tab10   # or viridis, plasma, tab20
-                    # color = cmap(np.random.rand())
+                    color = cmap(np.random.rand())
                     
                     # plt.figure(figsize=(10, 5))
 
 
-                    plt.plot(filtered_train_loss, label=f'contact - tr. loss', color=color, linestyle='--')
-                    plt.plot(filtered_val_loss, label=f'contact - val. loss', color=color)
-                    plt.plot(train_loss, color=color, alpha=0.4)
-                    plt.plot(val_loss, color=color, alpha=0.4)
+                    # plt.plot(filtered_train_loss, label=f'contact - tr. loss', color=color, linestyle='--')
+                    plt.plot(filtered_val_loss, label=f'contact - val. loss \n{name}', color=color)
+                    # plt.plot(train_loss, color=color, alpha=0.4)
+                    # plt.plot(val_loss, color=color, alpha=0.4)
 
                     # plt.text(
                     #     x_tr,
@@ -546,22 +548,22 @@ def compare_losses_plots():
                     #     fontsize=9,
                     #     va='center'
                     # )
-                    #
-                    # plt.text(
-                    #     x_val,
-                    #     y_val,
-                    #     f'Val {name}\n{input}',
-                    #     color=color,
-                    #     fontsize=9,
-                    #     va='center'
-                    # )
+                    
+                    plt.text(
+                        x_val,
+                        y_val,
+                        f'Val {name}\n{input}',
+                        color=color,
+                        fontsize=9,
+                        va='center'
+                    )
                 
 
                     plt.xlabel('Epochs')
                     plt.ylabel('Loss [MSE]')
                     # plt.title(f'Training and Validation Loss Over Time\n{phase}\n{input}')
-                    plt.ylim([0, 1.0])
-                    plt.xlim([0, 250])
+                    plt.ylim([0, 1])
+                    plt.xlim([0, 8000])
                     plt.legend()
                     plt.minorticks_on()
                     plt.grid(True, which='major')
@@ -571,9 +573,38 @@ def compare_losses_plots():
     plt.show()
 
 
+def trajectory_from_twist(trial=240):
+
+    # Compare trajectories
+
+    base_path = '/home/alejo/Documents/DATA/05_IL_preprocessed_(memory)/experiment_1_(pull)/phase_1_approach/0_timesteps'    
+
+    filename = 'trial_' + str(trial) + '_downsampled_aligned_data_transformed_(phase_1_approach)_(0_timesteps).csv'
+
+    path = os.path.join(base_path, filename)
+
+    df = pd.read_csv(path)
+
+    lin_twist_x = df['Δ_lin_eef._x._eef_frame'].values
+    lin_twist_y = df['Δ_lin_eef._y._eef_frame'].values
+    lin_twist_z = df['Δ_lin_eef._z._eef_frame'].values
+    ang_twist_x = df['Δ_ori_eef._x._eef_frame'].values
+    ang_twist_y = df['Δ_ori_eef._y._eef_frame'].values
+    ang_twist_z = df['Δ_ori_eef._z._eef_frame'].values
+
+    pass
+
+
+     
+
+
+
+
 if __name__ == '__main__':
 
-    plot_batch_trials()
+    # plot_batch_trials()
     # phases_stats_from_reading_entire_trial()
     # phases_stats_from_last_row()
-    # compare_losses_plots()
+    compare_losses_plots()
+
+    # trajectory_from_twist(240)

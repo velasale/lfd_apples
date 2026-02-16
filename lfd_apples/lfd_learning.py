@@ -140,7 +140,7 @@ class DatasetForLearning():
             
             # Step 2: Split TRAINING set into TRAINING and VALIDATION set
             self.train_trials, self.val_trials = train_test_split(self.train_trials,
-                                                               test_size=0.15,
+                                                               test_size=0.20,
                                                                shuffle=True)   
             
 
