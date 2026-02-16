@@ -947,141 +947,158 @@ def stage_2_transform_data_to_eef_frame():
         SOURCE_PATH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\experiment_1_(pull)")
         DESTINATION_PATH = Path(r"D:\03_IL_preprocessed_(cropped_per_phase)\experiment_1_(pull)")
     else:
-        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)/experiment_1_(pull)')
-        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)/experiment_1_(pull)')
+        SOURCE_PATH = Path('/home/alejo/Documents/DATA/02_IL_preprocessed_(aligned_and_downsampled)')
+        DESTINATION_PATH = Path('/home/alejo/Documents/DATA/03_IL_preprocessed_(transformed_to_eef)')
 
-    trials = [f for f in os.listdir(SOURCE_PATH)
-             if os.path.isfile(os.path.join(SOURCE_PATH, f)) and f.endswith(".csv")]    
-    
-    os.makedirs(DESTINATION_PATH, exist_ok=True)
+    source_subfolders = ['experiment_1_(pull)', 'only_human_demos/with_palm_cam']
 
-    plt.close('all')
 
-    for trial in (trials):
+    for subfolder in source_subfolders:
+
+        source_subfolder_path = SOURCE_PATH / subfolder       
+        detination_subfolder_path = DESTINATION_PATH / subfolder
+
+        trials = [f for f in os.listdir(source_subfolder_path)
+                if os.path.isfile(os.path.join(source_subfolder_path, f)) and f.endswith(".csv")]    
         
-        print(f'\nTransforming {trial} to eef frame...')        
-        df = pd.read_csv(os.path.join(SOURCE_PATH, trial))        
+        os.makedirs(detination_subfolder_path, exist_ok=True)
 
-        # --- Transform actions ---
-        # Actions are cartesian velocities in the base frame, need to transform to eef frame
-        # This is done by applying the inverse of the current eef pose to the actions
-        # Note: This is a placeholder for the actual transformation logic
-        # In practice, you would need to implement the actual transformation using the eef pose data
+        plt.close('all')
 
-        # Cartesian velocities in the base frame
-        # cartesian_velocities_in_base_frame = df[['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_angular_x', 'delta_angular_y', 'delta_angular_z']].values
-        
-        cartesian_velocities_in_base_frame = df[['v_eef_x', 'v_eef_y', 'v_eef_z', 'w_eef_x', 'w_eef_y', 'w_eef_z']].values
-        # Deltas of eef in the base frame
-        deltas_eef_in_base_frame = df[['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z']].values
-
-        # End-effector pose in the base frame
-        eef_pose_in_base_frame = df[['_pose._position._x', '_pose._position._y', '_pose._position._z',
-                       '_pose._orientation._x', '_pose._orientation._y', '_pose._orientation._z', '_pose._orientation._w']].values
-        
-        time_vector = df['timestamp_vector'].values
-
-        v_eef_list = []
-        w_eef_list = []
-
-        delta_linear_eef_list = []
-        delta_angular_eef_list = []
-
-        for i,row in df.iterrows():
-
-            v_base = cartesian_velocities_in_base_frame[i, :3]
-            w_base = cartesian_velocities_in_base_frame[i, 3:]
-
-            delta_linear_base = deltas_eef_in_base_frame[i, :3]
-            delta_angular_base = deltas_eef_in_base_frame[i, 3:]
-
-            q_base = eef_pose_in_base_frame[i, 3:]
-            p_base = eef_pose_in_base_frame[i, :3]
-
-            # Rotation matrix from quaternion   base <- eef
-            R_base_eef = R.from_quat(q_base).as_matrix()            
-
-            # Inverse rotation matrix : eef <- base
-            R_eef_base = R_base_eef.T
+        for trial in (trials):
             
-            # Transform linear velocity
-            v_eef = R_eef_base @ v_base
-            delta_linear_eef = R_eef_base @ delta_linear_base
+            print(f'\nTransforming {trial} to eef frame...')        
+            df = pd.read_csv(os.path.join(source_subfolder_path, trial))        
+
+            # --- Transform actions ---
+            # Actions are cartesian velocities in the base frame, need to transform to eef frame
+            # This is done by applying the inverse of the current eef pose to the actions
+            # Note: This is a placeholder for the actual transformation logic
+            # In practice, you would need to implement the actual transformation using the eef pose data
+
+            # Cartesian velocities in the base frame
+            # cartesian_velocities_in_base_frame = df[['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_angular_x', 'delta_angular_y', 'delta_angular_z']].values
             
-            # Transform angular velocity
-            w_eef = R_eef_base @ w_base
-            delta_angular_eef = R_eef_base @ delta_angular_base
+            cartesian_velocities_in_base_frame = df[['v_eef_x', 'v_eef_y', 'v_eef_z', 'w_eef_x', 'w_eef_y', 'w_eef_z']].values
+            # Deltas of eef in the base frame
+            deltas_eef_in_base_frame = df[['delta_pos_x', 'delta_pos_y', 'delta_pos_z', 'delta_ori_x', 'delta_ori_y', 'delta_ori_z']].values
 
-            v_eef_list.append(v_eef)
-            w_eef_list.append(w_eef)
-            delta_linear_eef_list.append(delta_linear_eef)
-            delta_angular_eef_list.append(delta_angular_eef)
+            # End-effector pose in the base frame
+            eef_pose_in_base_frame = df[['_pose._position._x', '_pose._position._y', '_pose._position._z',
+                        '_pose._orientation._x', '_pose._orientation._y', '_pose._orientation._z', '_pose._orientation._w']].values
+            
+            time_vector = df['timestamp_vector'].values
 
-        v_eef_array = np.vstack(v_eef_list)
-        w_eef_array = np.vstack(w_eef_list)
-        delta_linear_eef_array = np.vstack(delta_linear_eef_list)
-        delta_angular_eef_array = np.vstack(delta_angular_eef_list)
+            v_eef_list = []
+            w_eef_list = []
 
-        v_eef_array_filtered = np.zeros_like(v_eef_array)
-        w_eef_array_filtered = np.zeros_like(w_eef_array)
+            delta_linear_eef_list = []
+            delta_angular_eef_list = []
 
-        delta_linear_eef_array_filtered = np.zeros_like(delta_linear_eef_array)
-        delta_angular_eef_array_filtered = np.zeros_like(delta_angular_eef_array)
+            for i,row in df.iterrows():
 
-        b, a = butter(N=2, Wn=2, fs=30, btype='low')
-        # Step 6: Filter linear and angular speeds    
-        for col in range(3):                              
-            v_eef_array_filtered[:,col] = filtfilt(b, a, v_eef_array[:,col])
-            w_eef_array_filtered[:,col] = filtfilt(b, a, w_eef_array[:,col])        
-            delta_linear_eef_array_filtered[:,col] = filtfilt(b, a, delta_linear_eef_array[:,col])
-            delta_angular_eef_array_filtered[:,col] = filtfilt(b, a, delta_angular_eef_array[:,col])
+                v_base = cartesian_velocities_in_base_frame[i, :3]
+                w_base = cartesian_velocities_in_base_frame[i, 3:]
 
-        plot_velocities = False    
+                delta_linear_base = deltas_eef_in_base_frame[i, :3]
+                delta_angular_base = deltas_eef_in_base_frame[i, 3:]
 
-        if plot_velocities:
-            fig, ax = plt.subplots(4, 1, sharex=True, figsize=(8, 5))
+                q_base = eef_pose_in_base_frame[i, 3:]
+                p_base = eef_pose_in_base_frame[i, :3]
 
-            ax[0].plot(time_vector, v_eef_array[:,0], label='Unfiltered v_eef_x', alpha=0.5, linewidth=1, color='green')
-            ax[0].plot(time_vector, v_eef_array_filtered[:,0], label='Filtered v_eef_x', linewidth=1, color='blue')
-            ax[0].set_ylabel('Velocity [m/s]')
-            ax[0].set_title(f'v_eef_x over time for {trial}')
-            ax[0].grid(True)
-            ax[0].legend()
+                # Rotation matrix from quaternion   base <- eef
+                R_base_eef = R.from_quat(q_base).as_matrix()            
 
-            ax[1].plot(time_vector, w_eef_array[:,0], label='Unfiltered w_eef_x', alpha=0.5, linewidth=1, color='orange')
-            ax[1].plot(time_vector, w_eef_array_filtered[:,0], label='Filtered w_eef_x', linewidth=1, color='red')           
-            ax[1].set_ylabel('Angular velocity [rad/s]')
-            ax[1].set_title(f'w_eef_x over time for {trial}')
-            ax[1].grid(True)
-            ax[1].legend()
+                # Inverse rotation matrix : eef <- base
+                R_eef_base = R_base_eef.T
+                
+                # Transform linear velocity
+                v_eef = R_eef_base @ v_base
+                delta_linear_eef = R_eef_base @ delta_linear_base
+                
+                # Transform angular velocity
+                w_eef = R_eef_base @ w_base
+                delta_angular_eef = R_eef_base @ delta_angular_base
 
-            plt.show()
+                v_eef_list.append(v_eef)
+                w_eef_list.append(w_eef)
+                delta_linear_eef_list.append(delta_linear_eef)
+                delta_angular_eef_list.append(delta_angular_eef)
 
-        # Switch back to DataFrame
-        v_eef_df = pd.DataFrame(v_eef_array_filtered, columns=['v_eef._x._eef_frame',
-                                                               'v_eef._y._eef_frame',
-                                                               'v_eef._z._eef_frame'])
-        w_eef_df = pd.DataFrame(w_eef_array_filtered, columns=['w_eef._x._eef_frame',
-                                                               'w_eef._y._eef_frame',
-                                                               'w_eef._z._eef_frame'])
+            v_eef_array = np.vstack(v_eef_list)
+            w_eef_array = np.vstack(w_eef_list)
+            delta_linear_eef_array = np.vstack(delta_linear_eef_list)
+            delta_angular_eef_array = np.vstack(delta_angular_eef_list)
 
-        delta_linear_eef_df = pd.DataFrame(delta_linear_eef_array_filtered, columns=['Δ_lin_eef._x._eef_frame',
-                                                                                     'Δ_lin_eef._y._eef_frame',
-                                                                                     'Δ_lin_eef._z._eef_frame'])
-        delta_angular_eef_df = pd.DataFrame(delta_angular_eef_array_filtered, columns=['Δ_ori_eef._x._eef_frame',
-                                                                                       'Δ_ori_eef._y._eef_frame',
-                                                                                       'Δ_ori_eef._z._eef_frame'])
-        
-        # ========= Safe Check of Air pressures =======
-        df = fix_pressure_values(df)
+            v_eef_array_filtered = np.zeros_like(v_eef_array)
+            w_eef_array_filtered = np.zeros_like(w_eef_array)
+
+            delta_linear_eef_array_filtered = np.zeros_like(delta_linear_eef_array)
+            delta_angular_eef_array_filtered = np.zeros_like(delta_angular_eef_array)
+
+            b, a = butter(N=2, Wn=2, fs=30, btype='low')
+            # Step 6: Filter linear and angular speeds    
+            for col in range(3):                              
+                v_eef_array_filtered[:,col] = filtfilt(b, a, v_eef_array[:,col])
+                w_eef_array_filtered[:,col] = filtfilt(b, a, w_eef_array[:,col])        
+                delta_linear_eef_array_filtered[:,col] = filtfilt(b, a, delta_linear_eef_array[:,col])
+                delta_angular_eef_array_filtered[:,col] = filtfilt(b, a, delta_angular_eef_array[:,col])
+
+            plot_velocities = False    
+
+            if plot_velocities:
+                fig, ax = plt.subplots(4, 1, sharex=True, figsize=(8, 5))
+
+                ax[0].plot(time_vector, v_eef_array[:,0], label='Unfiltered v_eef_x', alpha=0.5, linewidth=1, color='green')
+                ax[0].plot(time_vector, v_eef_array_filtered[:,0], label='Filtered v_eef_x', linewidth=1, color='blue')
+                ax[0].set_ylabel('Velocity [m/s]')
+                ax[0].set_title(f'v_eef_x over time for {trial}')
+                ax[0].grid(True)
+                ax[0].legend()
+
+                ax[1].plot(time_vector, w_eef_array[:,0], label='Unfiltered w_eef_x', alpha=0.5, linewidth=1, color='orange')
+                ax[1].plot(time_vector, w_eef_array_filtered[:,0], label='Filtered w_eef_x', linewidth=1, color='red')           
+                ax[1].set_ylabel('Angular velocity [rad/s]')
+                ax[1].set_title(f'w_eef_x over time for {trial}')
+                ax[1].grid(True)
+                ax[1].legend()
+
+                plt.show()
+
+            # Switch back to DataFrame
+            v_eef_df = pd.DataFrame(v_eef_array_filtered, columns=['v_eef._x._eef_frame',
+                                                                'v_eef._y._eef_frame',
+                                                                'v_eef._z._eef_frame'])
+            w_eef_df = pd.DataFrame(w_eef_array_filtered, columns=['w_eef._x._eef_frame',
+                                                                'w_eef._y._eef_frame',
+                                                                'w_eef._z._eef_frame'])
+
+            delta_linear_eef_df = pd.DataFrame(delta_linear_eef_array_filtered, columns=['Δ_lin_eef._x._eef_frame',
+                                                                                        'Δ_lin_eef._y._eef_frame',
+                                                                                        'Δ_lin_eef._z._eef_frame'])
+            delta_angular_eef_df = pd.DataFrame(delta_angular_eef_array_filtered, columns=['Δ_ori_eef._x._eef_frame',
+                                                                                        'Δ_ori_eef._y._eef_frame',
+                                                                                        'Δ_ori_eef._z._eef_frame'])
+            
+            # Add previous actions in the dataframe to use within the state representation (e.g., for RNNs or Transformers)
+            delta_linear_eef_df_prev = delta_linear_eef_df.shift(1).fillna(0).add_prefix('prev_')
+            delta_angular_eef_df_prev = delta_angular_eef_df.shift(1).fillna(0).add_prefix('prev_')
 
 
-        # Combine with original DataFrame
-        df_eef_frame = pd.concat([df, v_eef_df, w_eef_df, delta_linear_eef_df, delta_angular_eef_df], axis=1)
+            
+            # ========= Safe Check of Air pressures =======
+            df = fix_pressure_values(df)
 
-        # Save transformed data to CSV files
-        base_filename = os.path.splitext(trial)[0]
-        df_eef_frame.to_csv(os.path.join(DESTINATION_PATH, f"{base_filename}_transformed.csv"), index=False)
+
+            # Combine with original DataFrame
+            df_eef_frame = pd.concat([df,
+                                    delta_linear_eef_df_prev, delta_angular_eef_df_prev, 
+                                    v_eef_df, w_eef_df,
+                                    delta_linear_eef_df, delta_angular_eef_df], axis=1)
+
+            # Save transformed data to CSV files
+            base_filename = os.path.splitext(trial)[0]
+            df_eef_frame.to_csv(os.path.join(detination_subfolder_path, f"{base_filename}_transformed.csv"), index=False)
       
 
 def stage_3_crop_data_to_task_phases():
@@ -1292,7 +1309,6 @@ def stage_3_crop_data_to_task_phases():
         df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
 
 
-
         # === PHASE 2: CONTACT PHASE ===
         # We can also crop the contact phase for the human demos, even if we won't use the wrench topics, just to have the same format for all trials
         idx_phase_2_end = find_end_of_phase_2_contact(df[idx_phase_2_start:], trial, air_pressure_threshold=600, n_cups=2)  
@@ -1486,11 +1502,11 @@ if __name__ == '__main__':
     # stage_2_transform_data_to_eef_frame()
     # stage_3_crop_data_to_task_phases()   
    
-    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
-    # # # phases = ['phase_1_approach']    
-    # for phase in phases:
-    #     for step in [0]:
-    #         stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
+    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    # # phases = ['phase_1_approach']    
+    for phase in phases:
+        for step in [0]:
+            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
