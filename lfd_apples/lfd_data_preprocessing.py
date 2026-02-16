@@ -1122,14 +1122,14 @@ def stage_3_crop_data_to_task_phases():
     for trial in (trials):
         print(f'\nCropping {trial} into task phases...')        
 
-        df = pd.read_csv(os.path.join(SOURCE_PATH, trial))        
-
+        df = pd.read_csv(os.path.join(SOURCE_PATH, trial))    
         df['suction'] = 0.0
         df['fingers'] = 0.0
                 
         # ------------------------ First: Define cropping indices --------------------------        
 
         # === PHASE 1: APPROACH PHASE ===
+        PHASE_1_START_BEFORE_TOF_TIME = 8.0  # in seconds
         PHASE_1_EXTRA_TIME_END = 1.0
         # End of phase 1: defined by tof < 5cm (contact)        
         idx_phase_1_end, idx_phase_2_start = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
@@ -1156,13 +1156,13 @@ def stage_3_crop_data_to_task_phases():
             plt.show()
         
 
-        # Crop and save
-        phase_1_time = 8.0  # in seconds
-        idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
+        # Crop and save        
+        idx_phase_1_start = max(0, (idx_phase_1_end - int(PHASE_1_START_BEFORE_TOF_TIME * 30)))  # assuming 30 Hz        
         idx_phase_1_end += int(PHASE_1_EXTRA_TIME_END * 30)
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]        
         base_filename = os.path.splitext(trial)[0]
         df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
+
 
         
         # === PHASE 2: CONTACT PHASE ===
@@ -1193,10 +1193,7 @@ def stage_3_crop_data_to_task_phases():
             plt.show()
         
         # Adjust start of contact
-        # idx_phase_2_start -= int(0.5 * 30)
-
-        # Get gripper actions
-
+        # idx_phase_2_start -= int(0.5 * 30)       
 
         # Crop and save
         idx_phase_3_start = idx_phase_2_end        
@@ -1205,7 +1202,6 @@ def stage_3_crop_data_to_task_phases():
         df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
 
         
-
         # === PHASE 3: PICK PHASE ===
         PHASE_3_EXTRA_TIME_END = 2.0
         # End of phase 3 defined by Max net Force
@@ -1245,7 +1241,8 @@ def stage_3_crop_data_to_task_phases():
         
 
     # ========= ONLY HUMAN DEMOS: USEFUL FOR APPROACH PHASE ==========
-    # Reason: Approach phase doesn't need wrench topics
+    # Reason: Approach phase doesn't need wrench topics...
+    # Feb 16 2024: Contact phase also doesn't need the wrench topics
 
     if platform.system() == "Windows":
         SOURCE_PATH_ONLY_APPROACH = Path(r"D:\02_IL_preprocessed_(aligned_and_downsampled)\only_human_demos/with_palm_cam")
@@ -1267,13 +1264,13 @@ def stage_3_crop_data_to_task_phases():
         print(f'\nONLY HUMAN TRIALS - Cropping {trial} into approach phase...')
 
         df = pd.read_csv(os.path.join(SOURCE_PATH_ONLY_APPROACH, trial))        
-
         df['suction'] = 0.0
         df['fingers'] = 0.0
                 
         # ------------------------ First: Define cropping indices --------------------------
+        # === PHASE 1: APPROACH PHASE ===        
         # End of phase 1: defined by tof < 5cm (contact)        
-        idx_phase_1_end,_ = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
+        idx_phase_1_end, idx_phase_2_start = find_end_of_phase_1_approach(df, trial, tof_threshold=50)
         if idx_phase_1_end is None:
             trials_without_contact.append(trial)
             continue  # Skip cropping for this trial
@@ -1287,14 +1284,31 @@ def stage_3_crop_data_to_task_phases():
         # Add gripper actions
         df = define_gripper_action(df, 'suction', idx_phase_1_end, 1.0)
 
-        phase_1_time = 7.0  # in seconds
-        idx_phase_1_start = max(0, (idx_phase_1_end - int(phase_1_time * 30)))  # assuming 30 Hz        
-        idx_phase_1_end += int(PHASE_1_EXTRA_TIME_END * 30)
-
         # Crop and save
+        idx_phase_1_start = max(0, (idx_phase_1_end - int(PHASE_1_START_BEFORE_TOF_TIME * 30)))  # assuming 30 Hz        
+        idx_phase_1_end += int(PHASE_1_EXTRA_TIME_END * 30)        
         df_phase_1 = df.iloc[idx_phase_1_start:idx_phase_1_end][['timestamp_vector'] + phase_1_approach_cols]
         base_filename = os.path.splitext(trial)[0]
         df_phase_1.to_csv(os.path.join(DESTINATION_PATH, 'phase_1_approach', f"{base_filename}_(phase_1_approach).csv"), index=False)
+
+
+
+        # === PHASE 2: CONTACT PHASE ===
+        # We can also crop the contact phase for the human demos, even if we won't use the wrench topics, just to have the same format for all trials
+        idx_phase_2_end = find_end_of_phase_2_contact(df[idx_phase_2_start:], trial, air_pressure_threshold=600, n_cups=2)  
+        if idx_phase_2_end is None:
+            trials_without_engagement.append(trial)
+            continue  # Skip cropping for this trial
+
+        # Add gripper actions
+        df = define_gripper_action(df, 'fingers', idx_phase_2_end + 0.5*30, 1.0)    
+        
+        # Crop and save
+        idx_phase_3_start = idx_phase_2_end
+        idx_phase_2_end += int(PHASE_2_EXTRA_TIME_END * 30)
+        df_phase_2 = df.iloc[idx_phase_2_start:idx_phase_2_end][['timestamp_vector'] + phase_2_contact_cols]  
+        df_phase_2.to_csv(os.path.join(DESTINATION_PATH, 'phase_2_contact', f"{base_filename}_(phase_2_contact).csv"), index=False)
+
 
 
     print('\n----Trials without contact:----')
@@ -1472,11 +1486,11 @@ if __name__ == '__main__':
     # stage_2_transform_data_to_eef_frame()
     # stage_3_crop_data_to_task_phases()   
    
-    phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
-    # # phases = ['phase_1_approach']    
-    for phase in phases:
-        for step in [0]:
-            stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
+    # phases = ['phase_1_approach', 'phase_2_contact', 'phase_3_pick']    
+    # # # phases = ['phase_1_approach']    
+    # for phase in phases:
+    #     for step in [0]:
+    #         stage_4_short_time_memory(n_time_steps=step, phase=phase, keep_actions_in_memory=False)  
       
     # SOURCE_PATH = '/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam'
     # rename_folder(SOURCE_PATH, 10000)
