@@ -97,6 +97,9 @@ def fr3_fk(joint_angles):
     # fr3_joint5
 
     # DH parameters for Franka Emika Panda
+    # Note for the last row of this matrix:
+    #   [a] Franka hand:        z offset: 0.1034m   yaw offset: -45deg
+    #   [b] Tandem gripper:     z offset: 0.227m    yaw offset:   0deg
     dh_params = [
         (0,         0,          0.333,  joint_angles[0]),
         (0,         -np.pi/2,   0,      joint_angles[1]),
@@ -106,7 +109,7 @@ def fr3_fk(joint_angles):
         (0,         np.pi/2,    0,      joint_angles[5]),
         (0.088,     np.pi/2,    0,      joint_angles[6]),
         (0,         0,          0.107,  0),
-        (0,         0,          0.227,  0)      # end-effector (tool)
+        (0,         0,          0.1034, -np.pi/2)      # end-effector (tool)
     ]
 
     T = np.eye(4)
