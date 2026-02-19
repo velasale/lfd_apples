@@ -283,11 +283,11 @@ if __name__ == '__main__':
 
     # Models Parameters
     phases = ['phase_3_pick', 'phase_1_approach']
-    hidden_dim_list = [64]
-    num_layers_list = [1]
-    seq_lens = [5]
+    hidden_dim_list = [512]
+    num_layers_list = [1, 2]
+    seq_lens = [10,20,30,40,50]
 
-    phases = ['phase_2_contact']
+    phases = ['phase_3_pick']
 
     # Train model for each combination
     for phase in phases:

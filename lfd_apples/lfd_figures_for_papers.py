@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib as mpl
 from scipy.ndimage import gaussian_filter, median_filter, gaussian_filter1d
+from matplotlib.lines import Line2D
 
 
 def plot_trial(trial_path, plot_channels = False):
@@ -447,6 +448,7 @@ def compare_losses_plots():
 
     plt.rcParams.update({
         "font.family": "serif",
+        "mathtext.fontset": "stix",
         "axes.labelsize": 15,
         "axes.titlesize": 10,
         "xtick.labelsize": 15,
@@ -454,123 +456,161 @@ def compare_losses_plots():
         "legend.fontsize": 10,
     })
 
-
-
     # base = os.path.join(r'D:',
     #                      'DATA',
     #                      '06_IL_learning',
     #                      'experiment_1_(pull)')
 
-
     # base = 'D:\06_IL_learning\experiment_1_(pull)'
-
 
     base = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)'
 
-    phases = ['phase_1_approach']
+    # --- Approach ---
+    phase = 'phase_1_approach'
     color = 'blue'
-    inputs_list = [['tof__inhand_cam_features__apple_prior']] #, 'tof__inhand_cam_features__apple_prior__suction']]
-
-    phases = ['phase_2_contact']
-    color = 'orange'
-    inputs_list = [['tof__air_pressure__apple_prior',                        
-                    'tof__air_pressure__apple_prior__suction__fingers']]
-                    # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
-                    
-
-    # phases = ['phase_3_pick']
-    # color = 'red'
-    # inputs_list = [['tof__air_pressure__wrench__apple_prior']]
-    #                 # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
-    #                 # 'wrench__apple_prior',
-    #                 # 'wrench'
-    #                 # 'tof__air_pressure__wrench',
-    #                 # 'tof__wrench__apple_prior'
-    #                 # ]]
-
-    
-    for phase, inputs in zip(phases, inputs_list):       
-
-        plt.figure(figsize=(7, 5))
-
-        
-        for input in inputs:
-
-            # plt.figure(figsize=(10, 5))            
-
-            npz_folder = os.path.join(base, phase, '0_timesteps', input)
-
-            # Find npz files
-            npz_files = [
-                os.path.join(npz_folder, f)
-                for f in os.listdir(os.path.join(npz_folder))
-                if f.endswith('.npz')
+    inputs_list = ['tof__inhand_cam_features__apple_prior',
+                    'tof__inhand_cam_features__apple_prior__suction']
+    labels = [
+                r'$\mathbf{s}_{\mathrm{ap}} = [d,\, \mathbf{z},\, \mathbf{p}]$',
+                r'$\mathbf{s}_{\mathrm{ap}} = [d,\, \mathbf{z},\, \mathbf{P}_{\mathrm{scup}},\, \mathbf{p}]$'
             ]
-
-            for file in npz_files:
-                
-                data = np.load(file)
-
-                train_loss = data['train_losses']
-                val_loss = data['val_losses']
-
-                if min(val_loss) < 0.75:# and len(train_loss) > 1500:
-
-                    filtered_train_loss = gaussian_filter(train_loss, 2)
-                    filtered_val_loss = gaussian_filter(val_loss, 2)
-
-                    x_tr = len(filtered_train_loss) - 1
-                    y_tr = filtered_train_loss[-1]
-
-                    x_val = len(filtered_val_loss) - 1
-                    y_val = filtered_val_loss[-1]
-
-                    
-                    name = file.split(input)[1]
-                    name = name.split('_lstm')[0]
-
-                    cmap = plt.cm.tab10   # or viridis, plasma, tab20
-                    color = cmap(np.random.rand())
-                    
-                    # plt.figure(figsize=(10, 5))
+    plot_loss_curves(base, phase, inputs_list, labels)
 
 
-                    # plt.plot(filtered_train_loss, label=f'contact - tr. loss', color=color, linestyle='--')
-                    plt.plot(filtered_val_loss, label=f'contact - val. loss \n{name}', color=color)
-                    # plt.plot(train_loss, color=color, alpha=0.4)
-                    # plt.plot(val_loss, color=color, alpha=0.4)
+    # --- Contact ---
+    phase = 'phase_2_contact'
+    color = 'orange'
+    inputs_list = ['tof__air_pressure__apple_prior',                        
+                    'tof__air_pressure__apple_prior__suction__fingers',    
+                    # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
+                    'tof__air_pressure__apple_prior__previous_deltas']
+    labels = ['tof__air_pressure__apple_prior',                        
+                    'tof__air_pressure__apple_prior__suction__fingers',    
+                    # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
+                    'tof__air_pressure__apple_prior__previous_deltas'
+            ]
+    
+    plot_loss_curves(base, phase, inputs_list, labels)
 
-                    # plt.text(
-                    #     x_tr,
-                    #     y_tr,
-                    #     f'Tr {name}\n{input}',
-                    #     color=color,
-                    #     fontsize=9,
-                    #     va='center'
-                    # )
-                    
-                    plt.text(
-                        x_val,
-                        y_val,
-                        f'Val {name}\n{input}',
-                        color=color,
-                        fontsize=9,
-                        va='center'
-                    )
-                
 
-                    plt.xlabel('Epochs')
-                    plt.ylabel('Loss [MSE]')
-                    # plt.title(f'Training and Validation Loss Over Time\n{phase}\n{input}')
-                    plt.ylim([0, 1])
-                    plt.xlim([0, 8000])
-                    plt.legend()
-                    plt.minorticks_on()
-                    plt.grid(True, which='major')
-                    plt.grid(True, which='minor', linestyle=':', linewidth=0.5)
 
-    # plt.tight_layout()
+    # --- Pick ---
+    phase = 'phase_3_pick'
+    color = 'red'
+    inputs_list = ['tof__air_pressure__wrench__apple_prior',
+                    'tof__air_pressure__wrench__apple_prior__suction__fingers',
+                    'wrench__apple_prior',
+                    'wrench']
+                    # 'tof__air_pressure__wrench',
+                    # 'tof__wrench__apple_prior'
+                    # ]]
+    labels = [
+        r'$\mathbf{s}_{\mathrm{pk}} = [d,\, \mathbf{P}_{\mathrm{scup}},\, \mathbf{F}_{\mathrm{tcp}},\, \mathbf{p}]$',
+        r'$\mathbf{s}_{\mathrm{pk}} = [d,\, \mathbf{P}_{\mathrm{scup}},\, \mathbf{F}_{\mathrm{tcp}},\, \mathbf{p},\, s,\, f]$',
+        r'$\mathbf{s}_{\mathrm{pk}} = [\mathbf{F}_{\mathrm{tcp}},\, \mathbf{p}]$',
+        r'$\mathbf{s}_{\mathrm{pk}} = [\mathbf{F}_{\mathrm{tcp}}]$',
+    ]
+
+    plot_loss_curves(base, phase, inputs_list, labels)
+
     plt.show()
+    
+    
+def plot_loss_curves(base, phase, inputs, states):
+    
+
+    n_cols = len(inputs)
+
+    fig, axes = plt.subplots(
+        1,
+        n_cols,
+        figsize=(6 * n_cols, 5),
+        sharey=True
+    )
+
+    if n_cols == 1:
+        axes = [axes]
+
+    for ax, input_name, state in zip(axes, inputs, states):
+
+        npz_folder = os.path.join(base, phase, '0_timesteps', input_name)
+
+        npz_files = [
+            os.path.join(npz_folder, f)
+            for f in os.listdir(npz_folder)
+            if f.endswith('.npz')
+        ]
+
+        model_handles = []
+
+        for idx, file in enumerate(npz_files):
+
+            data = np.load(file)
+            train_loss = data['train_losses']
+            val_loss = data['val_losses']
+
+            if min(val_loss) < 0.75:
+
+                filtered_train = gaussian_filter(train_loss, 2)
+                filtered_val = gaussian_filter(val_loss, 2)
+
+                name = file.split(input_name)[1]
+                name = name.split('_lstm')[0]
+
+                color = plt.cm.tab10(idx % 10)
+
+                # Plot train
+                ax.plot(
+                    filtered_train,
+                    linestyle='--',
+                    color=color,
+                    alpha=0.8
+                )
+
+                # Plot val
+                ax.plot(
+                    filtered_val,
+                    linestyle='-',
+                    color=color
+                )
+
+                # Save only ONE handle per model
+                model_handles.append(
+                    Line2D([0], [0], color=color, lw=2, label=name)
+                )
+
+        # ----- Model legend (colors)
+        model_legend = ax.legend(
+            handles=model_handles,
+            title="Models",
+            loc='upper right'
+        )
+        ax.add_artist(model_legend)
+
+        # ----- Style legend (train vs val)
+        style_handles = [
+            Line2D([0], [0], color='black', linestyle='--', label='Train'),
+            Line2D([0], [0], color='black', linestyle='-', label='Validation')
+        ]
+
+        ax.legend(
+            handles=style_handles,
+            loc='lower right'
+        )
+
+        ax.set_title(state, fontsize=14)
+        ax.set_xlabel('Epochs')
+        ax.set_xlim([0, 1000])
+        ax.set_ylim([0, 1.2])
+        ax.grid(True, which='major')
+        # ax.grid(True, which='minor', linestyle=':', linewidth=0.5)
+        ax.minorticks_on()
+
+    axes[0].set_ylabel('Loss [MSE]')
+    fig.suptitle(f'Training & Validation Loss — {phase}', fontsize=14)
+
+    fig.tight_layout()
+        
 
 
 def trajectory_from_twist(trial=240):
@@ -593,10 +633,6 @@ def trajectory_from_twist(trial=240):
     ang_twist_z = df['Δ_ori_eef._z._eef_frame'].values
 
     pass
-
-
-     
-
 
 
 
