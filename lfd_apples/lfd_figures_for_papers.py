@@ -463,61 +463,69 @@ def compare_losses_plots():
 
     # base = 'D:\06_IL_learning\experiment_1_(pull)'
 
+    # Math labels
+    # Map tokens → math components
+    
+
+
+
     base = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)'
 
     # --- Approach ---
     phase = 'phase_1_approach'
     color = 'blue'
-    inputs_list = ['tof__inhand_cam_features__apple_prior',
-                    'tof__inhand_cam_features__apple_prior__suction']
-    labels = [
-                r'$\mathbf{s}_{\mathrm{ap}} = [d,\, \mathbf{z},\, \mathbf{p}]$',
-                r'$\mathbf{s}_{\mathrm{ap}} = [d,\, \mathbf{z},\, \mathbf{P}_{\mathrm{scup}},\, \mathbf{p}]$'
-            ]
-    plot_loss_curves(base, phase, inputs_list, labels)
+    inputs_list = ['tof__inhand_cam_features',
+                   'tof__inhand_cam_features__apple_prior',
+                   'tof__inhand_cam_features__apple_prior__suction']
+   
+    plot_loss_curves(base, phase, inputs_list)
 
 
     # --- Contact ---
     phase = 'phase_2_contact'
     color = 'orange'
     inputs_list = ['tof__air_pressure__apple_prior',                        
-                    'tof__air_pressure__apple_prior__suction__fingers',    
-                    # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
-                    'tof__air_pressure__apple_prior__previous_deltas']
-    labels = ['tof__air_pressure__apple_prior',                        
-                    'tof__air_pressure__apple_prior__suction__fingers',    
-                    # 'tof__air_pressure__wrench__apple_prior__suction__fingers',
-                    'tof__air_pressure__apple_prior__previous_deltas'
-            ]
+                   'tof__air_pressure__apple_prior__previous_deltas',
+                   'tof__air_pressure__apple_prior__suction__fingers',                                          
+                   'tof__air_pressure__wrench__apple_prior__suction__fingers']
+   
     
-    plot_loss_curves(base, phase, inputs_list, labels)
+    plot_loss_curves(base, phase, inputs_list)
 
 
 
     # --- Pick ---
     phase = 'phase_3_pick'
     color = 'red'
-    inputs_list = ['tof__air_pressure__wrench__apple_prior',
-                    'tof__air_pressure__wrench__apple_prior__suction__fingers',
-                    'wrench__apple_prior',
-                    'wrench']
+    inputs_list = ['wrench',
+                   'apple_prior',
+                   'wrench__apple_prior',
+                   'tof__air_pressure__wrench__apple_prior',
+                    'tof__air_pressure__wrench__apple_prior__suction__fingers',                    
+                    ]
                     # 'tof__air_pressure__wrench',
                     # 'tof__wrench__apple_prior'
                     # ]]
-    labels = [
-        r'$\mathbf{s}_{\mathrm{pk}} = [d,\, \mathbf{P}_{\mathrm{scup}},\, \mathbf{F}_{\mathrm{tcp}},\, \mathbf{p}]$',
-        r'$\mathbf{s}_{\mathrm{pk}} = [d,\, \mathbf{P}_{\mathrm{scup}},\, \mathbf{F}_{\mathrm{tcp}},\, \mathbf{p},\, s,\, f]$',
-        r'$\mathbf{s}_{\mathrm{pk}} = [\mathbf{F}_{\mathrm{tcp}},\, \mathbf{p}]$',
-        r'$\mathbf{s}_{\mathrm{pk}} = [\mathbf{F}_{\mathrm{tcp}}]$',
-    ]
+   
 
-    plot_loss_curves(base, phase, inputs_list, labels)
+    plot_loss_curves(base, phase, inputs_list)
 
     plt.show()
     
     
-def plot_loss_curves(base, phase, inputs, states):
+def plot_loss_curves(base, phase, inputs):
     
+    # Math labels
+    feature_map = {
+        'tof': r'd',
+        'air_pressure': r'\mathbf{P}_{\mathrm{scup}}',
+        'inhand_cam_features': r'\mathbf{z}',
+        'wrench': r'\mathbf{F}_{\mathrm{tcp}}',
+        'apple_prior': r'\mathbf{p}',
+        'suction': r's',
+        'fingers': r'f',
+        'previous_deltas': r'\Delta \mathbf{s}_{t-1}'
+    }
 
     n_cols = len(inputs)
 
@@ -531,7 +539,7 @@ def plot_loss_curves(base, phase, inputs, states):
     if n_cols == 1:
         axes = [axes]
 
-    for ax, input_name, state in zip(axes, inputs, states):
+    for ax, input_name in zip(axes, inputs):
 
         npz_folder = os.path.join(base, phase, '0_timesteps', input_name)
 
@@ -542,6 +550,18 @@ def plot_loss_curves(base, phase, inputs, states):
         ]
 
         model_handles = []
+
+        # Build the math label for the legend
+        components = input_name.split('__')
+        state = ''
+        for comp in components:
+            math_label = feature_map[comp]
+            state += math_label
+            if comp != components[-1]:
+                state += ', '
+        
+        state = '$ [' + state + ']$'
+       
 
         for idx, file in enumerate(npz_files):
 
