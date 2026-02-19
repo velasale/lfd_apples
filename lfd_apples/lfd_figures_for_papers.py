@@ -444,17 +444,7 @@ def phases_stats_from_last_row():
 
 
 def compare_losses_plots():
-
-
-    plt.rcParams.update({
-        "font.family": "serif",
-        "mathtext.fontset": "stix",
-        "axes.labelsize": 15,
-        "axes.titlesize": 10,
-        "xtick.labelsize": 15,
-        "ytick.labelsize": 15,
-        "legend.fontsize": 10,
-    })
+    
 
     # base = os.path.join(r'D:',
     #                      'DATA',
@@ -499,10 +489,9 @@ def compare_losses_plots():
     color = 'red'
     inputs_list = ['wrench',
                    'apple_prior',
-                   'wrench__apple_prior',
-                   'tof__air_pressure__wrench__apple_prior',
-                    'tof__air_pressure__wrench__apple_prior__suction__fingers',                    
-                    ]
+                   'wrench__apple_prior']
+                #    'tof__air_pressure__wrench__apple_prior',
+                    # 'tof__air_pressure__wrench__apple_prior__suction__fingers',    
                     # 'tof__air_pressure__wrench',
                     # 'tof__wrench__apple_prior'
                     # ]]
@@ -514,7 +503,29 @@ def compare_losses_plots():
     
     
 def plot_loss_curves(base, phase, inputs):
+
+    plt.rcParams.update({
+        "font.family": "serif",
+        "mathtext.fontset": "stix",
+        "axes.labelsize": 15,
+        "axes.titlesize": 10,
+        "xtick.labelsize": 15,
+        "ytick.labelsize": 15,
+        "legend.fontsize": 8,
+    })
+
+    # Plotting parameters
+    min_epochs = -5
+    max_epochs = 500
+    max_loss = 1.2
+    min_loss_thr = 0.65
     
+    if phase == 'phase_2_contact':
+        max_loss = 1.2
+        max_epochs = 5000
+        min_loss_thr = 0.75
+
+
     # Math labels
     feature_map = {
         'tof': r'd',
@@ -569,13 +580,20 @@ def plot_loss_curves(base, phase, inputs):
             train_loss = data['train_losses']
             val_loss = data['val_losses']
 
-            if min(val_loss) < 0.75:
+            if min(val_loss) < min_loss_thr:
 
                 filtered_train = gaussian_filter(train_loss, 2)
                 filtered_val = gaussian_filter(val_loss, 2)
 
+                # lstm model
                 name = file.split(input_name)[1]
                 name = name.split('_lstm')[0]
+                # name
+                layers = name.split('_layers')[0].split('/')[1]
+                dimension = name.split('_layers_')[1].split('_dim')[0]
+                sequences = name.split('_dim_')[1].split('_seq')[0]
+                name = f'L = {layers}, H = {dimension}, T = {sequences}'
+                
 
                 color = plt.cm.tab10(idx % 10)
 
@@ -602,7 +620,7 @@ def plot_loss_curves(base, phase, inputs):
         # ----- Model legend (colors)
         model_legend = ax.legend(
             handles=model_handles,
-            title="Models",
+            title="LSTM models",
             loc='upper right'
         )
         ax.add_artist(model_legend)
@@ -620,8 +638,8 @@ def plot_loss_curves(base, phase, inputs):
 
         ax.set_title(state, fontsize=14)
         ax.set_xlabel('Epochs')
-        ax.set_xlim([0, 1000])
-        ax.set_ylim([0, 1.2])
+        ax.set_xlim([min_epochs, max_epochs])
+        ax.set_ylim([0, max_loss])
         ax.grid(True, which='major')
         # ax.grid(True, which='minor', linestyle=':', linewidth=0.5)
         ax.minorticks_on()
