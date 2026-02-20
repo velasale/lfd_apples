@@ -109,7 +109,7 @@ def fr3_fk(joint_angles):
         (0,         np.pi/2,    0,      joint_angles[5]),
         (0.088,     np.pi/2,    0,      joint_angles[6]),
         (0,         0,          0.107,  0),
-        (0,         0,          0.1034, -np.pi/2)      # end-effector (tool)
+        (0,         0,          0.227,  0)       # end-effector (tool)
     ]
 
     T = np.eye(4)
