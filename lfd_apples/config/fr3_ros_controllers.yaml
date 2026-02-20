@@ -15,9 +15,6 @@
       gravity_compensation_example_controller:
         type: franka_example_controllers/GravityCompensationExampleController     
 
-      fr3_twist_controller:
-        type: joint_trajectory_controller/JointTrajectoryController
-
       fr3_joint_velocity_controller:
         type: franka_example_controllers/LfdJointVelocityController
 
@@ -52,6 +49,7 @@
       lock_log_error: false #  Log error if lock acquisition fails - false == do not log  
       lock_update_success: true # return update OK, although lock fails (no update occurs)
       
+      
 /**: 
   fr3_arm_controller:
     ros__parameters:
@@ -76,41 +74,3 @@
         fr3_joint5: { p: 250., d: 10., i: 0., i_clamp: 1. }
         fr3_joint6: { p: 150., d: 10., i: 0., i_clamp: 1. }
         fr3_joint7: { p: 50., d: 5., i: 0., i_clamp: 1. }
-
-
-/**: 
-  fr3_twist_controller:
-    ros__parameters:
-      command_interfaces:
-        - effort
-      state_interfaces:
-        - position
-        - velocity
-      joints:
-        - fr3_joint1
-        - fr3_joint2
-        - fr3_joint3
-        - fr3_joint4
-        - fr3_joint5
-        - fr3_joint6
-        - fr3_joint7       
-
-      gains:
-        fr3_joint1: { p: 600., d: 30., i: 0., i_clamp: 1. }
-        fr3_joint2: { p: 600., d: 30., i: 0., i_clamp: 1. }
-        fr3_joint3: { p: 600., d: 30., i: 0., i_clamp: 1. }
-        fr3_joint4: { p: 600., d: 30., i: 0., i_clamp: 1. }
-        fr3_joint5: { p: 250., d: 10., i: 0., i_clamp: 1. }
-        fr3_joint6: { p: 150., d: 10., i: 0., i_clamp: 1. }
-        fr3_joint7: { p: 50., d: 5., i: 0., i_clamp: 1. }                
- 
-      # gains:
-      #   fr3_joint1: { p: 200., d: 50., i: 0., i_clamp: 1. }
-      #   fr3_joint2: { p: 200., d: 50., i: 0., i_clamp: 1. }
-      #   fr3_joint3: { p: 200., d: 50., i: 0., i_clamp: 1. }
-      #   fr3_joint4: { p: 200., d: 50., i: 0., i_clamp: 1. }
-      #   fr3_joint5: { p: 150., d: 20., i: 0., i_clamp: 1. }
-      #   fr3_joint6: { p: 50., d: 20., i: 0., i_clamp: 1. }
-      #   fr3_joint7: { p: 20., d: 5., i: 0., i_clamp: 1. }
-
-
