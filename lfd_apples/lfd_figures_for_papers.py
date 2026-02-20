@@ -466,8 +466,8 @@ def compare_losses_plots():
     color = 'blue'
     inputs_list = ['apple_prior',
                    'tof__inhand_cam_features',
-                   'tof__inhand_cam_features__apple_prior',
-                   'tof__inhand_cam_features__apple_prior__suction']
+                   'tof__inhand_cam_features__apple_prior']#,
+                #    'tof__inhand_cam_features__apple_prior__suction']
    
     plot_loss_curves(base, phase, inputs_list)
 
@@ -477,8 +477,8 @@ def compare_losses_plots():
     color = 'orange'
     inputs_list = ['tof__air_pressure__apple_prior',                        
                    'tof__air_pressure__apple_prior__previous_deltas',
-                   'tof__air_pressure__apple_prior__suction__fingers',                                          
-                   'tof__air_pressure__wrench__apple_prior__suction__fingers']
+                   'tof__air_pressure__apple_prior__suction__fingers']#,                                          
+                #    'tof__air_pressure__wrench__apple_prior__suction__fingers']
    
     
     plot_loss_curves(base, phase, inputs_list)
@@ -505,8 +505,8 @@ def compare_losses_plots():
     
 def plot_loss_curves(base, phase, inputs):
 
-    
-
+    # ============================= Step 1: Plotting parameters =============================
+    # Text
     plt.rcParams.update({
         "font.family": "serif",
         "mathtext.fontset": "stix",
@@ -517,18 +517,17 @@ def plot_loss_curves(base, phase, inputs):
         "legend.fontsize": 8,
     })
 
-    # Plotting parameters
-    top_n = 10       # best n models
-
+    # Number of plots per state
+    top_n = 2       # best n models
+    
+    # Axes limits
     min_epochs = -5
     max_epochs = 500
     max_loss = 1.2    
     
     if phase == 'phase_2_contact':
         max_loss = 1.2
-        max_epochs = 2000
-        
-
+        max_epochs = 1000       
 
     # Math labels
     feature_map = {
@@ -541,6 +540,8 @@ def plot_loss_curves(base, phase, inputs):
         'fingers': r'f',
         'previous_deltas': r'\Delta \mathbf{s}_{t-1}'
     }
+
+    # ============================= Step 2: Load data and plot =============================
 
     n_cols = len(inputs)
 
@@ -577,7 +578,7 @@ def plot_loss_curves(base, phase, inputs):
         
         state = '$ [' + state + ']$'
        
-        # Get best 3 models based on minimum validation loss
+        # Creat top model list based on minimum validation loss
         for idx, file in enumerate(npz_files):
 
             data = np.load(file)
@@ -593,7 +594,7 @@ def plot_loss_curves(base, phase, inputs):
             top_models = min_losses_df.sort_values('min_val_loss').head(top_n)
 
 
-        # Plot the top 3 models
+        # Plot Top trained models
         for idx, file in enumerate(top_models['file'].values):            
 
             data = np.load(file)

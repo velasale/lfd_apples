@@ -569,6 +569,7 @@ class LFDController(Node):
         self.scups_engaged = 0
 
         self.prev_time = None
+
         self.sum_vel_x_error = 0.0
         self.sum_vel_y_error = 0.0
         self.sum_vel_z_error = 0.0
@@ -609,7 +610,7 @@ class LFDController(Node):
     def initialize_ros_timers(self):        
         
         # --- Timer for high-rate velocity ramping ---
-        self.timer_period = 0.001  # 500 Hz
+        self.timer_period = 0.03  # 500 Hz
         self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
         # --- Timer to recreate incoming palm camera with fake hardware ---
@@ -1232,8 +1233,7 @@ class LFDController(Node):
                     )                    
                     self.get_logger().info(f'APPROACH actions: {actions_str}')
                    
-                                        
-                        
+                                
 
             if self.running_lfd_contact:
 
@@ -1288,7 +1288,8 @@ class LFDController(Node):
 
                 # Combine data and update sequence buffer
                 # tof, air_pressure, wrench, apple_prior
-                self.state = np.concatenate([self.tof_state, self.scups_state, self.wrench_state, self.p_apple_tcp])    
+                # self.state = np.concatenate([self.tof_state, self.scups_state, self.wrench_state, self.p_apple_tcp])    
+                self.state = np.concatenate([self.wrench_state, self.p_apple_tcp])   
                 state_str = np.array2string(self.state, precision=6, separator=',', suppress_small=True)                
                 self.get_logger().info(f"PICK state: {state_str}")   
 
@@ -1348,31 +1349,19 @@ class LFDController(Node):
         self.running_lfd = True
         self.running_lfd_approach = True
         self.sum_pos_x_error = 0.0
-        self.sum_pos_y_error = 0.0
-
-        self.sum_vel_x_error = 0.0
-        self.sum_vel_y_error = 0.0
-        self.sum_vel_z_error = 0.0
-        self.sum_ang_x_error = 0.0
-        self.sum_ang_y_error = 0.0
-        self.sum_ang_z_error = 0.0
-
-        self.previous_vel_x_error = 0.0
-        self.previous_vel_y_error = 0.0
-        self.previous_vel_z_error = 0.0
+        self.sum_pos_y_error = 0.0        
 
         self.PI_GAIN = self.INITIAL_PI_GAIN     
 
-        # Rviz: Clear previous trail       
+        # Clear previous eef trail in RVIZ       
         self.tcp_trail_marker.points.clear()
         self.trail_step = 0
 
-        # Stop from keyboard
+        # Emergency Stop from keyboard
         key = KeyboardListener()
 
         while rclpy.ok() and self.running_lfd and not key.esc_pressed:
-       
-            
+                   
             # This runs depending on the flags           
             # 'palm camera callback' has the logic
 
@@ -1394,7 +1383,7 @@ class LFDController(Node):
         if dt <= 0.0:
             return             
         
-
+        # Publish the target twist
         self.current_cmd.twist = self.target_cmd.twist            
         self.current_cmd.header.frame_id = "fr3_hand_tcp"        
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
@@ -1460,23 +1449,23 @@ def main():
 
     APPROACH_MODEL_PARAMS = {'MODEL': 'lstm',
                              'PHASE': 'phase_1_approach',
-                             'SEQ_LEN': 30,
                              'NUM_LAYERS': 2,
-                             'HIDDEN_DIM': 1024
+                             'HIDDEN_DIM': 1024,
+                             'SEQ_LEN': 30                                                         
                             }  
     
     CONTACT_MODEL_PARAMS = {'MODEL': 'lstm',
                             'PHASE': 'phase_2_contact',
-                            'SEQ_LEN': 10,
-                            'NUM_LAYERS': 1,
-                            'HIDDEN_DIM': 64
+                            'NUM_LAYERS': 2,
+                            'HIDDEN_DIM': 64,
+                            'SEQ_LEN': 5                                             
                             }  
     
     PICK_MODEL_PARAMS = {'MODEL': 'lstm',
                          'PHASE': 'phase_3_pick',
-                         'SEQ_LEN': 30,
                          'NUM_LAYERS': 2,
-                         'HIDDEN_DIM': 1024
+                         'HIDDEN_DIM': 1024,
+                         'SEQ_LEN': 50                        
                         }  
     
     node = LFDController(APPROACH_MODEL_PARAMS, CONTACT_MODEL_PARAMS, PICK_MODEL_PARAMS)    
