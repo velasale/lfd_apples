@@ -49,8 +49,7 @@ import datetime
 # IK solver imports
 import sys
 sys.path.append('/home/alejo/MyProjects/GeoFIK')
-import geofik_py
-from franka_easy_ik import FrankaEasyIK
+
 
 
 import numpy as np
@@ -601,7 +600,7 @@ class LFDController(Node):
     def initialize_ros_timers(self):        
         
         # --- Timer for high-rate velocity ramping ---
-        self.timer_period = 0.001  # 500 Hz
+        self.timer_period = 0.03  # 500 Hz
         self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
         # --- Timer to recreate incoming palm camera with fake hardware ---
@@ -1067,13 +1066,13 @@ class LFDController(Node):
         dt = 0.1
 
         # Desired Twist @End Effector
-        self.current_cmd.twist.linear.x = 0.0
+        self.current_cmd.twist.linear.x = 0.05
         self.current_cmd.twist.linear.y = 0.0
         self.current_cmd.twist.linear.z = 0.0
 
         self.current_cmd.twist.angular.x = 0.0
         self.current_cmd.twist.angular.y = 0.0
-        self.current_cmd.twist.angular.z = 0.1
+        self.current_cmd.twist.angular.z = 0.0
 
 
         # IK Solution
