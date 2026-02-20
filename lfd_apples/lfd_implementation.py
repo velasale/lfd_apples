@@ -295,15 +295,7 @@ class LFDController(Node):
             self.bbox_callback, 10)  
         
         
-        # ROS Topic Publishers
-        self.vel_pub = self.create_publisher(
-            TwistStamped,
-            '/cartesian_velocity_controller/command',
-            10)
-        self.delta_pub = self.create_publisher(
-            Float32MultiArray,
-            '/cartesian_delta',
-            10)       
+        # ROS Topic Publishers       
         self.servo_pub = self.create_publisher(
             TwistStamped,
             '/servo_node_lfd/delta_twist_cmds',
@@ -343,8 +335,9 @@ class LFDController(Node):
         
         # Controller names
         self.arm_controller = 'fr3_arm_controller'
-        self.twist_controller = 'fr3_twist_controller'
         self.gravity_controller = 'gravity_compensation_example_controller'
+        self.joint_velocity_controller = 'fr3_joint_velocity_controller'
+     
      
         # Switch controller client
         self.switch_client = self.create_client(SwitchController, '/controller_manager/switch_controller')
@@ -1220,19 +1213,7 @@ class LFDController(Node):
                     self.target_cmd.twist.angular.x = 0.0# * float(self.Y[3]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.y = 0.0# * float(self.Y[4]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.z = 0.0# * float(self.Y[5]) * self.DELTA_GAIN
-
-
-                    #============= Transform TWIST (from tcp to base frame) ===========
-                    current_twist_linear_cmd_tcp = np.array([self.target_cmd.twist.linear.x,
-                                                            self.target_cmd.twist.linear.y,
-                                                            self.target_cmd.twist.linear.z])                
-                    current_twist_angular_cmd_tcp = np.array([self.target_cmd.twist.angular.x,
-                                                              self.target_cmd.twist.angular.y,
-                                                              self.target_cmd.twist.angular.z])          
-                              
-                    self.current_twist_linear_cmd_base = self.R_now @ current_twist_linear_cmd_tcp
-                    self.current_twist_angular_cmd_base = self.R_now @ current_twist_angular_cmd_tcp
-
+                 
 
                     twist_array = np.array([self.target_cmd.twist.linear.x,
                                             self.target_cmd.twist.linear.y,
@@ -1250,16 +1231,7 @@ class LFDController(Node):
                         max_line_width=np.inf
                     )                    
                     self.get_logger().info(f'APPROACH actions: {actions_str}')
-
-                    
-                    base_actions_str = np.array2string(
-                        self.current_twist_linear_cmd_base ,
-                        precision=6,
-                        suppress_small=True,
-                        separator=' ',
-                        max_line_width=np.inf
-                    )                    
-                    self.get_logger().info(f'APPROACH BASE actions: {base_actions_str}')
+                   
                                         
                         
 
@@ -1421,67 +1393,10 @@ class LFDController(Node):
 
         if dt <= 0.0:
             return             
-     
-
-        #============= Feedback from current tcp speed ============
-        kp_lin = 1
-        ki_lin = 1e-6
-        kd_lin = 0
-                       
-       
-        # Proportional
-        vel_x_error = self.current_twist_linear_cmd_base[0] - self.v_base[0]
-        vel_y_error = self.current_twist_linear_cmd_base[1] - self.v_base[1]
-        vel_z_error = self.current_twist_linear_cmd_base[2] - self.v_base[2]
-    
-        # Integral
-        self.sum_vel_x_error += vel_x_error
-        self.sum_vel_y_error += vel_y_error
-        self.sum_vel_z_error += vel_z_error       
-
-        # Derivative
-        d_vel_x_error = (self.previous_vel_x_error - vel_x_error)/dt
-        d_vel_y_error = (self.previous_vel_y_error - vel_y_error)/dt
-        d_vel_z_error = (self.previous_vel_z_error - vel_z_error)/dt
-
-        # Record current values for next derivative
-        self.previous_vel_x_error = vel_x_error
-        self.previous_vel_y_error = vel_y_error
-        self.previous_vel_z_error = vel_z_error
-
-
-        thr = 0.001
-        # PID 
-        if abs(self.current_twist_linear_cmd_base[0]) < thr:            
-            self.current_cmd.twist.linear.x = kp_lin*vel_x_error + ki_lin*self.sum_vel_x_error + kd_lin*d_vel_x_error
-        else:
-            self.current_cmd.twist.linear.x = self.current_twist_linear_cmd_base[0]
-
-        if abs(self.current_twist_linear_cmd_base[1]) < thr:
-            self.current_cmd.twist.linear.y = kp_lin*vel_y_error + ki_lin*self.sum_vel_y_error + kd_lin*d_vel_y_error
-        else:
-            self.current_cmd.twist.linear.y = self.current_twist_linear_cmd_base[1]
-
-        if abs(self.current_twist_linear_cmd_base[2]) < thr:
-            self.current_cmd.twist.linear.z = kp_lin*vel_z_error + ki_lin*self.sum_vel_z_error + kd_lin*d_vel_z_error
-        else:
-            self.current_cmd.twist.linear.z = self.current_twist_linear_cmd_base[2]  
-   
         
 
-        self.current_cmd.twist.linear.x = self.current_twist_linear_cmd_base[0]
-        self.current_cmd.twist.linear.y = self.current_twist_linear_cmd_base[1]
-        self.current_cmd.twist.linear.z = self.current_twist_linear_cmd_base[2]         
-
-        self.current_cmd.twist.angular.x = self.current_twist_angular_cmd_base[0] 
-        self.current_cmd.twist.angular.y = self.current_twist_angular_cmd_base[1] 
-        self.current_cmd.twist.angular.z = self.current_twist_angular_cmd_base[2] 
-
-        # self.v_base is computed at base 
-        self.current_cmd.header.frame_id = "fr3_link0"
-
-        # self.current_cmd.header.frame_id = "fr3_hand_tcp"
-        
+        self.current_cmd.twist = self.target_cmd.twist            
+        self.current_cmd.header.frame_id = "fr3_hand_tcp"        
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
         self.servo_pub.publish(self.current_cmd)
 
@@ -1552,7 +1467,7 @@ def main():
     
     CONTACT_MODEL_PARAMS = {'MODEL': 'lstm',
                             'PHASE': 'phase_2_contact',
-                            'SEQ_LEN': 5,
+                            'SEQ_LEN': 10,
                             'NUM_LAYERS': 1,
                             'HIDDEN_DIM': 64
                             }  
@@ -1602,8 +1517,6 @@ def main():
             pass
 
 
-        # COMMENT FROM HERE ==========
-
         # ------------ Step 2: Place apple and record position ------       
         node.get_logger().info(f"{YELLOW}\n\nSTEP 2: Place apple on the proxy. \nPress ENTER key when done.\n{RESET}")    
         input()
@@ -1633,7 +1546,7 @@ def main():
        
         # Moveit 2 - Servo node
         node.apple_probing_flag(False)
-        node.swap_controller(node.gravity_controller, node.twist_controller)
+        node.swap_controller(node.gravity_controller, node.joint_velocity_controller)
         time.sleep(SLEEP_TIME)          
         req = Trigger.Request()        
         node.servo_node_client.call_async(req)
@@ -1644,16 +1557,12 @@ def main():
         robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
 
 
-
         # -------------- Step 4: Run lfd controller ----------------        
         node.get_logger().info(f"{YELLOW}\n\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\n{RESET}")     
         input()
 
         node.DEBUGGING_MODE = False
         if node.DEBUGGING_MODE: node.initialize_debugging_mode_variables   
-
-        # ============ UNTIL HERE
-        # node.swap_controller(node.arm_controller, node.twist_controller)
 
         node.run_lfd_controller()      
 
@@ -1670,11 +1579,11 @@ def main():
         node.get_logger().info(f"{YELLOW}\n\nSTEP 5: Press ENTER key to dispose apple.\n{RESET}")
         input()
         
-        node.swap_controller(node.twist_controller, node.arm_controller)
+        node.swap_controller(node.joint_velocity_controller, node.arm_controller)
         time.sleep(SLEEP_TIME)  
 
         # Stop bag recording
-        # stop_recording_bagfile(robot_rosbag_list)
+        stop_recording_bagfile(robot_rosbag_list)
         node.save_metadata(os.path.join(BAG_FILEPATH, TRIAL, "metadata_" + TRIAL))  
 
         # Check data
