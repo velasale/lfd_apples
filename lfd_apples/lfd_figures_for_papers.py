@@ -505,6 +505,8 @@ def compare_losses_plots():
     
 def plot_loss_curves(base, phase, inputs):
 
+    
+
     plt.rcParams.update({
         "font.family": "serif",
         "mathtext.fontset": "stix",
@@ -516,6 +518,7 @@ def plot_loss_curves(base, phase, inputs):
     })
 
     # Plotting parameters
+    top_n = 5       # best n models
     min_epochs = -5
     max_epochs = 500
     max_loss = 1.2    
@@ -586,7 +589,7 @@ def plot_loss_curves(base, phase, inputs):
                 'min_val_loss': [np.min(np.load(f)['val_losses']) for f in npz_files]
             })
             # Sort by minimum validation loss and take top 3
-            top_models = min_losses_df.sort_values('min_val_loss').head(3)
+            top_models = min_losses_df.sort_values('min_val_loss').head(top_n)
 
 
         # Plot the top 3 models
@@ -656,7 +659,7 @@ def plot_loss_curves(base, phase, inputs):
         ax.set_xlim([min_epochs, max_epochs])
         ax.set_ylim([0, max_loss])
         ax.grid(True, which='major')
-        # ax.grid(True, which='minor', linestyle=':', linewidth=0.5)
+        ax.grid(True, which='minor', linestyle=':', linewidth=0.5)
         ax.minorticks_on()
 
     axes[0].set_ylabel('Loss [MSE]')
