@@ -799,12 +799,16 @@ class LFDController(Node):
 
        
     def update_tcp_trail(self):
+
+        
         if not self.running_lfd:
             return
+       
 
         self.trail_step += 1
         if self.trail_step % self.TRAIL_EVERY_N_STEPS != 0:
             return
+               
 
         p = Point()
         p.x = self.eef_pos_x_from_fk
@@ -1069,87 +1073,17 @@ class LFDController(Node):
 
         self.current_cmd.twist.angular.x = 0.0
         self.current_cmd.twist.angular.y = 0.0
-        self.current_cmd.twist.angular.z = 0.0
-
-        # Transform twist from TCP frame to base frame
-        # Rb is rotation from base to TCP
-        Rb = self.current_R_base_tcp
-        v_ee = np.array([
-            self.current_cmd.twist.linear.x,
-            self.current_cmd.twist.linear.y,
-            self.current_cmd.twist.linear.z
-        ])  
-        w_ee = np.array([
-            self.current_cmd.twist.angular.x,
-            self.current_cmd.twist.angular.y,
-            self.current_cmd.twist.angular.z    
-        ])  
-        v_base = Rb @ v_ee
-        w_base = Rb @ w_ee
+        self.current_cmd.twist.angular.z = 0.1
 
 
+        # IK Solution
 
-        # Integrate Twist --> Get desired new pose in SE(3)
-        newT = self.integrate_twist(self.current_q, self.current_cmd.twist, dt)
-
-        # IK solver --
-        # Convert newT[:3, 3] (position) to list of Python floats        
-        pos = [float(newT[0, 3]), float(newT[1, 3]), float(newT[2, 3])]
-
-        rot = [float(newT[0, 0]), float(newT[0, 1]), float(newT[0, 2]),
-               float(newT[1, 0]), float(newT[1, 1]), float(newT[1, 2]),
-               float(newT[2, 0]), float(newT[2, 1]), float(newT[2, 2])]
-
-
-        # Ensure q7 is Python float
-        q1 = float(self.current_q[0])     
-        q4 = float(self.current_q[3])
-        q6 = float(self.current_q[5])
-        q7 = float(self.current_q[6])
-
-
-        # Call the IK        
-        # q7_solutions = geofik_py.franka_ik_q7(pos, rot, q7)
-        q6_solutions = geofik_py.franka_ik_q6(pos, rot, q6, q1, q7)
-        q4_solutions = geofik_py.franka_ik_q4(pos, rot, q4, q1, q7)
-        
-        # Combine all valid solutions
-        valid_solutions = []
-        # for s in [q7_solutions, q6_solutions, q4_solutions]:
-        for s in [q4_solutions, q6_solutions]:
-            valid_solutions.extend([x for x in s if not np.isnan(x).any()])
-
-        valid = [s for s in valid_solutions if not np.isnan(s).any()]
-
-        if not valid:
-            return
-        
-        new_q = min(valid, key=lambda s: np.linalg.norm(np.array(s) - np.array(self.current_q)))
-
-        # Derivate to get new velocity command
-        vel_cmd = (np.array(new_q) - np.array(self.current_q)) / dt
-
-        # Publish joint velocities        
-        joint_vel_msg = Float64MultiArray()
-        # joint_vel_msg.data = [0.0,
-        #                       0.0,
-        #                       0.0,
-        #                       0.0,
-        #                       0.0,
-        #                       0.0,
-        #                       0.5]
-        
-        joint_vel_msg.data = vel_cmd.tolist()
-        
-        self.joint_vel_pub.publish(joint_vel_msg)
-
-
-        # Servo Node Version       
-        # self.current_cmd.header.frame_id = "fr3_hand_tcp"
+        # MoveIt - Servo Node Version       
+        self.current_cmd.header.frame_id = "fr3_hand_tcp"
         # # self.current_cmd.header.frame_id  = "fr3_link0"
         
-        # self.current_cmd.header.stamp = self.get_clock().now().to_msg()
-        # self.servo_pub.publish(self.current_cmd)
+        self.current_cmd.header.stamp = self.get_clock().now().to_msg()
+        self.servo_pub.publish(self.current_cmd)
 
 
     def send_stop_message(self):
@@ -1214,18 +1148,21 @@ def main():
         time.sleep(SLEEP_TIME)               
         node.get_logger().info(f"{YELLOW}\n\nSTEP 3: Record apple position by bringing gripper close to it (cups gently apple).\nPress ENTER key when you are done.\n{RESET}")        
         input()           
+
+        node.swap_controller(node.gravity_controller, node.joint_velocity_controller)
+        time.sleep(SLEEP_TIME)
         
         # # --- Moveit2 Servo Mode ---
         # node.swap_controller(node.gravity_controller, node.twist_controller)
         # time.sleep(SLEEP_TIME)          
-        # req = Trigger.Request()        
-        # node.servo_node_client.call_async(req)
-        # node.get_logger().info("Moveit2 Servo Node enabled")
-        # time.sleep(SLEEP_TIME)        
+        # node.initialize_ros_service_clients()
 
-        node.swap_controller(node.gravity_controller, node.joint_velocity_controller)
+        req = Trigger.Request()        
+        node.servo_node_client.call_async(req)
+        node.get_logger().info("Moveit2 Servo Node enabled")
+        time.sleep(SLEEP_TIME)        
 
-
+        
 
         # --- Run lfd controller ---
         node.get_logger().info(f"{YELLOW}\n\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\n{RESET}")     
