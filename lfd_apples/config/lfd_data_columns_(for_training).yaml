@@ -1,0 +1,177 @@
+# Action and state space columns used in all harvesting phases
+
+phases:
+  phase_1_approach:
+    - tof
+    - inhand_cam_features
+    # - inhand_cam_bbox
+    # - joint_states.pos
+    - apple_prior    
+    # - suction
+    # - previous_deltas
+    - action_cols
+    # - action_cols_at_base_frame
+
+
+  phase_2_contact:
+    - tof
+    - air_pressure
+    # - wrench
+    # - joint_states.pos    
+    - apple_prior        
+    # - suction
+    # - fingers
+    # - previous_deltas
+    - action_cols
+    # - action_cols_at_base_frame
+
+  phase_3_pick:
+    # - tof
+    # - air_pressure
+    - wrench
+    # - joint_states.pos
+    - apple_prior
+    # - suction
+    # - fingers
+    # - previous_deltas
+    - action_cols
+    # - action_cols_at_base_frame
+
+  phase_4_disposal:
+    - tof
+    - air_pressure
+    - wrench
+    - joint_states.pos
+    - action_cols
+    # - action_cols_at_base_frame
+
+#======================== ACTION SPACE ====================
+action_cols_at_base_frame:
+
+  # # Deltas @ base frame
+  - delta_pos_x
+  - delta_pos_y
+  - delta_pos_z
+  - delta_ori_x
+  - delta_ori_y
+  - delta_ori_z
+
+  # Velocities @ base frame
+  - v_eef_x
+  - v_eef_y
+  - v_eef_z
+  - w_eef_x
+  - w_eef_y
+  - w_eef_z
+
+action_cols:
+  # These are the actions used for training the model
+  # Velocities
+  # - v_eef._x._eef_frame
+  # - v_eef._y._eef_frame
+  # - v_eef._z._eef_frame
+  # - w_eef._x._eef_frame
+  # - w_eef._y._eef_frame
+  # - w_eef._z._eef_frame
+
+  # Deltas @ ee frame
+  - Δ_lin_eef._x._eef_frame
+  - Δ_lin_eef._y._eef_frame
+  - Δ_lin_eef._z._eef_frame
+  - Δ_ori_eef._x._eef_frame
+  - Δ_ori_eef._y._eef_frame
+  - Δ_ori_eef._z._eef_frame
+ 
+
+# ======================= STATE SPACE ========================
+# --- Prior knowledge ---
+apple_prior:
+  # - apple._x._base
+  # - apple._y._base
+  # - apple._z._base
+  - apple._x._ee
+  - apple._y._ee
+  - apple._z._ee
+
+previous_deltas:
+  # Previous action can be useful as input to the model, especially for predicting contact-rich phases
+  - prev_Δ_lin_eef._x._eef_frame
+  - prev_Δ_lin_eef._y._eef_frame
+  - prev_Δ_lin_eef._z._eef_frame
+  - prev_Δ_ori_eef._x._eef_frame
+  - prev_Δ_ori_eef._y._eef_frame
+  - prev_Δ_ori_eef._z._eef_frame
+  
+
+# --- Gripper State Space --- 
+air_pressure:
+  - scA
+  - scB
+  - scC
+
+tof:
+  - tof
+
+suction:
+  - suction
+
+fingers:
+  - fingers
+
+inhand_cam_features:
+  prefix: "f"
+  count: 64        # Number of features extracted from in-hand camera images, Layer 15 of Segmentation Network
+
+inhand_cam_bbox:
+  - bbox._x._img_frame
+  - bbox._y._img_frame
+
+
+# --- Arm State Space ---
+wrench:
+  - _wrench._force._x
+  - _wrench._force._y
+  - _wrench._force._z
+  - _wrench._torque._x
+  - _wrench._torque._y
+  - _wrench._torque._z
+
+joint_states:
+  pos:
+    - pos_joint_1
+    - pos_joint_2
+    - pos_joint_3
+    - pos_joint_4
+    - pos_joint_5
+    - pos_joint_6
+    - pos_joint_7
+  vel:
+    - vel_joint_1
+    - vel_joint_2
+    - vel_joint_3
+    - vel_joint_4
+    - vel_joint_5
+    - vel_joint_6
+    - vel_joint_7
+  eff:
+    - eff_joint_1
+    - eff_joint_2
+    - eff_joint_3
+    - eff_joint_4
+    - eff_joint_5
+    - eff_joint_6
+    - eff_joint_7
+
+
+
+
+
+
+
+
+
+
+
+
+
+
