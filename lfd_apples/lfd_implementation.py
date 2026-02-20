@@ -333,7 +333,7 @@ class LFDController(Node):
             'fr3_arm_controller/follow_joint_trajectory'
         )
         
-        # Controller names
+        # Controller namess
         self.arm_controller = 'fr3_arm_controller'
         self.gravity_controller = 'gravity_compensation_example_controller'
         self.joint_velocity_controller = 'fr3_joint_velocity_controller'
