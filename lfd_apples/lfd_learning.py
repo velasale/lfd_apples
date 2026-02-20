@@ -65,7 +65,7 @@ class DatasetForLearning():
         :param self: Description
         """
         
-        data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns.yaml"
+        data_columns_path = config_path = Path(__file__).parent / "config" / "lfd_data_columns_(for_training).yaml"
         with open(data_columns_path, "r") as f:
             cfg = yaml.safe_load(f)    
        
