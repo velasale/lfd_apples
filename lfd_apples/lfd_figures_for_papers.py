@@ -464,7 +464,8 @@ def compare_losses_plots():
     # --- Approach ---
     phase = 'phase_1_approach'
     color = 'blue'
-    inputs_list = ['tof__inhand_cam_features',
+    inputs_list = ['apple_prior',
+                   'tof__inhand_cam_features',
                    'tof__inhand_cam_features__apple_prior',
                    'tof__inhand_cam_features__apple_prior__suction']
    
@@ -517,13 +518,12 @@ def plot_loss_curves(base, phase, inputs):
     # Plotting parameters
     min_epochs = -5
     max_epochs = 500
-    max_loss = 1.2
-    min_loss_thr = 0.65
+    max_loss = 1.2    
     
     if phase == 'phase_2_contact':
         max_loss = 1.2
-        max_epochs = 5000
-        min_loss_thr = 0.75
+        max_epochs = 2000
+        
 
 
     # Math labels
@@ -573,49 +573,64 @@ def plot_loss_curves(base, phase, inputs):
         
         state = '$ [' + state + ']$'
        
-
+        # Get best 3 models based on minimum validation loss
         for idx, file in enumerate(npz_files):
 
             data = np.load(file)
             train_loss = data['train_losses']
             val_loss = data['val_losses']
 
-            if min(val_loss) < min_loss_thr:
+            # Create the top 5 models legend based on minimum validation loss
+            min_losses_df = pd.DataFrame({
+                'file': npz_files,
+                'min_val_loss': [np.min(np.load(f)['val_losses']) for f in npz_files]
+            })
+            # Sort by minimum validation loss and take top 3
+            top_models = min_losses_df.sort_values('min_val_loss').head(3)
 
-                filtered_train = gaussian_filter(train_loss, 2)
-                filtered_val = gaussian_filter(val_loss, 2)
 
-                # lstm model
-                name = file.split(input_name)[1]
-                name = name.split('_lstm')[0]
-                # name
-                layers = name.split('_layers')[0].split('/')[1]
-                dimension = name.split('_layers_')[1].split('_dim')[0]
-                sequences = name.split('_dim_')[1].split('_seq')[0]
-                name = f'L = {layers}, H = {dimension}, T = {sequences}'
-                
+        # Plot the top 3 models
+        for idx, file in enumerate(top_models['file'].values):            
 
-                color = plt.cm.tab10(idx % 10)
+            data = np.load(file)
+            train_loss = data['train_losses']
+            val_loss = data['val_losses']
 
-                # Plot train
-                ax.plot(
-                    filtered_train,
-                    linestyle='--',
-                    color=color,
-                    alpha=0.8
-                )
 
-                # Plot val
-                ax.plot(
-                    filtered_val,
-                    linestyle='-',
-                    color=color
-                )
+            filtered_train = gaussian_filter(train_loss, 2)
+            filtered_val = gaussian_filter(val_loss, 2)
 
-                # Save only ONE handle per model
-                model_handles.append(
-                    Line2D([0], [0], color=color, lw=2, label=name)
-                )
+            # lstm model
+            name = file.split(input_name)[1]
+            name = name.split('_lstm')[0]
+            # name
+            layers = name.split('_layers')[0].split('/')[1]
+            dimension = name.split('_layers_')[1].split('_dim')[0]
+            sequences = name.split('_dim_')[1].split('_seq')[0]
+            name = f'L = {layers}, H = {dimension}, T = {sequences}'
+            
+
+            color = plt.cm.tab10(idx % 10)
+
+            # Plot train
+            ax.plot(
+                filtered_train,
+                linestyle='--',
+                color=color,
+                alpha=0.8
+            )
+
+            # Plot val
+            ax.plot(
+                filtered_val,
+                linestyle='-',
+                color=color
+            )
+
+            # Save only ONE handle per model
+            model_handles.append(
+                Line2D([0], [0], color=color, lw=2, label=name)
+            )
 
         # ----- Model legend (colors)
         model_legend = ax.legend(
