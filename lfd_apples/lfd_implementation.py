@@ -15,7 +15,7 @@ from lfd_apples.listen_franka import main as listen_main
 from lfd_apples.listen_franka import start_recording_bagfile, stop_recording_bagfile, save_metadata, find_next_trial_number 
 from lfd_apples.ros2bag2csv import extract_data_and_plot, parse_array, fr3_jacobian, fr3_fk
 from lfd_apples.lfd_vision import extract_pooled_latent_vector
-from lfd_apples.lfd_learning import VelocityMLP, DatasetForLearning, resolve_columns, get_phase_columns, expand_features_over_time
+from lfd_apples.lfd_learning import get_phase_columns, expand_features_over_time
 from lfd_apples.lfd_lstm import LSTMRegressor
 
 # ROS2 imports
@@ -1199,20 +1199,20 @@ class LFDController(Node):
                     self.sum_pos_y_error += self.bbox_pos_y_error
 
                     # Linear Velocities                   
-                    self.target_cmd.twist.linear.x = 0.0 #1.0 * (float(self.Y[0]) * self.DELTA_GAIN \
-                                                        #+ self.PI_GAIN * self.POSITION_KP * self.bbox_pos_x_error \
-                                                        #+ self.PI_GAIN * self.POSITION_KI * self.sum_pos_x_error)
+                    self.target_cmd.twist.linear.x = 1.0 * (float(self.Y[0]) * self.DELTA_GAIN \
+                                                        + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_x_error \
+                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_x_error)
 
-                    self.target_cmd.twist.linear.y = 0.0 #0.0 * (float(self.Y[1]) * self.DELTA_GAIN \
-                                                        #+ self.PI_GAIN * self.POSITION_KP * self.bbox_pos_y_error \
-                                                        #+ self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error)
+                    self.target_cmd.twist.linear.y = 1.0 * (float(self.Y[1]) * self.DELTA_GAIN \
+                                                        + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_y_error \
+                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error)
 
-                    self.target_cmd.twist.linear.z = 0.1 #1.0 * float(self.Y[2]) * self.DELTA_GAIN
+                    self.target_cmd.twist.linear.z = 1.0 * float(self.Y[2]) * self.DELTA_GAIN
 
                     # Angular Velocities
-                    self.target_cmd.twist.angular.x = 0.0# * float(self.Y[3]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.y = 0.0# * float(self.Y[4]) * self.DELTA_GAIN
-                    self.target_cmd.twist.angular.z = 0.0# * float(self.Y[5]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.x = 1.0 * float(self.Y[3]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
+                    self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
                  
 
                     twist_array = np.array([self.target_cmd.twist.linear.x,
