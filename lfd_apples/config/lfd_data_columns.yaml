@@ -8,9 +8,8 @@ phases:
     # - joint_states.pos
     - apple_prior    
     # - suction
-    - previous_deltas
+    # - previous_deltas
     - action_cols
-    # - action_cols_at_base_frame
 
 
   phase_2_contact:
@@ -21,9 +20,8 @@ phases:
     - apple_prior        
     # - suction
     # - fingers
-    - previous_deltas
+    # - previous_deltas
     - action_cols
-    # - action_cols_at_base_frame
 
   phase_3_pick:
     # - tof
@@ -33,9 +31,8 @@ phases:
     - apple_prior
     # - suction
     # - fingers
-    - previous_deltas
+    # - previous_deltas
     - action_cols
-    # - action_cols_at_base_frame
 
   phase_4_disposal:
     - tof
@@ -43,7 +40,6 @@ phases:
     - wrench
     - joint_states.pos
     - action_cols
-    # - action_cols_at_base_frame
 
 #======================== ACTION SPACE ====================
 action_cols_at_base_frame:
@@ -86,9 +82,6 @@ action_cols:
 # ======================= STATE SPACE ========================
 # --- Prior knowledge ---
 apple_prior:
-  - apple._x._base
-  - apple._y._base
-  - apple._z._base
   - apple._x._ee
   - apple._y._ee
   - apple._z._ee
