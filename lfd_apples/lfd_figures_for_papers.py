@@ -518,7 +518,7 @@ def plot_loss_curves(base, phase, inputs):
     })
 
     # Plotting parameters
-    top_n = 5       # best n models
+    top_n = 5       # best n modelsf
     min_epochs = -5
     max_epochs = 500
     max_loss = 1.2    
