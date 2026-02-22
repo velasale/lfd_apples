@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from pathlib import Path
 import numpy as np
+import pandas as pd
 
 
 def collect_json_files(base_dir):
@@ -378,7 +379,10 @@ def implementation_metadata():
                                      'experiment_1_(pull)',
                                      'approach')
     else:
-        pass
+     
+
+        APPROACH_DIR = "/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/approach"
+        
 
     approach_json_files = collect_json_files(APPROACH_DIR)
 
@@ -522,7 +526,143 @@ def implementation_metadata():
     pass
 
 
+def implementation_metadata_NEW():
+
+    if platform.system() == "Windows":
+        APPROACH_DIR = os.path.join(r'D:',
+                                     'DATA',
+                                     '07_IL_implementation',
+                                     'bagfiles',
+                                     'experiment_1_(pull)',
+                                     'approach')
+    else:
+     
+
+        APPROACH_DIR = "/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/approach"
+        
+
+    approach_json_files = collect_json_files(APPROACH_DIR)
+
+    two_inputs_w_servo = []
+    two_inputs_wo_servo = []
+    three_inputs_w_servo = []
+    three_inputs_wo_servo = []
+    two_inputs_w_servo_xy = []
+    two_inputs_wo_servo_xy = []
+    three_inputs_w_servo_xy = []
+    three_inputs_wo_servo_xy = []
+
+
+    experiment_results_pd = pd.DataFrame(columns=[
+        "json_path",
+        "pi_gain_controller",
+        "states",
+        "apple_id",
+        "approach_success",
+        "approach_singularity",
+        "approach_comments",
+        "final_pose_x_mm",
+        "final_pose_y_mm",
+        "final_pose_z_mm",
+        "net_error_mm",
+        "xy_error_mm",
+        "contact_success",
+        "pick_success"
+    ])
+
+    for approach_json_path in approach_json_files:
+
+        with open(approach_json_path, "r") as f:
+            data = json.load(f)
+
+        # Controllers info
+        controllers = data.get("controllers", {})
+        approach_controller = controllers.get("approach", {})
+        pi_gain_controller = approach_controller.get("PI", {}).get("PI gain", {})
+        states = approach_controller.get("states", {})
+
+        # Proxy info
+        proxy = data.get("proxy", {})
+        apple = proxy.get("apple", {})
+        spur = proxy.get("spur", {})
+        apple_id = apple.get("id")
+
+        # Results info
+        results = data.get("results", {})
+        final_pose = results.get("approach metrics", {}).get("final pose", {})
+        approach_res = results.get("approach metrics", {}).get("success", {})
+        approach_sing = results.get("singularity", {})
+        comments = results.get('comments',{})
+
+        contact_res = results.get("contact metrics", {}).get("success", {})
+        pick_res = results.get("pick metrics", {}).get("success", {})
+
+
+        xy_error = np.linalg.norm([final_pose[0], final_pose[1]]) * 1000
+        net_error = np.linalg.norm(final_pose) * 1000
+        
+
+        # Convert dicts to JSON strings so pandas can store them safely
+        trial_results_pd = pd.DataFrame({
+            'json_path': [approach_json_path],
+            'pi_gain_controller': [pi_gain_controller],
+            'states': [json.dumps(states)],
+            'apple_id': [apple_id],
+            'approach_success': [json.dumps(approach_res)],
+            'approach_singularity': [json.dumps(approach_sing)],
+            'approach_comments': [json.dumps(comments)],
+            'final_pose_x_mm': [final_pose[0] * 1000],
+            'final_pose_y_mm': [final_pose[1] * 1000],
+            'final_pose_z_mm': [final_pose[2] * 1000],
+            'net_error_mm': [net_error],
+            'xy_error_mm': [xy_error],
+            'contact_success': [json.dumps(contact_res)],
+            'pick_success': [json.dumps(pick_res)]
+
+        })
+        # Concatenate Results
+        experiment_results_pd = pd.concat([experiment_results_pd, trial_results_pd], ignore_index=True)
+
+    # =============== NET APPROACH ERROR ===============
+        
+    fig, axes = plt.subplots(1, 2, figsize=(6, 4), sharey=True)
+    labels = ['Net error', 'XY error']   
+
+    axes[0].boxplot(experiment_results_pd['net_error_mm'])
+    axes[0].set_xticks([1])
+    axes[0].set_xticklabels([labels[0]])
+    axes[0].set_ylim(0, 120)
+
+    axes[1].boxplot(experiment_results_pd['xy_error_mm'])
+    axes[1].set_xticks([1])
+    axes[1].set_xticklabels([labels[1]])
+   
+    for ax in axes:
+        ax.grid(True)
+
+    fig.supylabel("Nearest net pose [mm]")
+    plt.tight_layout()   
+
+    plt.show()
+
+    # ================= PHASES SUCCESS RATES =================
+    app_percentage_true = (experiment_results_pd["approach_success"] == "true").mean() * 100
+    print(f"{app_percentage_true:.2f}%")
+
+    # Discard trials that air didn't trigger
+    ctd_valid = experiment_results_pd[~experiment_results_pd["approach_comments"].str.contains("trigger", na=False)]
+    ctc_percentage_true = (ctd_valid["contact_success"] == "true").mean() * 100
+    print(f"{ctc_percentage_true:.2f}%")
+
+    pk_percentage_true = (ctd_valid["pick_success"] == "true").mean() * 100
+    print(f"{pk_percentage_true:.2f}%")
+
+
+
+
+
+
 if __name__ == '__main__':
     # demonstrations_metadata()
 
-    implementation_metadata()
+    implementation_metadata_NEW()

@@ -444,6 +444,16 @@ def phases_stats_from_last_row():
 
 
 def compare_losses_plots():
+
+    plt.rcParams.update({
+        "font.family": "serif",
+        "mathtext.fontset": "stix",
+        "axes.labelsize": 11,
+        "axes.titlesize": 10,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "legend.fontsize": 10,
+    })
     
 
     # base = os.path.join(r'D:',
@@ -455,79 +465,79 @@ def compare_losses_plots():
 
     # Math labels
     # Map tokens → math components
-    
-
-
 
     base = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)'
 
+    fig, axes = plt.subplots(1, 3, figsize=(12, 3), sharey=True)
+
+    ax_approach = axes[0]
+    ax_contact  = axes[1]
+    ax_pick     = axes[2]
+
+
+
     # --- Approach ---
     phase = 'phase_1_approach'
-    color = 'blue'
+    phase_color = 'blue'
     inputs_list = ['apple_prior',
                    'tof__inhand_cam_features',
-                   'tof__inhand_cam_features__apple_prior']#,
-                #    'tof__inhand_cam_features__apple_prior__suction']
+                   'tof__inhand_cam_features__apple_prior',
+                   'tof__inhand_cam_features__apple_prior__suction']
    
-    plot_loss_curves(base, phase, inputs_list)
+    plot_loss_curves(base, phase, inputs_list, ax_approach, phase_color)
 
 
     # --- Contact ---
     phase = 'phase_2_contact'
-    color = 'orange'
-    inputs_list = ['tof__air_pressure__apple_prior',                        
+    phase_color = 'orange'
+    inputs_list = ['tof__air_pressure__apple_prior__suction__fingers',
+                   'tof__air_pressure__apple_prior',                        
                    'tof__air_pressure__apple_prior__previous_deltas',
-                   'tof__air_pressure__apple_prior__suction__fingers']#,                                          
+                   ]#,                                          
                 #    'tof__air_pressure__wrench__apple_prior__suction__fingers']
    
     
-    plot_loss_curves(base, phase, inputs_list)
+    plot_loss_curves(base, phase, inputs_list, ax_contact, phase_color)
 
 
 
     # --- Pick ---
     phase = 'phase_3_pick'
-    color = 'red'
+    phase_color = 'red'
     inputs_list = ['wrench',
                    'apple_prior',
-                   'wrench__apple_prior']
-                #    'tof__air_pressure__wrench__apple_prior',
-                    # 'tof__air_pressure__wrench__apple_prior__suction__fingers',    
-                    # 'tof__air_pressure__wrench',
-                    # 'tof__wrench__apple_prior'
-                    # ]]
+                   'tof__air_pressure__wrench__apple_prior',
+                   'wrench__apple_prior']#,
+                #    'tof__air_pressure__wrench__apple_prior__suction__fingers']#,    
+                #    'tof__air_pressure__wrench',
+                #    'tof__wrench__apple_prior'
+                #    ]
    
 
-    plot_loss_curves(base, phase, inputs_list)
+    plot_loss_curves(base, phase, inputs_list, ax_pick, phase_color)
 
+    axes[0].set_ylabel('Loss [MSE]')   
+    fig.tight_layout()    
     plt.show()
     
     
-def plot_loss_curves(base, phase, inputs):
+def plot_loss_curves(base, phase, inputs, phase_ax, phase_color):
 
     # ============================= Step 1: Plotting parameters =============================
     # Text
-    plt.rcParams.update({
-        "font.family": "serif",
-        "mathtext.fontset": "stix",
-        "axes.labelsize": 15,
-        "axes.titlesize": 10,
-        "xtick.labelsize": 15,
-        "ytick.labelsize": 15,
-        "legend.fontsize": 8,
-    })
+    
 
     # Number of plots per state
-    top_n = 2       # best n models
+    top_n = 1      # best n models
     
     # Axes limits
     min_epochs = -5
     max_epochs = 500
-    max_loss = 1.2    
+    max_loss = 1.0    
     
     if phase == 'phase_2_contact':
-        max_loss = 1.2
-        max_epochs = 1000       
+        max_loss = 1.0
+        max_epochs = 1500       
 
     # Math labels
     feature_map = {
@@ -554,6 +564,9 @@ def plot_loss_curves(base, phase, inputs):
 
     if n_cols == 1:
         axes = [axes]
+
+    # Store best models across all inputs for single plot at the end
+    top_models_each_input = pd.DataFrame() 
 
     for ax, input_name in zip(axes, inputs):
 
@@ -592,6 +605,16 @@ def plot_loss_curves(base, phase, inputs):
             })
             # Sort by minimum validation loss and take top 3
             top_models = min_losses_df.sort_values('min_val_loss').head(top_n)
+
+        # Book-keep best model for each input
+        best_model = min_losses_df.sort_values('min_val_loss').head(1)
+        best_losses_df = pd.DataFrame({
+            'file': best_model['file'].values,
+            'input': input_name,
+            'min_val_loss': best_model['min_val_loss'].values
+        })
+
+        top_models_each_input = pd.concat([top_models_each_input, best_losses_df], ignore_index=True)
 
 
         # Plot Top trained models
@@ -666,9 +689,111 @@ def plot_loss_curves(base, phase, inputs):
 
     axes[0].set_ylabel('Loss [MSE]')
     fig.suptitle(f'Training & Validation Loss — {phase}', fontsize=14)
-
     fig.tight_layout()
+
+
+    # ======================  Single plot for all inputs ======================   
+
+    model_handles = []
+
+    markers = ['x', 'o', '^', 'v', '*']    
+    
+    for idx, row in top_models_each_input.iterrows():
         
+        file = row['file']
+        input_name = row['input']
+
+        # Build the math label for the legend
+        components = input_name.split('__')
+        state = ''
+        for comp in components:
+            math_label = feature_map[comp]
+            state += math_label
+            if comp != components[-1]:
+                state += ', '
+        
+        state = '$ [' + state + ']$'
+        color = plt.cm.tab10(idx % 10)
+
+        # if phase == 'phase_1_approach':
+        #     cmap = plt.cm.Blues
+        #     color = cmap(np.random.uniform(0.2, 0.8))
+        #     color = 'blue'
+
+        # elif phase == 'phase_2_contact':
+        #     cmap = plt.cm.Oranges
+        #     color = cmap(np.random.uniform(0.2, 0.8))
+
+        #     color = 'orange'
+
+        # elif phase == 'phase_3_pick':
+        #     cmap = plt.cm.Reds
+        #     color = cmap(np.random.uniform(0.2, 0.8))
+
+        #     color = 'red'               
+        
+
+        with np.load(file) as  data:
+            data = np.load(file)            
+            train_loss = data['train_losses']
+            val_loss = data['val_losses']
+              
+
+        # Plot train
+        phase_ax.plot(
+            gaussian_filter(train_loss, 2),
+            linestyle='--',
+            color=color,
+            alpha=0.6,
+            marker= markers[idx],
+            markevery=50,
+            markersize=4
+        )
+
+        # Plot val
+        phase_ax.plot(
+            gaussian_filter(val_loss, 2),
+            linestyle='-',
+            color=color,
+            marker= markers[idx],
+            markevery=50,
+            markersize=4,
+            linewidth=1.5
+            )
+        
+
+         # Save only ONE handle per model
+        model_handles.append(
+            Line2D([0], [0], color=color, lw=2, label=state, marker=markers[idx], markevery=50)
+        )
+
+    # ----- Model legend (colors)
+    model_legend = phase_ax.legend(
+        handles=model_handles,
+        title="state",
+        loc='upper right'
+    )
+    phase_ax.add_artist(model_legend)
+
+    # ----- Style legend (train vs val)
+    style_handles = [        
+        Line2D([0], [0], color='black', linestyle='-', label='Validation'),
+        Line2D([0], [0], color=(0, 0, 0, 0.6), linestyle='--', label='Train')
+    ]
+
+    phase_ax.legend(
+        handles=style_handles,
+        loc='lower right'
+    )
+
+    
+    phase_ax.set_xlabel(f'{phase.split("_")[-1].capitalize()} - Epochs')
+    phase_ax.set_xlim([min_epochs, max_epochs])
+    phase_ax.set_ylim([0, max_loss])
+    phase_ax.grid(True, which='major')
+    phase_ax.grid(True, which='minor', linestyle=':', linewidth=0.5)
+    phase_ax.minorticks_on()
+          
 
 
 def trajectory_from_twist(trial=240):
@@ -698,7 +823,7 @@ if __name__ == '__main__':
 
     # plot_batch_trials()
     # phases_stats_from_reading_entire_trial()
-    # phases_stats_from_last_row()
-    compare_losses_plots()
+    phases_stats_from_last_row()
+    # compare_losses_plotsed 2.3s()
 
     # trajectory_from_twist(240)

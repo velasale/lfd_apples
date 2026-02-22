@@ -44,7 +44,7 @@ publish_joint_positions: false
 publish_joint_velocities: true
 publish_joint_accelerations: false
 
-# smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
+smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
 # smoothing_filter_plugin_name: "online_signal_smoothing::AccelerationLimitedPlugin"
 
 status_topic: ~/status # Publish status to this topic

@@ -355,7 +355,7 @@ class LFDController(Node):
         # Converts 'm' and 'rad' deltas into m/s and rad/s
         # In our case, delta_eef_pose was calculated for delta_times = 0.001 sec, 
         # hence, we use a gain of 1000 (1/0.001sec) to convert m to m/sec.
-        self.DELTA_GAIN = 1100
+        self.DELTA_GAIN = 1120
         # self.DELTA_GAIN = 1500    # I used this one for command interface = position
 
         # PID GAINS
@@ -549,7 +549,7 @@ class LFDController(Node):
 
         # Thresholds
         # TOF threshold is used to switch from 'approach' to 'contact' phase
-        self.TOF_THRESHOLD = 40                 # units in mm
+        self.TOF_THRESHOLD = 50                 # units in mm
         # Air pressure threshold is used to tell when a suction cup has engaged.
         self.AIR_PRESSURE_THRESHOLD = 600       # units in hPa        
        
@@ -561,6 +561,8 @@ class LFDController(Node):
         self.ema_tof = EMA(self.ema_alpha)
         
         self.ema_img = EMA(alpha = 0.75)
+
+        self.ema_wrench = EMA(alpha = 0.06)     # Sampling freq is 1Khz, so we want to smooth over approx 0.5 seconds of data, which corresponds to alpha = 0.07
 
         # Number of suction cups engaged
         self.scA_previous_state = False
@@ -914,6 +916,7 @@ class LFDController(Node):
         if self.running_lfd_pick:
 
             pass
+
             # self.get_logger().info(f"PICK controller running")   
             
             # if condition TBD:
@@ -1156,6 +1159,9 @@ class LFDController(Node):
 
         self.wrench_state = np.array([self.eef_fx, self.eef_fy, self.eef_fz, self.eef_tx, self.eef_ty, self.eef_tz])
 
+        # Online EMA filtering of wrench data to reduce noise
+        self.wrench_state = self.ema_wrench.update(self.wrench_state)
+
 
     def palm_camera_callback(self, msg: Float32MultiArray):
         """
@@ -1174,12 +1180,13 @@ class LFDController(Node):
                 # --- Extract latent image ---
                 self.latent_image = np.array(msg.data, dtype=np.float32)
                 self.ema_img.update(self.latent_image)
+                self.latent_img = np.asarray(self.ema_img.y, dtype=np.float32)   
                 # self.img_time_stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9    # time in seconds
 
                 # --- Combine data ---
-                self.state = np.concatenate([self.tof_state, self.latent_image, self.p_apple_tcp])    
-                # self.state = np.concatenate([self.tof_for_state, self.ema_img.y])                   
-
+                # self.state = np.concatenate([self.tof_state, self.latent_image, self.p_apple_tcp])    
+                self.state = np.concatenate([self.tof_state, self.latent_img, self.p_apple_tcp])    
+                
                 self.approach_state_buffer.append(self.state)        # Update buffer
 
                 if not len(self.approach_state_buffer) == self.APPROACH_MODEL_PARAMS['SEQ_LEN']:
@@ -1192,7 +1199,7 @@ class LFDController(Node):
                 
                     # Save state and action rows in DataFrames
                     self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)
-                    self.lfd_actions_df = pd.concat([self.lfd_actions_df, pd.DataFrame([self.Y[-1]])], ignore_index=True)
+                    self.lfd_actions_df = pd.concat([self.lfd_actions_df, pd.DataFrame([self.Y])], ignore_index=True)
 
 
                     # Adjust velocities with feedback from goal pose               
@@ -1403,17 +1410,7 @@ class LFDController(Node):
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
         self.servo_pub.publish(self.current_cmd)
 
-
-    def compute_joint_velocities(self, desired_ee_velocity: np.ndarray, joint_positions: list):
-        """
-        desired_ee_velocity: 6-element NumPy array
-        joint_positions: list of 7 floats
-        returns: 7-element NumPy array
-        """
-        jacobian = fr3_jacobian(joint_positions)
-        joint_velocities = np.linalg.pinv(jacobian) @ desired_ee_velocity
-        self.get_logger().info(f'Joint velocities: {joint_velocities}')
-
+   
 
 def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
 
@@ -1437,7 +1434,6 @@ def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
 
     except Exception as e:
         print(f"❌ Error during data extraction: {e}")
-
 
 
 
@@ -1538,9 +1534,10 @@ def main():
         node.swap_controller(node.gravity_controller, node.joint_velocity_controller)
         time.sleep(SLEEP_TIME)          
         req = Trigger.Request()        
-        node.servo_node_client.call_async(req)
+        node.servo_node_client.call_async(req)        
         node.get_logger().info("Moveit2 Servo Node enabled")
         time.sleep(SLEEP_TIME)        
+
 
         # Start recording bag
         robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH)
@@ -1556,7 +1553,7 @@ def main():
         node.run_lfd_controller()      
 
         # Save states to CSV        
-        csv_path = os.path.join(ROBOT_BAG_FILEPATH, 'lfd_recorded_data.csv')
+        csv_path = os.path.join(ROBOT_BAG_FILEPATH, 'lfd_states.csv')
         node.lfd_states_df.to_csv(csv_path, index=False, header=False)
         node.get_logger().info(f"LFD approach data saved to {csv_path}")
         csv_path = os.path.join(ROBOT_BAG_FILEPATH, 'lfd_actions.csv')
