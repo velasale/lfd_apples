@@ -123,3 +123,4 @@ To fix this simply replace the file **fr3_ros_controllers.yaml** with the one in
 ### V. Scripts for Data Analysis
 - lfd_metadata_analysis.py
 - lfd_data_visualization.py
+- lfd_figures_for_papers.py
