@@ -440,7 +440,7 @@ def phases_stats_from_last_row():
             elapsed_time = time[-1] - time[0]
             phase_times.append(elapsed_time)
 
-        print(f'{phase} mean Time: ', np.mean(phase_times), np.std(phase_times))
+        print(f'{phase}: Trials {np.size(phase_times)}, mean Time: {float(np.mean(phase_times)):.2f} ({float(np.std(phase_times)):.2f})\n')
 
 
 def compare_losses_plots():
@@ -468,7 +468,7 @@ def compare_losses_plots():
 
     base = '/home/alejo/Documents/DATA/06_IL_learning/experiment_1_(pull)'
 
-    fig, axes = plt.subplots(1, 3, figsize=(12, 3), sharey=True)
+    fig, axes = plt.subplots(1, 3, figsize=(6, 5), sharey=True)
 
     ax_approach = axes[0]
     ax_contact  = axes[1]
@@ -823,7 +823,7 @@ if __name__ == '__main__':
 
     # plot_batch_trials()
     # phases_stats_from_reading_entire_trial()
-    phases_stats_from_last_row()
-    # compare_losses_plotsed 2.3s()
+    # phases_stats_from_last_row()
+    compare_losses_plots()
 
     # trajectory_from_twist(240)

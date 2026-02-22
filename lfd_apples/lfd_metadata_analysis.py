@@ -624,6 +624,7 @@ def implementation_metadata_NEW():
         experiment_results_pd = pd.concat([experiment_results_pd, trial_results_pd], ignore_index=True)
 
     # =============== NET APPROACH ERROR ===============
+    print("\n=== Experiment Approach Errors ===")
         
     fig, axes = plt.subplots(1, 2, figsize=(6, 4), sharey=True)
     labels = ['Net error', 'XY error']   
@@ -642,20 +643,32 @@ def implementation_metadata_NEW():
 
     fig.supylabel("Nearest net pose [mm]")
     plt.tight_layout()   
-
     plt.show()
 
+    print(experiment_results_pd[["net_error_mm", "xy_error_mm"]].describe())
+
     # ================= PHASES SUCCESS RATES =================
-    app_percentage_true = (experiment_results_pd["approach_success"] == "true").mean() * 100
-    print(f"{app_percentage_true:.2f}%")
+    print("\n=== Experiment Success Rates ===")
 
+    # Approach success rate
+    ap_percentage_true = (experiment_results_pd["approach_success"] == "true").mean() * 100
+    ap_trials = len(experiment_results_pd)
+    print(f"Approach success rate: {ap_percentage_true:.2f}%, ({ap_trials} trials)")
+
+    # Contact success rate
     # Discard trials that air didn't trigger
-    ctd_valid = experiment_results_pd[~experiment_results_pd["approach_comments"].str.contains("trigger", na=False)]
-    ctc_percentage_true = (ctd_valid["contact_success"] == "true").mean() * 100
-    print(f"{ctc_percentage_true:.2f}%")
+    ct_valid = experiment_results_pd[experiment_results_pd["approach_success"] == "true"]
+    ct_valid = ct_valid[~ct_valid["approach_comments"].str.contains("trigger", na=False)]
+    ct_percentage_true = (ct_valid["contact_success"] == "true").mean() * 100
+    ct_trials = len(ct_valid)
+    print(f"Contact success rate: {ct_percentage_true:.2f}%, ({ct_trials} trials)")
 
-    pk_percentage_true = (ctd_valid["pick_success"] == "true").mean() * 100
-    print(f"{pk_percentage_true:.2f}%")
+
+    # Pick success rate
+    pk_valid = ct_valid[ct_valid["contact_success"] == "true"]
+    pk_percentage_true = (pk_valid["pick_success"] == "true").mean() * 100
+    pk_trials = len(pk_valid)
+    print(f"Pick success rate: {pk_percentage_true:.2f}%, ({pk_trials} trials)")    
 
 
 
