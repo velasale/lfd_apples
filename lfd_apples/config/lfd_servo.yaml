@@ -37,21 +37,21 @@ scale:
 # publish_joint_velocities: true
 # publish_joint_accelerations: false
 
-command_out_topic: /fr3_joint_velocity_controller/lfd_fr3_joint_velocity_cmd
+command_out_topic: /fr3_joint_velocity_controller/lfd_fr3_joint_velocity_cmd  
 command_out_type: std_msgs/Float64MultiArray
 
 publish_joint_positions: false
 publish_joint_velocities: true
 publish_joint_accelerations: false
 
-smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
+# smoothing_filter_plugin_name: "online_signal_smoothing::ButterworthFilterPlugin"
 # smoothing_filter_plugin_name: "online_signal_smoothing::AccelerationLimitedPlugin"
 
 status_topic: ~/status # Publish status to this topic
 
 ## Properties of outgoing commands
-publish_period: 0.034 #0.034  # 1/Nominal publish rate [seconds]
-low_latency_mode: true  # Set this to true to publish as soon as an incoming Twist command is received (publish_period is ignored)
+publish_period: 0.0025 #0.034  # 1/Nominal publish rate [seconds]
+low_latency_mode: false  # Set this to true to publish as soon as an incoming Twist command is received (publish_period is ignored)
 
 
 # If is_primary_planning_scene_monitor is set to true, the Servo server's PlanningScene advertises the /get_planning_scene service,

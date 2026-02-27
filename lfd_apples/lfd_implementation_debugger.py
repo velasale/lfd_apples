@@ -359,6 +359,12 @@ class LFDController(Node):
         self.current_cmd = TwistStamped()
         self.target_cmd = TwistStamped()        
 
+        self.current_v = np.zeros(6)
+        self.current_a = np.zeros(6)
+        self.max_vel = 2.5       # m/s or rad/s
+        self.max_acc = 2.0        # m/s² or rad/s²
+        self.max_jerk = 2.0       # m/s³ or rad/s³
+
         # Controller gain for delta
         # Converts 'm' and 'rad' deltas into m/s and rad/s
         # In our case, delta_eef_pose was calculated for delta_times = 0.001 sec, 
@@ -600,7 +606,7 @@ class LFDController(Node):
     def initialize_ros_timers(self):        
         
         # --- Timer for high-rate velocity ramping ---
-        self.timer_period = 0.03  # 500 Hz
+        self.timer_period = 0.001  # 500 Hz
         self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
         # --- Timer to recreate incoming palm camera with fake hardware ---
@@ -1021,8 +1027,15 @@ class LFDController(Node):
 
             if self.running_lfd_approach:
 
-                pass
-                                                                                   
+
+                # Target twist
+                self.target_cmd.twist.linear.x = 0.0
+                self.target_cmd.twist.linear.y = 0.0
+                self.target_cmd.twist.linear.z = 0.05       
+                self.target_cmd.twist.angular.x = 0.0
+                self.target_cmd.twist.angular.y = 0.0
+                self.target_cmd.twist.angular.z = 0.0   
+
 
 
     # === Action Functions ====
@@ -1054,34 +1067,46 @@ class LFDController(Node):
         
     def publish_smoothed_velocity(self):
 
+        MAX_LINEAR_ACC = 5.0   # m/s^2, tweak for safety
+        MAX_ANGULAR_ACC = 5.0   # rad/s^2, tweak for safety
+
         if not self.running_lfd:
             return
 
-        dt = (self.get_clock().now() - self.last_cmd_time).nanoseconds * 1e-9
-        self.last_cmd_time = self.get_clock().now()
-
+        now = self.get_clock().now()
+        dt = (now - self.last_cmd_time).nanoseconds * 1e-9
         if dt <= 0.0:
-            return             
-        
-        dt = 0.1
+            return
+        self.last_cmd_time = now
 
-        # Desired Twist @End Effector
-        self.current_cmd.twist.linear.x = 0.05
-        self.current_cmd.twist.linear.y = 0.0
-        self.current_cmd.twist.linear.z = 0.0
+        # Helper to s-ramp a single component
+        def s_ramp(current, target, max_acc, dt):
+            delta = target - current
+            max_delta = max_acc * dt
+            if abs(delta) <= max_delta:
+                return target
+            else:
+                return current + np.sign(delta) * max_delta
 
-        self.current_cmd.twist.angular.x = 0.0
-        self.current_cmd.twist.angular.y = 0.0
-        self.current_cmd.twist.angular.z = 0.0
+        # --- Linear ---
+        for axis in ['x', 'y', 'z']:
+            current = getattr(self.current_cmd.twist.linear, axis)
+            target = getattr(self.target_cmd.twist.linear, axis)
+            smoothed = s_ramp(current, target, MAX_LINEAR_ACC, dt)
+            setattr(self.current_cmd.twist.linear, axis, smoothed)
 
+        # --- Angular ---
+        for axis in ['x', 'y', 'z']:
+            current = getattr(self.current_cmd.twist.angular, axis)
+            target = getattr(self.target_cmd.twist.angular, axis)
+            smoothed = s_ramp(current, target, MAX_ANGULAR_ACC, dt)
+            setattr(self.current_cmd.twist.angular, axis, smoothed)
 
-        # IK Solution
-
-        # MoveIt - Servo Node Version       
+        # Header
+        self.current_cmd.header.stamp = now.to_msg()
         self.current_cmd.header.frame_id = "fr3_hand_tcp"
-        # # self.current_cmd.header.frame_id  = "fr3_link0"
-        
-        self.current_cmd.header.stamp = self.get_clock().now().to_msg()
+
+        # Publish
         self.servo_pub.publish(self.current_cmd)
 
 
@@ -1094,24 +1119,12 @@ class LFDController(Node):
 
 
         # Moveit - Servonode
-        # self.target_cmd.twist = Twist()  # zero target
-        # self.current_cmd.header.frame_id = "fr3_hand_tcp"
+        self.target_cmd.twist = Twist()  # zero target
+        self.current_cmd.header.frame_id = "fr3_hand_tcp"
 
-        # self.current_cmd.header.stamp = self.get_clock().now().to_msg()
-        # self.servo_pub.publish(self.current_cmd)
-
-
-        # GeoFIK
-        joint_vel_msg = Float64MultiArray()
-        joint_vel_msg.data = [0.0,
-                              0.0,
-                              0.0,
-                              0.0,
-                              0.0,
-                              0.0,
-                              0.0]       
+        self.current_cmd.header.stamp = self.get_clock().now().to_msg()
+        self.servo_pub.publish(self.current_cmd)
         
-        self.joint_vel_pub.publish(joint_vel_msg)
 
 
 
@@ -1143,12 +1156,13 @@ def main():
             pass
 
         # --- Gravity Mode ---
-        node.swap_controller(node.arm_controller, node.gravity_controller)
+        # node.swap_controller(node.arm_controller, node.gravity_controller)
+        node.swap_controller(node.arm_controller, node.joint_velocity_controller)
         time.sleep(SLEEP_TIME)               
         node.get_logger().info(f"{YELLOW}\n\nSTEP 3: Record apple position by bringing gripper close to it (cups gently apple).\nPress ENTER key when you are done.\n{RESET}")        
         input()           
 
-        node.swap_controller(node.gravity_controller, node.joint_velocity_controller)
+        # node.swap_controller(node.gravity_controller, node.joint_velocity_controller)
         time.sleep(SLEEP_TIME)
         
         # # --- Moveit2 Servo Mode ---
@@ -1169,13 +1183,15 @@ def main():
 
         node.DEBUGGING_MODE = False
         if node.DEBUGGING_MODE: node.initialize_debugging_mode_variables        
-
-        node.run_lfd_controller()             
+        
+       
+        node.run_lfd_controller()      
         
         # --- Ready for next demo, swap back to arm controller ---
-        node.swap_controller(node.twist_controller, node.arm_controller)
+        node.swap_controller(node.joint_velocity_controller, node.arm_controller)
         time.sleep(SLEEP_TIME)         
         node.get_logger().info(f"Robot lfd implementation {demo+1}/10 done.")
+    
     
     node.destroy_node()
     rclpy.shutdown()

@@ -46,6 +46,8 @@ def generate_launch_description():
         palm_camera_device_arg,
         fixed_camera_device_arg,
 
+
+
         # Start Wi-Fi hotspot using parameters
         ExecuteProcess(
             cmd=['nmcli', 'device', 'wifi', 'hotspot',

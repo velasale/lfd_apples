@@ -355,7 +355,7 @@ class LFDController(Node):
         # Converts 'm' and 'rad' deltas into m/s and rad/s
         # In our case, delta_eef_pose was calculated for delta_times = 0.001 sec, 
         # hence, we use a gain of 1000 (1/0.001sec) to convert m to m/sec.
-        self.DELTA_GAIN = 1120
+        self.DELTA_GAIN = 600
         # self.DELTA_GAIN = 1500    # I used this one for command interface = position
 
         # PID GAINS
@@ -606,13 +606,15 @@ class LFDController(Node):
         self.running_lfd = False
         self.running_lfd_approach = False
         self.running_lfd_contact = False
-        self.running_lfd_pick = False        
+        self.running_lfd_pick = False   
+        self.waiting_for_fingers_to_close = False     
+        self.transition_to_pick = False
 
 
     def initialize_ros_timers(self):        
         
         # --- Timer for high-rate velocity ramping ---
-        self.timer_period = 0.03  # 500 Hz
+        self.timer_period = 0.0025  # 500 Hz
         self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
         # --- Timer to recreate incoming palm camera with fake hardware ---
@@ -879,10 +881,11 @@ class LFDController(Node):
             # self.get_logger().info(f"CONTACT Controller running: {self.scups_engaged} suction cups engaged")   
 
             # Count engaged suction cups
-            if self.scups_engaged > 2:
-                self.get_logger().warning(f"More than 2 cups engaged --> PICK")    
-                self.running_lfd_contact = False              
-                self.running_lfd_pick = True
+            if self.scups_engaged > 1:
+                self.get_logger().warning(f"More than 2 cups engaged --> ACTIVATING FINGERS")    
+                self.running_lfd_contact = False
+                self.waiting_for_fingers_to_close = True                              
+                self.send_stop_message()
             
             # Increase Count
             if self.scA < self.AIR_PRESSURE_THRESHOLD and not self.scA_previous_state:
@@ -913,11 +916,51 @@ class LFDController(Node):
                 self.get_logger().warning(f" {self.scups_engaged} suction cups engaged")   
         
 
-        if self.running_lfd_pick:
+        if self.waiting_for_fingers_to_close:
+            # Initialize timer when entering the state
+            if not hasattr(self, 'fingers_timer_start'):
+                self.fingers_timer_start = self.get_clock().now()
+                self.get_logger().info("Starting fingers close timer...")
 
-            pass
+            # Compute elapsed time
+            elapsed = (self.get_clock().now() - self.fingers_timer_start).nanoseconds * 1e-9  # seconds
 
-            # self.get_logger().info(f"PICK controller running")   
+            WAIT_FOR_FINGERS_DURATION = 0.25  # seconds, adjust as needed
+            self.target_cmd.twist.linear.z = +0.01
+            self.get_logger().warning(f"Closing Fingers --> {elapsed}") 
+
+            if elapsed > WAIT_FOR_FINGERS_DURATION:
+                self.get_logger().warning("More than 2 cups engaged --> WAITING FOR FINGERS TO CLOSE DONE")    
+                self.waiting_for_fingers_to_close = False              
+                self.transition_to_pick = True
+                self.send_stop_message()
+                del self.fingers_timer_start  # reset timer for next time
+                        
+
+        if self.transition_to_pick:
+            # Initialize timer when entering the state
+            if not hasattr(self, 'transition_to_pick_timer_start'):
+                self.transition_to_pick_timer_start = self.get_clock().now()
+                self.get_logger().info("Starting transition to pick...")
+            
+            self.target_cmd.twist.linear.z = -0.01
+
+            # Compute elapsed time
+            elapsed = (self.get_clock().now() - self.transition_to_pick_timer_start).nanoseconds * 1e-9  # seconds
+
+            WAIT_FOR_TRANSITION_TO_PICK_DURATION = 0.25  # seconds, adjust as needed
+            self.get_logger().warning(f"Transition To Pick --> {elapsed}") 
+
+            if elapsed > WAIT_FOR_TRANSITION_TO_PICK_DURATION:
+                self.get_logger().warning("Transitioning to Pick with a simple twist in -z ")    
+                self.transition_to_pick = False              
+                self.running_lfd_pick = True
+                del self.transition_to_pick_timer_start  # reset timer for next time
+
+
+        if self.running_lfd_pick:          
+
+            self.get_logger().info(f"PICK controller running")   
             
             # if condition TBD:
             #   self.running_lfd_pick = False
@@ -1342,7 +1385,6 @@ class LFDController(Node):
                           
 
 
-
         if self.running_lfd and self.DEBUGGING_MODE:
             
             # Simply run the incoming_cam_simulated function that handles all twists
@@ -1379,7 +1421,7 @@ class LFDController(Node):
         self.running_lfd = False
 
         
-    def publish_smoothed_velocity(self):
+    def publish_smoothed_velocity_no_ramp(self):
 
         if not self.running_lfd:
             return
@@ -1394,6 +1436,51 @@ class LFDController(Node):
         self.current_cmd.twist = self.target_cmd.twist            
         self.current_cmd.header.frame_id = "fr3_hand_tcp"        
         self.current_cmd.header.stamp = self.get_clock().now().to_msg()
+        self.servo_pub.publish(self.current_cmd)
+
+
+    def publish_smoothed_velocity(self):
+
+        MAX_LINEAR_ACC = 4.0   # m/s^2, tweak for safety
+        MAX_ANGULAR_ACC = 4.0   # rad/s^2, tweak for safety
+
+        if not self.running_lfd:
+            return
+
+        now = self.get_clock().now()
+        dt = (now - self.last_cmd_time).nanoseconds * 1e-9
+        if dt <= 0.0:
+            return
+        self.last_cmd_time = now
+
+        # Helper to s-ramp a single component
+        def s_ramp(current, target, max_acc, dt):
+            delta = target - current
+            max_delta = max_acc * dt
+            if abs(delta) <= max_delta:
+                return target
+            else:
+                return current + np.sign(delta) * max_delta
+
+        # --- Linear ---
+        for axis in ['x', 'y', 'z']:
+            current = getattr(self.current_cmd.twist.linear, axis)
+            target = getattr(self.target_cmd.twist.linear, axis)
+            smoothed = s_ramp(current, target, MAX_LINEAR_ACC, dt)
+            setattr(self.current_cmd.twist.linear, axis, smoothed)
+
+        # --- Angular ---
+        for axis in ['x', 'y', 'z']:
+            current = getattr(self.current_cmd.twist.angular, axis)
+            target = getattr(self.target_cmd.twist.angular, axis)
+            smoothed = s_ramp(current, target, MAX_ANGULAR_ACC, dt)
+            setattr(self.current_cmd.twist.angular, axis, smoothed)
+
+        # Header
+        self.current_cmd.header.stamp = now.to_msg()
+        self.current_cmd.header.frame_id = "fr3_hand_tcp"
+
+        # Publish
         self.servo_pub.publish(self.current_cmd)
 
 
@@ -1533,8 +1620,10 @@ def main():
         node.apple_probing_flag(False)
         node.swap_controller(node.gravity_controller, node.joint_velocity_controller)
         time.sleep(SLEEP_TIME)          
+        node.send_stop_message()
         req = Trigger.Request()        
         node.servo_node_client.call_async(req)        
+        node.send_stop_message()
         node.get_logger().info("Moveit2 Servo Node enabled")
         time.sleep(SLEEP_TIME)        
 
