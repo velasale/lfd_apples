@@ -8,8 +8,8 @@ use_gazebo: false # Whether the robot is started in a Gazebo simulation environm
 
 
 ## ====================== ServoNode Inputs ====================
-cartesian_command_in_topic: ~/delta_twist_cmds  # Topic for incoming Cartesian twist commands
-joint_command_in_topic: ~/delta_joint_cmds # Topic for incoming joint angle commands
+cartesian_command_in_topic: /lfd/delta_twist_command  # Topic for incoming Cartesian twist commands
+# joint_command_in_topic: ~/delta_joint_cmds # Topic for incoming joint angle commands
 
 joint_topic: /joint_states
 
@@ -37,7 +37,7 @@ scale:
 # publish_joint_velocities: true
 # publish_joint_accelerations: false
 
-command_out_topic: /fr3_joint_velocity_controller/lfd_fr3_joint_velocity_cmd  
+command_out_topic: /moveit2_servo/joint_vel_target  
 command_out_type: std_msgs/Float64MultiArray
 
 publish_joint_positions: false
