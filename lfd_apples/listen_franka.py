@@ -191,6 +191,9 @@ def start_recording_bagfile(BAG_FILEPATH, arm_bag=True, inhand_camera_bag=True, 
             "/franka_robot_state_broadcaster/desired_joint_states",
             "/franka_robot_state_broadcaster/measured_joint_states",
             # "/franka_robot_state_broadcaster/robot_state",
+            '/lfd/delta_twist_target',
+            '/lfd/delta_twist_command',
+            '/moveit2_servo/joint_vel_target',
             "microROS/sensor_data",              
         ],start_new_session=True, stdin=subprocess.DEVNULL)  # Detach from parent's stdin
         bag_list.append(bag_proc_main)
