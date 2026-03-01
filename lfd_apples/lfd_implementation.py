@@ -251,7 +251,6 @@ class LFDController(Node):
         self.initialize_ros_service_clients()
         self.initialize_ros_controller_properties()    
         self.initialize_rviz_trail()  
-        # self.initialize_ros_timers()
         self.initialize_flags()               
 
         self.last_cmd_time = self.get_clock().now()   
@@ -825,12 +824,16 @@ class LFDController(Node):
         # Update controllers info
         trial_info['controllers']['delta gain'] = self.DELTA_GAIN
         trial_info['controllers']['approach']['data based'] = self.APPROACH_MODEL_PARAMS
-        trial_info['controllers']['approach']['PI']['P'] = self.POSITION_KP
-        trial_info['controllers']['approach']['PI']['I'] = self.POSITION_KI
-        trial_info['controllers']['approach']['PI']['PI gain'] = self.INITIAL_PI_GAIN
-        trial_info['controllers']['approach']['pixel to meter'] = self.PIXEL_TO_METER_RATE
         trial_info['controllers']['approach']['states'] = self.APPROACH_CONTROLLER.STATE_NAME_KEYS
         trial_info['controllers']['approach']['actions'] = self.ACTION_NAMES
+
+        trial_info['controllers']['contact']['data based'] = self.CONTACT_MODEL_PARAMS
+        trial_info['controllers']['contact']['states'] = self.CONTACT_CONTROLLER.STATE_NAME_KEYS
+        trial_info['controllers']['contact']['actions'] = self.ACTION_NAMES
+
+        trial_info['controllers']['pick']['data based'] = self.PICK_MODEL_PARAMS
+        trial_info['controllers']['pick']['states'] = self.PICK_CONTROLLER.STATE_NAME_KEYS
+        trial_info['controllers']['pick']['actions'] = self.ACTION_NAMES
 
 
         # Update gripper weight
@@ -933,7 +936,9 @@ class LFDController(Node):
             elapsed = (self.get_clock().now() - self.fingers_timer_start).nanoseconds * 1e-9  # seconds
 
             WAIT_FOR_FINGERS_DURATION = 0.25  # seconds, adjust as needed
-            self.target_cmd.twist.linear.z = +0.01
+            
+            self.target_cmd.twist.linear.z = +0.00
+
             self.get_logger().warning(f"Closing Fingers --> {elapsed}") 
 
             if elapsed > WAIT_FOR_FINGERS_DURATION:
@@ -950,7 +955,9 @@ class LFDController(Node):
                 self.transition_to_pick_timer_start = self.get_clock().now()
                 self.get_logger().info("Starting transition to pick...")
             
-            self.target_cmd.twist.linear.z = -0.01
+
+            self.target_cmd.twist.linear.z = -0.00
+
 
             # Compute elapsed time
             elapsed = (self.get_clock().now() - self.transition_to_pick_timer_start).nanoseconds * 1e-9  # seconds
@@ -1243,30 +1250,18 @@ class LFDController(Node):
                     pass
                 else:
                     self.X = np.stack(self.approach_state_buffer)
-
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
-                    self.Y = self.APPROACH_CONTROLLER.forward(self.X_tensor)        # TWIST predicions in TCP frame                                        
+                    # Predictions in tcp frame
+                    self.Y = self.APPROACH_CONTROLLER.forward(self.X_tensor)
                 
-                    # Save state and action rows in DataFrames
+                    # Save state rows in DataFrame
                     self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)
 
-
-                    # Adjust velocities with feedback from goal pose               
-                    # self.sum_pos_x_error += self.bbox_pos_x_error
-                    # self.sum_pos_y_error += self.bbox_pos_y_error
-
-                    # Linear Velocities                   
+                    # Linear Twist                   
                     self.target_cmd.twist.linear.x = 1.0 * float(self.Y[0]) * self.DELTA_GAIN 
-                                                        # + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_x_error \
-                                                        # + self.PI_GAIN * self.POSITION_KI * self.sum_pos_x_error)
-
                     self.target_cmd.twist.linear.y = 1.0 * float(self.Y[1]) * self.DELTA_GAIN
-                                                        # + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_y_error \
-                                                        # + self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error)
-
                     self.target_cmd.twist.linear.z = 1.0 * float(self.Y[2]) * self.DELTA_GAIN
-
-                    # Angular Velocities
+                    # Angular Twist
                     self.target_cmd.twist.angular.x = 1.0 * float(self.Y[3]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
@@ -1305,15 +1300,17 @@ class LFDController(Node):
                 else:
                     self.X = np.stack(self.contact_state_buffer)
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
+                    # Predictions in tcp frame
                     self.Y = self.CONTACT_CONTROLLER.forward(self.X_tensor)
 
-                    # Save state and action rows in DataFrames
+                    # Save state rows in DataFrame
                     self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)                  
 
-                    # Twist predictions
+                    # Linear Twist
                     self.target_cmd.twist.linear.x = 1.0 * float(self.Y[0]) * self.DELTA_GAIN
                     self.target_cmd.twist.linear.y = 1.0 * float(self.Y[1]) * self.DELTA_GAIN
                     self.target_cmd.twist.linear.z = 1.0 * float(self.Y[2]) * self.DELTA_GAIN
+                    # Angular Twist
                     self.target_cmd.twist.angular.x = 1.0 * float(self.Y[3]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
@@ -1355,15 +1352,17 @@ class LFDController(Node):
                 else:
                     self.X = np.stack(self.pick_state_buffer)
                     self.X_tensor = torch.tensor(self.X, dtype=torch.float32, device = self.device)
+                    # Predictions in tcp frame
                     self.Y = self.PICK_CONTROLLER.forward(self.X_tensor)
 
                     # Save state and action rows in DataFrames
                     self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)                  
 
-                    # Twist predictions
+                    # Linear Twist
                     self.target_cmd.twist.linear.x = 1.0 * float(self.Y[0]) * self.DELTA_GAIN
                     self.target_cmd.twist.linear.y = 1.0 * float(self.Y[1]) * self.DELTA_GAIN
                     self.target_cmd.twist.linear.z = 1.0 * float(self.Y[2]) * self.DELTA_GAIN
+                    # Angular Twist
                     self.target_cmd.twist.angular.x = 1.0 * float(self.Y[3]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.y = 1.0 * float(self.Y[4]) * self.DELTA_GAIN
                     self.target_cmd.twist.angular.z = 1.0 * float(self.Y[5]) * self.DELTA_GAIN
@@ -1406,8 +1405,9 @@ class LFDController(Node):
         self.get_logger().info("Starting run_lfd_controller.")
         self.running_lfd = True
         self.running_lfd_approach = True
-        self.sum_pos_x_error = 0.0
-        self.sum_pos_y_error = 0.0        
+
+        # self.sum_pos_x_error = 0.0
+        # self.sum_pos_y_error = 0.0        
 
         # self.PI_GAIN = self.INITIAL_PI_GAIN     
 
