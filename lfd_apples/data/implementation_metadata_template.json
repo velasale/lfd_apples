@@ -19,16 +19,18 @@
         "approach":{
             "states": "TODO",
             "actions": "TODO",
-            "data based": "TODO",
-            "PI":{
-                "P": "TODO",
-                "I": "TODO",
-                "PI gain":"TODO"
-                },
-            "pixel to meter": "TODO"
+            "data based": "TODO"
         },
-        "contact": "TODO",
-        "pick": "TODO"
+        "contact":{
+            "states": "TODO",
+            "actions": "TODO",
+            "data based": "TODO"
+        },
+        "pick":{
+            "states": "TODO",
+            "actions": "TODO",
+            "data based": "TODO"
+        }
     },
     "proxy": {
         "branch": {
