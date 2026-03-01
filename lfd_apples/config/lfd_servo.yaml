@@ -12,6 +12,7 @@ cartesian_command_in_topic: /smoother/delta_twist_command  # Topic for incoming 
 # joint_command_in_topic: ~/delta_joint_cmds # Topic for incoming joint angle commands
 
 joint_topic: /joint_states
+# joint topic: /franka_robot_state_broadcaster/measured_joint_states 
 
 command_in_type: "speed_units" # "unitless"> in the range [-1:1], as if from joystick. "speed_units"> cmds are in m/s and rad/s
 ## Scaling of incoming commands
@@ -50,7 +51,7 @@ publish_joint_accelerations: false
 status_topic: ~/status # Publish status to this topic
 
 ## Properties of outgoing commands
-publish_period: 0.002 #0.034  # 1/Nominal publish rate [seconds]
+publish_period: 0.034 #0.005 #0.034  # 1/Nominal publish rate [seconds]
 low_latency_mode: false  # Set this to true to publish as soon as an incoming Twist command is received (publish_period is ignored)
 
 
