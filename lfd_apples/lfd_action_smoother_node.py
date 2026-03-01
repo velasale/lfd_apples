@@ -12,14 +12,13 @@ class LfDActionSmoother(Node):
 
     def __init__(self):
         super().__init__('lfd_action_smoother')
-
-        # --- Parameters ---
-        self.declare_parameter('linear_acc_limit', 0.5)   # m/s^2
-        self.declare_parameter('angular_acc_limit', 0.5)  # rad/s^2        
        
-        # --- Limits ---
-        self.MAX_LINEAR_ACC = self.get_parameter('linear_acc_limit').value
-        self.MAX_ANGULAR_ACC = self.get_parameter('angular_acc_limit').value
+        self.MAX_LINEAR_ACC  = 0.5  #m/s²
+        self.MAX_LINEAR_JERK = 1.0  #m/s³
+
+        self.MAX_ANGULAR_ACC  = 0.5 #rad/s²
+        self.MAX_ANGULAR_JERK = 1.0 #rad/s³
+
 
         # --- State ---
         self.current_cmd = TwistStamped()
@@ -27,6 +26,8 @@ class LfDActionSmoother(Node):
         self.running_lfd = False
         self.start_time = None
         self.last_cmd_time = None
+
+        self.current_acc = TwistStamped().twist
 
         # --- Publishers and Subscribers ---
         self.servo_pub = self.create_publisher(
@@ -42,7 +43,7 @@ class LfDActionSmoother(Node):
         )
 
         # --- Timer ---       
-        self.create_timer(0.002, self.publish_smoothed_velocity)
+        self.create_timer(0.034, self.publish_smoothed_velocity_linear_ramp)
 
         self.get_logger().info("LfDActionSmoother initialized. Waiting for first target twist...")
 
@@ -59,7 +60,9 @@ class LfDActionSmoother(Node):
             self.current_cmd = msg
             self.get_logger().info("First target received. Ramping enabled.")
 
-    def publish_smoothed_velocity(self):
+
+
+    def publish_smoothed_velocity_linear_ramp(self):
         """
         Ramps current_cmd towards target_cmd while respecting acceleration limits.
         Prevents sending commands until first target is received.
@@ -71,7 +74,7 @@ class LfDActionSmoother(Node):
         dt = (now - self.last_cmd_time).nanoseconds * 1e-9
       
 
-        if dt <= 0.001:
+        if dt <= 0.004:
             return  # avoid division by zero
         self.last_cmd_time = now
 
@@ -105,6 +108,101 @@ class LfDActionSmoother(Node):
 
         # Publish
         self.servo_pub.publish(self.current_cmd)
+
+
+
+    # def publish_smoothed_velocity_s_ramp(self):
+    #     """
+    #     Ramps current_cmd towards target_cmd while respecting acceleration limits.
+    #     Prevents sending commands until first target is received.
+    #     """
+    #     if not self.running_lfd:
+    #         return
+
+    #     now = self.get_clock().now()
+    #     dt = (now - self.last_cmd_time).nanoseconds * 1e-9
+      
+
+    #     if dt <= 0.001:
+    #         return  # avoid division by zero
+    #     self.last_cmd_time = now
+
+    #     def s_ramp(current_v, target_v, current_a, max_acc, max_jerk, dt):
+    #         """
+    #         Jerk-limited S-curve ramp.
+    #         Returns (new_velocity, new_acceleration)
+    #         """
+
+    #         # Velocity error
+    #         error = target_v - current_v
+
+    #         # Desired acceleration direction
+    #         desired_a = max_acc if error > 0 else -max_acc
+
+    #         # Jerk limit: move acceleration toward desired_a
+    #         max_delta_a = max_jerk * dt
+
+    #         if desired_a > current_a:
+    #             current_a = min(current_a + max_delta_a, desired_a)
+    #         else:
+    #             current_a = max(current_a - max_delta_a, desired_a)
+
+    #         # Integrate acceleration into velocity
+    #         new_v = current_v + current_a * dt
+
+    #         # Do not overshoot target
+    #         if (error > 0 and new_v > target_v) or (error < 0 and new_v < target_v):
+    #             new_v = target_v
+    #             current_a = 0.0  # stop accelerating at target
+
+    #         return new_v, current_a
+
+    #     # --- Linear ---
+    #     for axis in ['x', 'y', 'z']:
+    #         current_v = getattr(self.current_cmd.twist.linear, axis)
+    #         target_v  = getattr(self.target_cmd.twist.linear, axis)
+    #         current_a = getattr(self.current_acc.linear, axis)
+
+    #         new_v, new_a = s_ramp(
+    #             current_v,
+    #             target_v,
+    #             current_a,
+    #             self.MAX_LINEAR_ACC,
+    #             self.MAX_LINEAR_JERK,
+    #             dt
+    #         )
+
+    #         setattr(self.current_cmd.twist.linear, axis, new_v)
+    #         setattr(self.current_acc.linear, axis, new_a)
+
+    #     # --- Angular ---
+    #     for axis in ['x', 'y', 'z']:
+    #         current_v = getattr(self.current_cmd.twist.angular, axis)
+    #         target_v  = getattr(self.target_cmd.twist.angular, axis)
+    #         current_a = getattr(self.current_acc.angular, axis)
+
+    #         new_v, new_a = s_ramp(
+    #             current_v,
+    #             target_v,
+    #             current_a,
+    #             self.MAX_ANGULAR_ACC,
+    #             self.MAX_ANGULAR_JERK,
+    #             dt
+    #         )
+
+    #         setattr(self.current_cmd.twist.angular, axis, new_v)
+    #         setattr(self.current_acc.angular, axis, new_a)
+
+    #     # Header
+    #     self.current_cmd.header.stamp = now.to_msg()
+    #     self.current_cmd.header.frame_id = "fr3_hand_tcp"
+
+    #     # Publish
+    #     self.servo_pub.publish(self.current_cmd)
+
+
+
+
 
 def main(args=None):
     rclpy.init(args=args)
