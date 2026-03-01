@@ -93,7 +93,7 @@ class YoloLatentVector(Node):
         self.get_logger().info("YOLO latent vector node initialized.")
 
 
-    def palm_camera_callback(self, msg:Image, publish_latent_vector=True, publish_bbox_center=True):
+    def palm_camera_callback(self, msg:Image, publish_latent_vector=True, publish_bbox_center=False):
 
         # --- Process Image ---
         raw_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
