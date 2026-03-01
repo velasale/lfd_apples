@@ -251,7 +251,7 @@ class LFDController(Node):
         self.initialize_ros_service_clients()
         self.initialize_ros_controller_properties()    
         self.initialize_rviz_trail()  
-        self.initialize_ros_timers()
+        # self.initialize_ros_timers()
         self.initialize_flags()               
 
         self.last_cmd_time = self.get_clock().now()   
@@ -289,17 +289,18 @@ class LFDController(Node):
             '/joint_states',
             self.joint_states_callback,
             10)  # Dummy subscriber to ensure joint states are available        
+        
         self.bbox_center_sub = self.create_subscription(
             Int16MultiArray,
             'lfd/bbox_center',
             self.bbox_callback, 10)  
         
         
-        # ROS Topic Publishers       
-        self.servo_pub = self.create_publisher(
+        # ROS Topic Publishers                     
+        self.tgt_twist_pub = self.create_publisher(
             TwistStamped,
-            '/servo_node_lfd/delta_twist_cmds',
-            10)
+            '/lfd/delta_twist_target',
+            10)               
         self.tcp_marker_pub = self.create_publisher(
             Marker,
             '/lfd/tcp_trail',
@@ -347,15 +348,21 @@ class LFDController(Node):
         self.load_client = self.create_client(LoadController, '/controller_manager/load_controller')
         self.load_client.wait_for_service()
 
-        # --- Velocity ramping variables ---
-        self.current_cmd = TwistStamped()
+        # --- Twist variables ---
         self.target_cmd = TwistStamped()        
+        self.target_cmd.twist.linear.x = 0.0
+        self.target_cmd.twist.linear.y = 0.0
+        self.target_cmd.twist.linear.z = 0.0
+        self.target_cmd.twist.angular.x = 0.0
+        self.target_cmd.twist.angular.y = 0.0
+        self.target_cmd.twist.angular.z = 0.0
+        self.tgt_twist_pub.publish(self.target_cmd)       
 
         # Controller gain for delta
         # Converts 'm' and 'rad' deltas into m/s and rad/s
         # In our case, delta_eef_pose was calculated for delta_times = 0.001 sec, 
         # hence, we use a gain of 1000 (1/0.001sec) to convert m to m/sec.
-        self.DELTA_GAIN = 600
+        self.DELTA_GAIN = 1000
         # self.DELTA_GAIN = 1500    # I used this one for command interface = position
 
         # PID GAINS
@@ -474,7 +481,7 @@ class LFDController(Node):
 
         # State and Actions book-keeping
         self.lfd_states_df = pd.DataFrame()
-        self.lfd_actions_df = pd.DataFrame()              
+      
 
         # Phase state buffers
         self.approach_state_buffer = deque(maxlen = self.APPROACH_MODEL_PARAMS['SEQ_LEN'])
@@ -611,14 +618,14 @@ class LFDController(Node):
         self.transition_to_pick = False
 
 
-    def initialize_ros_timers(self):        
+    # def initialize_ros_timers(self):        
         
-        # --- Timer for high-rate velocity ramping ---
-        self.timer_period = 0.0025  # 500 Hz
-        self.create_timer(self.timer_period, self.publish_smoothed_velocity)
+    #     # --- Timer for high-rate velocity ramping ---
+    #     self.timer_period = 0.0025  # 500 Hz
+    #     self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
-        # --- Timer to recreate incoming palm camera with fake hardware ---
-        # self.create_timer(0.034, self.incoming_cam_sim)
+    #     # --- Timer to recreate incoming palm camera with fake hardware ---
+    #     # self.create_timer(0.034, self.incoming_cam_sim)
            
 
     # === ROS controller functions ===
@@ -1242,21 +1249,20 @@ class LFDController(Node):
                 
                     # Save state and action rows in DataFrames
                     self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)
-                    self.lfd_actions_df = pd.concat([self.lfd_actions_df, pd.DataFrame([self.Y])], ignore_index=True)
 
 
                     # Adjust velocities with feedback from goal pose               
-                    self.sum_pos_x_error += self.bbox_pos_x_error
-                    self.sum_pos_y_error += self.bbox_pos_y_error
+                    # self.sum_pos_x_error += self.bbox_pos_x_error
+                    # self.sum_pos_y_error += self.bbox_pos_y_error
 
                     # Linear Velocities                   
-                    self.target_cmd.twist.linear.x = 1.0 * (float(self.Y[0]) * self.DELTA_GAIN \
-                                                        + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_x_error \
-                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_x_error)
+                    self.target_cmd.twist.linear.x = 1.0 * float(self.Y[0]) * self.DELTA_GAIN 
+                                                        # + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_x_error \
+                                                        # + self.PI_GAIN * self.POSITION_KI * self.sum_pos_x_error)
 
-                    self.target_cmd.twist.linear.y = 1.0 * (float(self.Y[1]) * self.DELTA_GAIN \
-                                                        + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_y_error \
-                                                        + self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error)
+                    self.target_cmd.twist.linear.y = 1.0 * float(self.Y[1]) * self.DELTA_GAIN
+                                                        # + self.PI_GAIN * self.POSITION_KP * self.bbox_pos_y_error \
+                                                        # + self.PI_GAIN * self.POSITION_KI * self.sum_pos_y_error)
 
                     self.target_cmd.twist.linear.z = 1.0 * float(self.Y[2]) * self.DELTA_GAIN
 
@@ -1302,9 +1308,7 @@ class LFDController(Node):
                     self.Y = self.CONTACT_CONTROLLER.forward(self.X_tensor)
 
                     # Save state and action rows in DataFrames
-                    self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)
-                    self.lfd_actions_df = pd.concat([self.lfd_actions_df, pd.DataFrame([self.Y[-1]])], ignore_index=True)
-                  
+                    self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)                  
 
                     # Twist predictions
                     self.target_cmd.twist.linear.x = 1.0 * float(self.Y[0]) * self.DELTA_GAIN
@@ -1354,9 +1358,7 @@ class LFDController(Node):
                     self.Y = self.PICK_CONTROLLER.forward(self.X_tensor)
 
                     # Save state and action rows in DataFrames
-                    self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)
-                    self.lfd_actions_df = pd.concat([self.lfd_actions_df, pd.DataFrame([self.Y[-1]])], ignore_index=True)
-                   
+                    self.lfd_states_df = pd.concat([self.lfd_states_df, pd.DataFrame([self.X[-1]])], ignore_index=True)                  
 
                     # Twist predictions
                     self.target_cmd.twist.linear.x = 1.0 * float(self.Y[0]) * self.DELTA_GAIN
@@ -1384,6 +1386,13 @@ class LFDController(Node):
                     self.get_logger().info(f'PICK actions: {actions_str}')
                           
 
+            # Publish target twist. These are then ramped by 'lfd_action_smoother_node.py'         
+            now = self.get_clock().now()
+            self.target_cmd.header.stamp = now.to_msg()
+            self.target_cmd.header.frame_id = "fr3_hand_tcp"
+            self.tgt_twist_pub.publish(self.target_cmd)
+
+
 
         if self.running_lfd and self.DEBUGGING_MODE:
             
@@ -1400,7 +1409,7 @@ class LFDController(Node):
         self.sum_pos_x_error = 0.0
         self.sum_pos_y_error = 0.0        
 
-        self.PI_GAIN = self.INITIAL_PI_GAIN     
+        # self.PI_GAIN = self.INITIAL_PI_GAIN     
 
         # Clear previous eef trail in RVIZ       
         self.tcp_trail_marker.points.clear()
@@ -1421,81 +1430,18 @@ class LFDController(Node):
         self.running_lfd = False
 
         
-    def publish_smoothed_velocity_no_ramp(self):
-
-        if not self.running_lfd:
-            return
-
-        dt = (self.get_clock().now() - self.last_cmd_time).nanoseconds * 1e-9
-        self.last_cmd_time = self.get_clock().now()
-
-        if dt <= 0.0:
-            return             
-        
-        # Publish the target twist
-        self.current_cmd.twist = self.target_cmd.twist            
-        self.current_cmd.header.frame_id = "fr3_hand_tcp"        
-        self.current_cmd.header.stamp = self.get_clock().now().to_msg()
-        self.servo_pub.publish(self.current_cmd)
-
-
-    def publish_smoothed_velocity(self):
-
-        MAX_LINEAR_ACC = 4.0   # m/s^2, tweak for safety
-        MAX_ANGULAR_ACC = 4.0   # rad/s^2, tweak for safety
-
-        if not self.running_lfd:
-            return
-
-        now = self.get_clock().now()
-        dt = (now - self.last_cmd_time).nanoseconds * 1e-9
-        if dt <= 0.0:
-            return
-        self.last_cmd_time = now
-
-        # Helper to s-ramp a single component
-        def s_ramp(current, target, max_acc, dt):
-            delta = target - current
-            max_delta = max_acc * dt
-            if abs(delta) <= max_delta:
-                return target
-            else:
-                return current + np.sign(delta) * max_delta
-
-        # --- Linear ---
-        for axis in ['x', 'y', 'z']:
-            current = getattr(self.current_cmd.twist.linear, axis)
-            target = getattr(self.target_cmd.twist.linear, axis)
-            smoothed = s_ramp(current, target, MAX_LINEAR_ACC, dt)
-            setattr(self.current_cmd.twist.linear, axis, smoothed)
-
-        # --- Angular ---
-        for axis in ['x', 'y', 'z']:
-            current = getattr(self.current_cmd.twist.angular, axis)
-            target = getattr(self.target_cmd.twist.angular, axis)
-            smoothed = s_ramp(current, target, MAX_ANGULAR_ACC, dt)
-            setattr(self.current_cmd.twist.angular, axis, smoothed)
-
-        # Header
-        self.current_cmd.header.stamp = now.to_msg()
-        self.current_cmd.header.frame_id = "fr3_hand_tcp"
-
-        # Publish
-        self.servo_pub.publish(self.current_cmd)
-
-
     def send_stop_message(self):
         """
-        # Ensure a final zero-twist is sent to stop motion
-        
+        # Ensure a final zero-twist is sent to stop motion        
         :param self: Description
         """
 
         self.target_cmd.twist = Twist()  # zero target
-        self.current_cmd.header.frame_id = "fr3_hand_tcp"
+        now = self.get_clock().now()
+        self.target_cmd.header.stamp = now.to_msg()
+        self.target_cmd.header.frame_id = "fr3_hand_tcp"
+        self.tgt_twist_pub.publish(self.target_cmd)
 
-        self.current_cmd.header.stamp = self.get_clock().now().to_msg()
-        self.servo_pub.publish(self.current_cmd)
 
    
 
@@ -1645,10 +1591,7 @@ def main():
         csv_path = os.path.join(ROBOT_BAG_FILEPATH, 'lfd_states.csv')
         node.lfd_states_df.to_csv(csv_path, index=False, header=False)
         node.get_logger().info(f"LFD approach data saved to {csv_path}")
-        csv_path = os.path.join(ROBOT_BAG_FILEPATH, 'lfd_actions.csv')
-        node.lfd_actions_df.to_csv(csv_path, index=False, header=False)
-        node.get_logger().info(f"LFD approach actions saved to {csv_path}")               
-
+        
 
         # -------------- Step 5: Dispose apple ----------------
         node.get_logger().info(f"{YELLOW}\n\nSTEP 5: Press ENTER key to dispose apple.\n{RESET}")

@@ -30,17 +30,21 @@ class LfDActionSmoother(Node):
         self.current_acc = TwistStamped().twist
 
         # --- Publishers and Subscribers ---
-        self.servo_pub = self.create_publisher(
-            TwistStamped,
-            '/smoother/delta_twist_command',
-            10
-        )        
+        # Subscribe to Incoming topic from 'lfd_main_node'
         self.tgt_twist_sub = self.create_subscription(
             TwistStamped,
             '/lfd/delta_twist_target',
             self.tgt_twist_callback,
             10
         )
+
+        # Publish Outgoing topic to 'servo_node'
+        self.servo_pub = self.create_publisher(
+            TwistStamped,
+            '/smoother/delta_twist_command',
+            10
+        )        
+        
 
         # --- Timer ---       
         self.create_timer(0.034, self.publish_smoothed_velocity_linear_ramp)

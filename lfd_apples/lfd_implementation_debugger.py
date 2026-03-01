@@ -22,6 +22,7 @@ from lfd_apples.lfd_lstm import LSTMRegressor
 
 # ROS2 imports
 import rclpy
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from std_msgs.msg import Int16MultiArray, Float32MultiArray, Bool, Float64MultiArray
@@ -244,7 +245,7 @@ class LoadPhaseController():
 class LFDController(Node):
 
     def __init__(self):
-        super().__init__('move_to_home_and_freedrive')
+        super().__init__('lfd_main_node')
 
         self.initialize_state_and_models()
         self.initialize_debugging_mode_variables('trial_1')        
@@ -292,17 +293,17 @@ class LFDController(Node):
         
         
         # ROS Topic Publishers
-        self.vel_pub = self.create_publisher(
+        # self.vel_pub = self.create_publisher(
+        #     TwistStamped,
+        #     '/cartesian_velocity_controller/command',
+        #     10)
+        self.tgt_twist_pub = self.create_publisher(
             TwistStamped,
-            '/cartesian_velocity_controller/command',
-            10)
-        self.delta_pub = self.create_publisher(
-            Float32MultiArray,
-            '/cartesian_delta',
-            10)       
+            '/lfd/delta_twist_target',
+            10)        
         self.servo_pub = self.create_publisher(
             TwistStamped,
-            '/servo_node_lfd/delta_twist_cmds',
+            '/lfd/delta_twist_command',
             10)
         self.tcp_marker_pub = self.create_publisher(
             Marker,
@@ -316,10 +317,10 @@ class LFDController(Node):
             Bool,
             'lfd/apple_probing_apple',
             10)
-        self.joint_vel_pub = self.create_publisher(
-            Float64MultiArray,
-            '/lfd_fr3_joint_velocity_cmd',
-            10) 
+        # self.joint_vel_pub = self.create_publisher(
+        #     Float64MultiArray,
+        #     '/lfd_fr3_joint_velocity_cmd',
+        #     10) 
 
 
     def initialize_ros_service_clients(self):
@@ -356,8 +357,15 @@ class LFDController(Node):
         self.load_client.wait_for_service()
 
         # --- Velocity ramping variables ---
-        self.current_cmd = TwistStamped()
-        self.target_cmd = TwistStamped()        
+        self.current_cmd = TwistStamped()        
+        self.target_cmd = TwistStamped() 
+        self.target_cmd.twist.linear.x = 0.0
+        self.target_cmd.twist.linear.y = 0.0
+        self.target_cmd.twist.linear.z = 0.0
+        self.target_cmd.twist.angular.x = 0.0
+        self.target_cmd.twist.angular.y = 0.0
+        self.target_cmd.twist.angular.z = 0.0
+        self.tgt_twist_pub.publish(self.target_cmd)       
 
         self.current_v = np.zeros(6)
         self.current_a = np.zeros(6)
@@ -606,8 +614,8 @@ class LFDController(Node):
     def initialize_ros_timers(self):        
         
         # --- Timer for high-rate velocity ramping ---
-        self.timer_period = 0.001  # 500 Hz
-        self.create_timer(self.timer_period, self.publish_smoothed_velocity)
+        self.timer_period = 0.002  # 500 Hz
+        # self.create_timer(self.timer_period, self.publish_smoothed_velocity)
 
         # --- Timer to recreate incoming palm camera with fake hardware ---
         # self.create_timer(0.034, self.incoming_cam_sim)
@@ -1031,10 +1039,73 @@ class LFDController(Node):
                 # Target twist
                 self.target_cmd.twist.linear.x = 0.0
                 self.target_cmd.twist.linear.y = 0.0
-                self.target_cmd.twist.linear.z = 0.05       
-                self.target_cmd.twist.angular.x = 0.0
+                self.target_cmd.twist.linear.z = 0.0       
+                self.target_cmd.twist.angular.x = 0.1
                 self.target_cmd.twist.angular.y = 0.0
-                self.target_cmd.twist.angular.z = 0.0   
+                self.target_cmd.twist.angular.z = 0.0
+
+            
+            # Publish target twist            
+            now = self.get_clock().now()
+            self.target_cmd.header.stamp = now.to_msg()
+            self.target_cmd.header.frame_id = "fr3_hand_tcp"
+            self.tgt_twist_pub.publish(self.target_cmd)
+
+
+
+    # === Data saving functions ===
+    def save_metadata(self, filename):
+        """
+        Create json file and save it with the same name as the bag file
+        @param filename:
+        @return:
+        """
+        
+        # --- Open default metadata template for the experiment
+        pkg_share = get_package_share_directory('lfd_apples')
+        template_path = os.path.join(pkg_share, 'data', 'implementation_metadata_template.json')
+
+        with open(template_path, 'r') as template_file:
+            trial_info = json.load(template_file)
+        
+        # Date
+        trial_info['general']['date'] = str(datetime.datetime.now())
+
+
+        # Update proxy info
+        # apple_id = input("Type the apple id: ")  # Wait for user to press Enter
+        trial_info['proxy']['apple']['id'] = self.apple_id
+        # spur_id = input("Type the spur id: ")  # Wait for user to press Enter
+        trial_info['proxy']['spur']['id'] = self.spur_id
+        trial_info['proxy']['apple']['pose']['position']['x'] =  self.apple_pose_base[0]
+        trial_info['proxy']['apple']['pose']['position']['y'] =  self.apple_pose_base[1]
+        trial_info['proxy']['apple']['pose']['position']['z'] =  self.apple_pose_base[2]
+        trial_info['proxy']['apple']['frame_id'] = 'base'
+        
+
+        # Update controllers info
+        trial_info['controllers']['delta gain'] = self.DELTA_GAIN
+        trial_info['controllers']['approach']['data based'] = self.APPROACH_MODEL_PARAMS
+        trial_info['controllers']['approach']['PI']['P'] = self.POSITION_KP
+        trial_info['controllers']['approach']['PI']['I'] = self.POSITION_KI
+        trial_info['controllers']['approach']['PI']['PI gain'] = self.INITIAL_PI_GAIN
+        trial_info['controllers']['approach']['pixel to meter'] = self.PIXEL_TO_METER_RATE
+        trial_info['controllers']['approach']['states'] = self.APPROACH_CONTROLLER.STATE_NAME_KEYS
+        trial_info['controllers']['approach']['actions'] = self.ACTION_NAMES
+
+
+        # Update gripper weight
+        # Gripper weight = 1190 g, Rim weight = 160 g, Gripper + Rim weight = 1350 g
+        trial_info['robot']['gripper']['weight'] =  "1190 g"       
+
+
+        # Save results metrics
+        trial_info['results']['approach metrics']['final pose'] =  self.p_apple_tcp_enf_of_approach.flatten().tolist()
+
+
+        # --- Save metadata in file    
+        with open(filename + '.json', "w") as outfile:
+            json.dump(trial_info, outfile, indent=4)
 
 
 
@@ -1122,9 +1193,36 @@ class LFDController(Node):
         self.target_cmd.twist = Twist()  # zero target
         self.current_cmd.header.frame_id = "fr3_hand_tcp"
 
-        self.current_cmd.header.stamp = self.get_clock().now().to_msg()
-        self.servo_pub.publish(self.current_cmd)
+        self.current_cmd.header.stamp = self.get_clock().now().to_msg()        
+        self.tgt_twist_pub.publish(self.target_cmd)
         
+
+
+def check_data_plots(BAG_DIR, trial_number, inhand_camera_bag=True):
+
+    print("Extracting data and generating plots...")
+
+    try:
+        plt.ion()  # <-- interactive mode ON
+        # extract_data_and_plot(os.path.join(BAG_DIR, TRIAL), "")
+        extract_data_and_plot(BAG_DIR, trial_number, inhand_camera_bag, implementation_stage=True)
+        print("✅ Data extraction complete.")
+
+        # Prompt user to hit Enter to close figures
+        input("\n\033[1;32m - Plots generated. Check how things look and press ENTER to close all figures.\033[0m\n")
+        
+        # Close all matplotlib figures
+        plt.close('all')
+
+        # Prompt user to take notes in JSON file if needed
+        input("\n\033[1;32m - Annotate the json file if needed, and press ENTER to continue with next demo.\033[0m\n")
+
+
+    except Exception as e:
+        print(f"❌ Error during data extraction: {e}")
+
+
+
 
 
 
@@ -1136,65 +1234,94 @@ def main():
        
     node = LFDController()     
 
+
+    BASE_DIR = '/home/alejo/Documents/DATA'
+    BAG_MAIN_DIR = '07_IL_implementation/bagfiles'
+
+    EXPERIMENT = "experiment_1_(pull)/approach"
+
+    BAG_FILEPATH = os.path.join(BASE_DIR, BAG_MAIN_DIR, EXPERIMENT)
+    os.makedirs(BAG_FILEPATH, exist_ok=True)
+
+    # --- Use MultiThreadedExecutor so timers run in parallel ---
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+
     SLEEP_TIME = 0.25    
     batch_size = 10
     node.get_logger().info(f"Starting lfd implementation with robot, session of {batch_size} demos.")    
 
-    for demo in range(batch_size):
+    try:
 
-        node.get_logger().info(f"{YELLOW}\n\n---------- Press ENTER key to start lfd implementation trial {demo+1}/10 ----------\n{RESET}")
-        input()  
-      
-        node.initialize_state_and_models()
-        node.initialize_signal_variables_and_thresholds()
-        node.initialize_flags()               
-               
+        for demo in range(batch_size):
 
-        # ------------ Step 1: Move robot to home position ---------
-        node.get_logger().info(f"{YELLOW}\n\nSTEP 1: Arm moving to home position... wait.\n{RESET}")
-        while not node.move_to_home():
-            pass
+            node.get_logger().info(f"{YELLOW}\n\n---------- Press ENTER key to start lfd implementation trial {demo+1}/10 ----------\n{RESET}")
+            input()  
 
-        # --- Gravity Mode ---
-        # node.swap_controller(node.arm_controller, node.gravity_controller)
-        node.swap_controller(node.arm_controller, node.joint_velocity_controller)
-        time.sleep(SLEEP_TIME)               
-        node.get_logger().info(f"{YELLOW}\n\nSTEP 3: Record apple position by bringing gripper close to it (cups gently apple).\nPress ENTER key when you are done.\n{RESET}")        
-        input()           
-
-        # node.swap_controller(node.gravity_controller, node.joint_velocity_controller)
-        time.sleep(SLEEP_TIME)
-        
-        # # --- Moveit2 Servo Mode ---
-        # node.swap_controller(node.gravity_controller, node.twist_controller)
-        # time.sleep(SLEEP_TIME)          
-        # node.initialize_ros_service_clients()
-
-        req = Trigger.Request()        
-        node.servo_node_client.call_async(req)
-        node.get_logger().info("Moveit2 Servo Node enabled")
-        time.sleep(SLEEP_TIME)        
+            # ------------ Step 0: Initial configuration ----------------
+            TRIAL = find_next_trial_number(BAG_FILEPATH, prefix="trial_")
+            os.makedirs(os.path.join(BAG_FILEPATH, TRIAL), exist_ok=True)
+            # HUMAN_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL, 'human')
+            ROBOT_BAG_FILEPATH = os.path.join(BAG_FILEPATH, TRIAL)              
 
         
+            node.initialize_state_and_models()
+            node.initialize_signal_variables_and_thresholds()
+            node.initialize_flags()               
+                
 
-        # --- Run lfd controller ---
-        node.get_logger().info(f"{YELLOW}\n\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\n{RESET}")     
-        input()
+            # ------------ Step 1: Move robot to home position ---------
+            node.get_logger().info(f"{YELLOW}\n\nSTEP 1: Arm moving to home position... wait.\n{RESET}")
+            while not node.move_to_home():
+                pass
 
-        node.DEBUGGING_MODE = False
-        if node.DEBUGGING_MODE: node.initialize_debugging_mode_variables        
+            # --- Gravity Mode ---
+            # node.swap_controller(node.arm_controller, node.gravity_controller)
+            node.swap_controller(node.arm_controller, node.joint_velocity_controller)
+            time.sleep(SLEEP_TIME)               
+            node.get_logger().info(f"{YELLOW}\n\nSTEP 3: Record apple position by bringing gripper close to it (cups gently apple).\nPress ENTER key when you are done.\n{RESET}")        
+            input()           
+
+            # node.swap_controller(node.gravity_controller, node.joint_velocity_controller)
+            time.sleep(SLEEP_TIME)
+            
+            # # --- Moveit2 Servo Mode ---
+            # node.swap_controller(node.gravity_controller, node.twist_controller)
+            # time.sleep(SLEEP_TIME)          
+            # node.initialize_ros_service_clients()
+
+            req = Trigger.Request()        
+            node.servo_node_client.call_async(req)
+            node.get_logger().info("Moveit2 Servo Node enabled")
+            time.sleep(SLEEP_TIME)        
+
+            # Start recording bag
+            robot_rosbag_list = start_recording_bagfile(ROBOT_BAG_FILEPATH, inhand_camera_bag=False, fixed_camera_bag=False)
+            
+
+            # --- Run lfd controller ---
+            node.get_logger().info(f"{YELLOW}\n\nSTEP 4: Press ENTER key to start ROBOT lfd implementation.\n{RESET}")     
+            input()
+
+            node.DEBUGGING_MODE = False
+            if node.DEBUGGING_MODE: node.initialize_debugging_mode_variables        
+            
         
-       
-        node.run_lfd_controller()      
-        
-        # --- Ready for next demo, swap back to arm controller ---
-        node.swap_controller(node.joint_velocity_controller, node.arm_controller)
-        time.sleep(SLEEP_TIME)         
-        node.get_logger().info(f"Robot lfd implementation {demo+1}/10 done.")
+            node.run_lfd_controller()      
+            
+            # --- Ready for next demo, swap back to arm controller ---
+            node.swap_controller(node.joint_velocity_controller, node.arm_controller)
+            time.sleep(SLEEP_TIME)         
+
+            # Stop bag recording
+            stop_recording_bagfile(robot_rosbag_list)       
+            check_data_plots(ROBOT_BAG_FILEPATH, TRIAL)
+
+            node.get_logger().info(f"Robot lfd implementation {demo+1}/10 done.")
     
-    
-    node.destroy_node()
-    rclpy.shutdown()
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
