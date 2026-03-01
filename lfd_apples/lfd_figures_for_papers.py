@@ -493,8 +493,8 @@ def compare_losses_plots():
     inputs_list = ['tof__air_pressure__apple_prior__suction__fingers',
                    'tof__air_pressure__apple_prior',                        
                    'tof__air_pressure__apple_prior__previous_deltas',
-                   ]#,                                          
-                #    'tof__air_pressure__wrench__apple_prior__suction__fingers']
+                #    ]#,                                          
+                   'tof__air_pressure__wrench__apple_prior__suction__fingers']
    
     
     plot_loss_curves(base, phase, inputs_list, ax_contact, phase_color)
@@ -528,7 +528,7 @@ def plot_loss_curves(base, phase, inputs, phase_ax, phase_color):
     
 
     # Number of plots per state
-    top_n = 1      # best n models
+    top_n = 20     # best n models
     
     # Axes limits
     min_epochs = -5
