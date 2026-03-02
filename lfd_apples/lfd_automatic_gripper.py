@@ -20,17 +20,47 @@ class GripperController(Node):
 
         self.distance_threshold = self.get_parameter('distance_threshold').value
         self.pressure_threshold = self.get_parameter('pressure_threshold').value
-        self.timer_value = self.get_parameter('release_timer').value
+        self.timer_value = self.get_parameter('release_timer').value    
+        
+        self.initialize_ros_topics()
+        self.initialize_ros_service_clients()        
+        self.initialize_flags()
 
+        self.get_logger().info("GripperController node started.")
+        
+
+        # Parameters
+        self.apple_disposal_coord = [-0.46, 0.47, 0.22]       
+        self.disposal_range = 0.05
+
+    def initialize_ros_topics(self):
+        
         # Topic Subscribers
         self.distance_sub = self.create_subscription(
-            Int16MultiArray, 'microROS/sensor_data', self.gripper_sensors_callback, 10)
+            Int16MultiArray,
+            'microROS/sensor_data',
+            self.gripper_sensors_callback,
+            10)
         self.eef_pose_sub = self.create_subscription(
-            PoseStamped, '/franka_robot_state_broadcaster/current_pose', self.eef_pose_callback, 10)
+            PoseStamped,
+            '/franka_robot_state_broadcaster/current_pose',
+            self.eef_pose_callback,
+            10)
         self.probing_apple_sub = self.create_subscription(
-            Bool, 'lfd/apple_probing_apple', self.probing_apple_callback, 10)
+            Bool,
+            'lfd/apple_probing_apple',
+            self.probing_apple_callback,
+            10)
+        self.pick_done_sub = self.create_subscription(
+            Bool,
+            'lfd/pick_done',
+            self.pick_done_callback,
+            10)
+
+
+
+    def initialize_ros_service_clients(self):
         
-        # Service Clients
         self.valve_client = self.create_client(SetBool, 'microROS/toggle_valve')
         self.fingers_client = self.create_client(SetBool, 'microROS/move_stepper')
 
@@ -39,9 +69,9 @@ class GripperController(Node):
         while not self.fingers_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn('Waiting for fingers service...')
 
-        self.get_logger().info("GripperController node started.")
 
-        # Flags
+    def initialize_flags(self):
+        
         self.flag_distance = False
         self.flag_engagement = False
         self.flag_disposal = False
@@ -49,10 +79,10 @@ class GripperController(Node):
         self.cooldown = False  # NEW: prevents immediate rearming
         self.auto_off_timer = None
         self.flag_probing_apple = False
+        self.flag_apple_picked = False
+        self.flag_apple_released = False
 
-        # Parameters
-        self.apple_disposal_coord = [-0.46, 0.47, 0.22]       
-        self.disposal_range = 0.05
+
 
     # ----------------------- Helper to safely destroy timers -----------------------
     def destroy_timer_safe(self, attr_name: str):
@@ -82,6 +112,7 @@ class GripperController(Node):
                 req.data = True
                 self.valve_client.call_async(req)
                 self.flag_distance = True
+                self.flag_apple_released = False
 
             # Target moved away
             elif self.flag_distance and (msg.data[3] > self.distance_threshold):
@@ -123,7 +154,7 @@ class GripperController(Node):
         # Reset system
         self.fingers_and_valve_reset()
 
-    # ----------------------- EEF Pose Callback -----------------------
+    # ----------------------- Callbacks -----------------------
     def eef_pose_callback(self, msg: PoseStamped):
         eef_x, eef_y, eef_z = msg.pose.position.x, msg.pose.position.y, msg.pose.position.z
 
@@ -137,9 +168,23 @@ class GripperController(Node):
             self.destroy_timer_safe("auto_off_timer")
             self.fingers_and_valve_reset()
 
+
     def probing_apple_callback(self, msg: Bool):
         
         self.flag_probing_apple = msg.data
+
+
+    def pick_done_callback(self, msg: Bool):
+
+        self.flag_apple_picked = msg.data
+
+        if self.flag_apple_picked and not self.flag_apple_released:
+            self.get_logger().info("Apple was picked")
+            # Reset system
+            self.fingers_and_valve_reset()
+            self.flag_apple_released = True
+
+
 
     # ----------------------- Reset Sequence -----------------------
     def fingers_and_valve_reset(self):
@@ -148,6 +193,7 @@ class GripperController(Node):
         req.data = False
         future_fingers = self.fingers_client.call_async(req)
         future_fingers.add_done_callback(self._after_fingers_call_reset)
+
 
     def _after_fingers_call_reset(self, future_fingers: Future):
         try:
@@ -160,12 +206,14 @@ class GripperController(Node):
             self.get_logger().error(f"Fingers In service call failed: {e}")
         self.delay_timer = self.create_timer(0.5, self._call_valve_after_reset)
 
+
     def _call_valve_after_reset(self):
         self.destroy_timer_safe("delay_timer")
         req_valve = SetBool.Request()
         req_valve.data = False
         future_valve = self.valve_client.call_async(req_valve)
         future_valve.add_done_callback(self._after_valve_call_reset)
+
 
     def _after_valve_call_reset(self, future_valve: Future):
         try:
@@ -178,6 +226,7 @@ class GripperController(Node):
             self.get_logger().error(f"Valve service call failed: {e}")
         self.delay_reset_timer = self.create_timer(0.5, self._after_reset_complete)
 
+
     def _after_reset_complete(self):
         self.destroy_timer_safe("delay_reset_timer")
         self.flag_distance = False
@@ -188,6 +237,7 @@ class GripperController(Node):
         self.cooldown = True
         self.get_logger().info("Cooldown active (2 s)...")
         self.cooldown_timer = self.create_timer(2.0, self._clear_cooldown)
+
 
     def _clear_cooldown(self):
         self.destroy_timer_safe("cooldown_timer")

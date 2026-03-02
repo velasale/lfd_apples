@@ -312,11 +312,26 @@ class LFDController(Node):
             Bool,
             'lfd/apple_probing_apple',
             10)
+        self.pick_done_pub = self.create_publisher(
+            Bool,
+            'lfd/pick_done',
+            10
+        )
 
 
     def initialize_ros_service_clients(self):
 
-        # Service Clients
+        # Gripper Services
+        self.valve_client = self.create_client(SetBool, 'microROS/toggle_valve')
+        self.fingers_client = self.create_client(SetBool, 'microROS/move_stepper')
+
+        while not self.valve_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().warn('Waiting for valve service...')
+        while not self.fingers_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().warn('Waiting for fingers service...')
+
+
+        # Servo Node Service
         self.servo_node_client = self.create_client(
             Trigger,
             '/servo_node_lfd/start_servo')
@@ -616,15 +631,8 @@ class LFDController(Node):
         self.waiting_for_fingers_to_close = False     
         self.transition_to_pick = False
 
+        self.apple_picked_flag(False)
 
-    # def initialize_ros_timers(self):        
-        
-    #     # --- Timer for high-rate velocity ramping ---
-    #     self.timer_period = 0.0025  # 500 Hz
-    #     self.create_timer(self.timer_period, self.publish_smoothed_velocity)
-
-    #     # --- Timer to recreate incoming palm camera with fake hardware ---
-    #     # self.create_timer(0.034, self.incoming_cam_sim)
            
 
     # === ROS controller functions ===
@@ -791,6 +799,14 @@ class LFDController(Node):
         self.apple_probing_pub.publish(self.probing_flag)
 
 
+    def apple_picked_flag(self, value: bool):
+
+        self.picked_flag = Bool()        
+        self.picked_flag.data = value
+        self.pick_done_pub.publish(self.picked_flag)
+
+
+
     # === Data saving functions ===
     def save_metadata(self, filename):
         """
@@ -815,6 +831,8 @@ class LFDController(Node):
         trial_info['proxy']['apple']['id'] = self.apple_id
         # spur_id = input("Type the spur id: ")  # Wait for user to press Enter
         trial_info['proxy']['spur']['id'] = self.spur_id
+        trial_info['proxy']['spur']['position'] = self.spur_position_label
+        
         trial_info['proxy']['apple']['pose']['position']['x'] =  self.apple_pose_base[0]
         trial_info['proxy']['apple']['pose']['position']['y'] =  self.apple_pose_base[1]
         trial_info['proxy']['apple']['pose']['position']['z'] =  self.apple_pose_base[2]
@@ -936,7 +954,7 @@ class LFDController(Node):
             elapsed = (self.get_clock().now() - self.fingers_timer_start).nanoseconds * 1e-9  # seconds
 
             WAIT_FOR_FINGERS_DURATION = 0.25  # seconds, adjust as needed
-            
+
             self.target_cmd.twist.linear.z = +0.00
 
             self.get_logger().warning(f"Closing Fingers --> {elapsed}") 
@@ -1404,12 +1422,7 @@ class LFDController(Node):
 
         self.get_logger().info("Starting run_lfd_controller.")
         self.running_lfd = True
-        self.running_lfd_approach = True
-
-        # self.sum_pos_x_error = 0.0
-        # self.sum_pos_y_error = 0.0        
-
-        # self.PI_GAIN = self.INITIAL_PI_GAIN     
+        self.running_lfd_approach = True   
 
         # Clear previous eef trail in RVIZ       
         self.tcp_trail_marker.points.clear()
@@ -1427,7 +1440,8 @@ class LFDController(Node):
             time.sleep(0.01)
         
         self.send_stop_message()
-        self.running_lfd = False
+        self.running_lfd = False        
+        self.apple_picked_flag(True)    # Tell the gripper that apple got picked
 
         
     def send_stop_message(self):
@@ -1552,6 +1566,7 @@ def main():
         node.apple_pose_base[:] = [node.eef_pos_x, node.eef_pos_y, node.eef_pos_z]
         node.apple_id = input("Type the apple id: ")    # Wait for user to press Enter
         node.spur_id = input("Type the spur id: ")      # Wait for user to press Enter        
+        node.spur_position_label = input("Type the spur location label: ")      # Wait for user to press Enter      
         node.place_rviz_apple()
 
         node.swap_controller(node.arm_controller, node.gravity_controller)
