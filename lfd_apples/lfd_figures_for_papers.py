@@ -452,7 +452,7 @@ def compare_losses_plots():
         "axes.titlesize": 10,
         "xtick.labelsize": 10,
         "ytick.labelsize": 10,
-        "legend.fontsize": 10,
+        "legend.fontsize": 11,
     })
     
 
@@ -481,8 +481,8 @@ def compare_losses_plots():
     phase_color = 'blue'
     inputs_list = ['apple_prior',
                    'tof__inhand_cam_features',
-                   'tof__inhand_cam_features__apple_prior',
-                   'tof__inhand_cam_features__apple_prior__suction']
+                   'tof__inhand_cam_features__apple_prior']#,
+                #    'tof__inhand_cam_features__apple_prior__suction']
    
     plot_loss_curves(base, phase, inputs_list, ax_approach, phase_color)
 
@@ -533,19 +533,19 @@ def plot_loss_curves(base, phase, inputs, phase_ax, phase_color):
     # Axes limits
     min_epochs = -5
     max_epochs = 500
-    max_loss = 1.0    
+    max_loss = 1.2    
     
     if phase == 'phase_2_contact':
-        max_loss = 1.0
+        max_loss = 1.2
         max_epochs = 1500       
 
     # Math labels
     feature_map = {
-        'tof': r'd',
-        'air_pressure': r'\mathbf{P}_{\mathrm{scup}}',
-        'inhand_cam_features': r'\mathbf{z}',
-        'wrench': r'\mathbf{F}_{\mathrm{tcp}}',
-        'apple_prior': r'\mathbf{p}',
+        'tof': r'd_{\mathrm{tof}}',
+        'air_pressure': r'\rho',
+        'inhand_cam_features': r'I_{\mathrm{lat}}',
+        'wrench': r'{F}',
+        'apple_prior': r'P_{\mathrm{a}}',
         'suction': r's',
         'fingers': r'f',
         'previous_deltas': r'\Delta \mathbf{s}_{t-1}'
@@ -770,7 +770,7 @@ def plot_loss_curves(base, phase, inputs, phase_ax, phase_color):
     # ----- Model legend (colors)
     model_legend = phase_ax.legend(
         handles=model_handles,
-        title="state",
+        title="State",
         loc='upper right'
     )
     phase_ax.add_artist(model_legend)
@@ -818,6 +818,113 @@ def trajectory_from_twist(trial=240):
     pass
 
 
+def inferred_twist_plots():
+
+    # --- Use LaTeX for all text ---
+    # Do NOT use usetex
+    plt.rcParams.update({
+        "font.family": "serif",
+        "axes.labelsize": 15,
+        "axes.titlesize": 15,
+        "xtick.labelsize": 15,
+        "ytick.labelsize": 15,
+        "legend.fontsize": 15
+    })
+
+    path = '/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/approach/trial_'
+    
+    csv_file = '/lfd_bag_main/bag_csvs/smoother_delta_twist_command.csv'
+
+
+    for trial in range(351, 352):
+
+        full_path = os.path.join(path + str(trial) + csv_file)
+
+
+        ap_start = 7.0
+        ap_end = 12.5
+        ct_end = 17.6
+        pk_end = 30
+
+
+        try:
+            # ---- Load CSV ----
+            df = pd.read_csv(full_path)
+
+            # ---- Create Figure ----
+            fig, axs = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
+
+            time = df["elapsed_time"]
+
+            # === Define phases ===
+            phases = [
+                ("Approach", ap_start, ap_end, "tab:blue"),
+                ("Contact",  ap_end,   ct_end, "tab:orange"),
+                ("Pick",     ct_end,   pk_end, "tab:red"),
+            ]
+
+            # === Shade background for both subplots ===
+            for ax in axs:
+                for label, start, end, color in phases:
+                    ax.axvspan(start, end, color=color, alpha=0.1)
+
+            # === Add phase labels ONLY on top subplot ===
+            top_ax = axs[0]
+
+            for label, start, end, color in phases:
+                x_center = (start + end) / 2
+
+                top_ax.text(
+                    x_center,
+                    0.97,
+                    label,
+                    transform=top_ax.get_xaxis_transform(),
+                    ha="center",
+                    va="top",
+                    fontsize=15,
+                    fontweight="bold",
+                    color=color  # <-- use same region color
+                )
+
+            # ---- First subplot: Linear velocities ----
+            axs[0].plot(time, df["_twist._linear._x"]*1e3,
+                        color="gray", linestyle="-.", linewidth=2, label="x")
+            axs[0].plot(time, df["_twist._linear._y"]*1e3,
+                        color="dimgray", linestyle="--", linewidth=2, label="y")
+            axs[0].plot(time, df["_twist._linear._z"]*1e3,
+                        color="black", linestyle="-", linewidth=2, label="z")
+
+            # axs[0].set_title("Linear Twist")
+            axs[0].set_ylabel("Linear velocity [mm/s]")
+            axs[0].legend()
+            axs[0].grid(True)
+            axs[0].set_xlim(ap_start, pk_end)
+
+            # ---- Second subplot: Angular velocities ----
+            axs[1].plot(time, df["_twist._angular._x"],
+                        color="gray", linestyle="-.", linewidth=2, label="x")
+            axs[1].plot(time, df["_twist._angular._y"],
+                        color="dimgray", linestyle="--", linewidth=2, label="y")
+            axs[1].plot(time, df["_twist._angular._z"],
+                        color="black", linestyle="-", linewidth=2, label="z")
+
+            # axs[1].set_title("Angular Twist")
+            axs[1].set_ylabel("Angular velocity [rad/s]")
+            axs[1].set_xlabel("Elapsed time [s]")
+            axs[1].legend()
+            axs[1].grid(True)
+            axs[1].set_xlim(ap_start, pk_end)
+
+            plt.tight_layout()
+            plt.show()
+            
+        
+        except:
+            pass
+    
+
+
+
 
 if __name__ == '__main__':
 
@@ -827,3 +934,5 @@ if __name__ == '__main__':
     compare_losses_plots()
 
     # trajectory_from_twist(240)
+
+    # inferred_twist_plots()

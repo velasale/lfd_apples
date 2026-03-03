@@ -649,16 +649,30 @@ def implementation_metadata_NEW():
 
     # ================= PHASES SUCCESS RATES =================
     print("\n=== Experiment Success Rates ===")
-
+    
     # Approach success rate
-    ap_percentage_true = (experiment_results_pd["approach_success"] == "true").mean() * 100
-    ap_trials = len(experiment_results_pd)
+    # Filter out# Unvalid phase trials because of:
+    # arm issues: singularities or position limits
+    # gripper issues: suction not triggered, fingers did not close
+    ap_valid = experiment_results_pd[
+        ~(
+            (experiment_results_pd["approach_comments"].str.contains("not valid", na=False)) &
+            (experiment_results_pd["approach_success"] == "false")
+            )
+            ]
+
+    ap_percentage_true = (ap_valid["approach_success"] == "true").mean() * 100
+    ap_trials = len(ap_valid)
     print(f"Approach success rate: {ap_percentage_true:.2f}%, ({ap_trials} trials)")
 
-    # Contact success rate
-    # Discard trials that air didn't trigger
-    ct_valid = experiment_results_pd[experiment_results_pd["approach_success"] == "true"]
-    ct_valid = ct_valid[~ct_valid["approach_comments"].str.contains("trigger", na=False)]
+    # Contact success rate    
+    ct_valid = ap_valid[ap_valid["approach_success"] == "true"]
+    ct_valid = ct_valid[
+        ~(            
+            (ct_valid["contact_success"] == "false") &
+            (ct_valid["approach_comments"].str.contains("not valid", na=False))          
+        )
+    ]
     ct_percentage_true = (ct_valid["contact_success"] == "true").mean() * 100
     ct_trials = len(ct_valid)
     print(f"Contact success rate: {ct_percentage_true:.2f}%, ({ct_trials} trials)")
@@ -666,9 +680,26 @@ def implementation_metadata_NEW():
 
     # Pick success rate
     pk_valid = ct_valid[ct_valid["contact_success"] == "true"]
+    pk_valid = pk_valid[
+        ~(            
+            (pk_valid["pick_success"] == "false") &
+            (pk_valid["approach_comments"].str.contains("not valid", na=False))          
+        )
+    ]
     pk_percentage_true = (pk_valid["pick_success"] == "true").mean() * 100
     pk_trials = len(pk_valid)
     print(f"Pick success rate: {pk_percentage_true:.2f}%, ({pk_trials} trials)")    
+
+
+    # Accross all phases
+    hv_valid = experiment_results_pd[~(experiment_results_pd["approach_comments"].str.contains("not valid", na=False))]
+    hv_percentage_true = (hv_valid["pick_success"] == "true").mean() * 100
+    hv_trials = len(hv_valid)
+    print(f"Harvest success rate: {hv_percentage_true:.2f}%, ({hv_trials} trials)")    
+
+    # Save into csv
+    path = '/home/alejo/Documents/DATA/07_IL_implementation/harvest_results.csv'
+    hv_valid.to_csv(path,index=False)
 
 
 
