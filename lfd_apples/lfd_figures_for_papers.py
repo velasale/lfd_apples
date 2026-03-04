@@ -6,6 +6,44 @@ import matplotlib as mpl
 from scipy.ndimage import gaussian_filter, median_filter, gaussian_filter1d
 from matplotlib.lines import Line2D
 
+import re
+import cv2
+from glob import glob
+from tqdm import tqdm
+
+
+# ========================= Handy functions ==========================
+def extract_timestamp(filename):
+    """
+    Extract timestamp between last '_' and '.jpg'
+    """
+    base = os.path.basename(filename)
+    match = re.search(r'_(\d+\.?\d*)\.jpg$', base)
+    if match:
+        return float(match.group(1))
+    else:
+        return None
+
+
+def load_image_sequence(folder):
+    files = sorted(glob(os.path.join(folder, '*.jpg')))
+    timestamps = []
+    valid_files = []
+
+    for f in files:
+        t = extract_timestamp(f)
+        if t is not None:
+            timestamps.append(t)
+            valid_files.append(f)
+
+    return np.array(timestamps), valid_files
+
+
+def closest_index(array, value):
+    return np.argmin(np.abs(array - value))
+
+
+# ========================================================================
 
 def plot_trial(trial_path, plot_channels = False):
 
@@ -923,16 +961,236 @@ def inferred_twist_plots():
             pass
     
 
+def videos_and_plot_aside():
+    # ---- Paths ----
+    base_path = r'E:\01_LFD\07_IL_implementation\bagfiles\experiment_1_(pull)\approach'
 
+    fixed_cam_path = 'lfd_bag_fixed_camera/camera_frames/fixed_rgb_camera_image_raw'
+    gripper_cam_path = 'lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw_with_artifacts'
+    twist_path = 'lfd_bag_main/bag_csvs/smoother_delta_twist_command.csv'
+
+    # make list of trials:
+    trial_folders = [
+        f for f in os.listdir(base_path)
+        if os.path.isdir(os.path.join(base_path, f)) and f.startswith('trial_')
+    ]
+
+    print(trial_folders)
+
+    for trial in tqdm(trial_folders):
+        try:
+            trial_path = os.path.join(base_path, trial)
+
+            fixed_folder = os.path.join(trial_path, fixed_cam_path)
+            gripper_folder = os.path.join(trial_path, gripper_cam_path)
+            twist_csv_path = os.path.join(trial_path, twist_path)
+
+            # ---- Collect image files ----
+            fixed_files = sorted(
+                [os.path.join(fixed_folder, f) for f in os.listdir(fixed_folder) if f.endswith('.jpg')])
+            gripper_files = sorted(
+                [os.path.join(gripper_folder, f) for f in os.listdir(gripper_folder) if f.endswith('.jpg')])
+
+            # Skip trial if no images
+            if not fixed_files or not gripper_files:
+                print(f"Skipping {trial}: missing images")
+                continue
+
+            # ---- Composite Video Function ----
+            composite_video_pip(
+                fixed_files,
+                gripper_files,
+                twist_csv_path,
+                output_path=trial + '_2x.mp4',
+                pip_height=180,
+                fps=15,
+            )
+
+        except Exception as e:
+            print(f"Skipping {trial} due to error: {e}")
+
+def composite_video_pip(
+        fixed_files,
+        gripper_files,
+        twist_csv_path=None,
+        output_path="composite_video_2x.mp4",
+        pip_height=180,
+        fps=15
+    ):
+
+    # ---- Load CSV for evolving plot ----
+    plot_enabled = twist_csv_path is not None
+    if plot_enabled:
+        df = pd.read_csv(twist_csv_path)
+        time_csv = df['elapsed_time'].values
+        linear_cols = ['_twist._linear._x', '_twist._linear._y', '_twist._linear._z']
+        angular_cols = ['_twist._angular._x', '_twist._angular._y', '_twist._angular._z']
+        linear_data = df[linear_cols].values * 1000
+        angular_data = df[angular_cols].values
+
+        # Figure setup
+        fig, axes = plt.subplots(2, 1, figsize=(6, 6), sharex=True)
+
+        colors = ['red', 'limegreen', 'deepskyblue']
+
+        linestyles = ['-', '--', '-.']
+
+        # Create lines with fixed color and linestyle
+        lines_lin = [axes[0].plot([], [], color=colors[i], linestyle=linestyles[i])[0] for i in range(3)]
+        lines_ang = [axes[1].plot([], [], color=colors[i], linestyle=linestyles[i])[0] for i in range(3)]
+
+        # Add legend for linear velocities
+        axes[0].legend(['x', 'y', 'z'], loc='upper right', fontsize=10)
+        # Add legend for angular velocities
+        axes[1].legend(['x', 'y', 'z'], loc='upper right', fontsize=10)
+
+        axes[0].grid(True)
+        axes[1].grid(True)
+        axes[0].set_ylabel("Linear Velocities [mm/s]")
+        axes[0].set_xlim(time_csv.min(), time_csv.max())
+        axes[0].set_ylim(np.min(linear_data), np.max(linear_data))
+        axes[1].set_ylabel("Angular Velocities [rad/s]")
+        axes[1].set_xlabel("Elapsed time [s]")
+        axes[1].set_xlim(time_csv.min(), time_csv.max())
+        axes[1].set_ylim(np.min(angular_data), np.max(angular_data))
+
+        plt.tight_layout()
+
+        fig.canvas.draw()
+        plot_width, plot_height = fig.canvas.get_width_height()
+
+    # ---- VideoWriter setup ----
+    sample_fixed = cv2.imread(fixed_files[0])
+    h_fixed, w_fixed, _ = sample_fixed.shape
+    if plot_enabled:
+        total_width = w_fixed + plot_width
+        total_height = max(h_fixed, plot_height)
+    else:
+        total_width = w_fixed
+        total_height = h_fixed
+
+    # Compute new size
+    new_width = total_width
+    new_height = total_height
+    out = cv2.VideoWriter(
+        output_path,
+        cv2.VideoWriter_fourcc(*'mp4v'),
+        fps * 2,  # double speed
+        (new_width, new_height)
+    )
+
+    # ---- Extract timestamps ----
+    def extract_timestamp(filename):
+        import re
+        base = os.path.basename(filename)
+        match = re.search(r'_(\d+\.?\d*)\.jpg$', base)
+        return float(match.group(1)) if match else None
+
+    fixed_times = np.array([extract_timestamp(f) for f in fixed_files])
+    gripper_times = np.array([extract_timestamp(f) for f in gripper_files])
+
+    # ---- Loop: 2x speed ----
+    start_time_offset = 2.5  # skip first 3.5 sec when I check gripper is working
+    i = np.searchsorted(fixed_times, fixed_times[0] + start_time_offset)
+
+
+    while True:
+        t = fixed_times[0] + (fixed_times[i] - fixed_times[0])* 2 # 2x speed
+
+        # Stop if beyond last frame
+        if t > fixed_times[-1]:
+            break
+
+        # ---- Fixed frame ----
+        idx_fixed = np.searchsorted(fixed_times, t)
+        idx_fixed = min(idx_fixed, len(fixed_files)-1)
+        img_fixed = cv2.imread(fixed_files[idx_fixed])
+
+        # ---- Gripper PiP ----
+        idx_grip = np.argmin(np.abs(gripper_times - t))
+        img_grip = cv2.imread(gripper_files[idx_grip])
+
+        # ----- Denoise gripper
+        img_grip = cv2.medianBlur(img_grip, 3)
+        img_grip = cv2.bilateralFilter(img_grip, d=7, sigmaColor=50, sigmaSpace=50)
+
+        # ----- Increase brightness
+        # Convert to HSV, scale V channel
+        hsv = cv2.cvtColor(img_grip, cv2.COLOR_BGR2HSV)
+        h, s, v = cv2.split(hsv)
+        v = cv2.add(v, 40)  # increase brightness by 50 (0-255 scale)
+        v = np.clip(v, 0, 255)
+        hsv = cv2.merge([h, s, v])
+        img_grip = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+        # ----- Rotate 180°
+        img_grip = cv2.rotate(img_grip, cv2.ROTATE_180)
+
+        # ---- Resize keeping aspect ratio
+        h_grip, w_grip, _ = img_grip.shape
+        scale = pip_height / h_grip
+        w_new = int(w_grip * scale)
+        img_grip_resized = cv2.resize(img_grip, (w_new, pip_height), interpolation=cv2.INTER_AREA)
+
+        # Top-right corner
+        x_offset = w_fixed - w_new
+        y_offset = 0
+        img_fixed[y_offset:y_offset+pip_height, x_offset:x_offset+w_new] = img_grip_resized
+
+        # ---- Add "2x" label on fixed camera (bottom-left corner) ----
+        label = "2x"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1
+        thickness = 2  # bold
+        color = (255, 255, 255)  # white
+        # Position: 10 px from left, 20 px from bottom
+        text_size, _ = cv2.getTextSize(label, font, font_scale, thickness)
+        text_x = 10
+        text_y = h_fixed - 10
+        cv2.putText(img_fixed, label, (text_x, text_y), font, font_scale, color, thickness, cv2.LINE_AA)
+
+        # ---- Optional evolving plot ----
+        if plot_enabled:
+            idx_csv = np.searchsorted(time_csv, t)  # 2x speed for plot too
+            idx_csv = min(idx_csv, len(time_csv)-1)
+
+            for j in range(3):
+                lines_lin[j].set_data(time_csv[:idx_csv], linear_data[:idx_csv, j])
+                lines_ang[j].set_data(time_csv[:idx_csv], angular_data[:idx_csv, j])
+
+            fig.canvas.draw()
+            plot_img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+            plot_img = plot_img.reshape((plot_height, plot_width, 3))
+            plot_img = cv2.cvtColor(plot_img, cv2.COLOR_RGB2BGR)
+
+            frame = np.hstack([img_fixed, plot_img])
+        else:
+            frame = img_fixed
+
+        out.write(frame)
+        i += 1
+
+        if i >= len(fixed_files):
+            break
+
+    out.release()
+    if plot_enabled:
+        plt.close(fig)
+
+    print("Saved composite video with evolving plot and 2x speed for all:", os.path.abspath(output_path))
 
 
 if __name__ == '__main__':
 
+    print("Working directory:", os.getcwd())
+
     # plot_batch_trials()
     # phases_stats_from_reading_entire_trial()
     # phases_stats_from_last_row()
-    compare_losses_plots()
+    # compare_losses_plots()
 
     # trajectory_from_twist(240)
 
     # inferred_twist_plots()
+
+    videos_and_plot_aside()
