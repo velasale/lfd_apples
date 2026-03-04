@@ -5,6 +5,8 @@ import numpy as np
 import matplotlib as mpl
 from scipy.ndimage import gaussian_filter, median_filter, gaussian_filter1d
 from matplotlib.lines import Line2D
+import os
+import subprocess
 
 import re
 import cv2
@@ -963,7 +965,10 @@ def inferred_twist_plots():
 
 def videos_and_plot_aside():
     # ---- Paths ----
+    # Windows path from SSD
     base_path = r'E:\01_LFD\07_IL_implementation\bagfiles\experiment_1_(pull)\approach'
+
+    base_path = '/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/approach'
 
     fixed_cam_path = 'lfd_bag_fixed_camera/camera_frames/fixed_rgb_camera_image_raw'
     gripper_cam_path = 'lfd_bag_palm_camera/camera_frames/gripper_rgb_palm_camera_image_raw_with_artifacts'
@@ -976,6 +981,8 @@ def videos_and_plot_aside():
     ]
 
     print(trial_folders)
+
+    trial_folders = ['trial_291', 'trial_307', 'trial_316', 'trial_327', 'trial_330', 'trial_349', 'trial_362']
 
     for trial in tqdm(trial_folders):
         try:
@@ -1008,6 +1015,7 @@ def videos_and_plot_aside():
 
         except Exception as e:
             print(f"Skipping {trial} due to error: {e}")
+
 
 def composite_video_pip(
         fixed_files,
@@ -1083,7 +1091,7 @@ def composite_video_pip(
     def extract_timestamp(filename):
         import re
         base = os.path.basename(filename)
-        match = re.search(r'_(\d+\.?\d*)\.jpg$', base)
+        match = re.search(r'_(-?\d+(?:\.\d+)?)\.jpg$', base)
         return float(match.group(1)) if match else None
 
     fixed_times = np.array([extract_timestamp(f) for f in fixed_files])
@@ -1158,10 +1166,14 @@ def composite_video_pip(
                 lines_lin[j].set_data(time_csv[:idx_csv], linear_data[:idx_csv, j])
                 lines_ang[j].set_data(time_csv[:idx_csv], angular_data[:idx_csv, j])
 
+            # fig.canvas.draw()
+            # plot_img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+            # plot_img = plot_img.reshape((plot_height, plot_width, 3))
+            # plot_img = cv2.cvtColor(plot_img, cv2.COLOR_RGB2BGR)
+
             fig.canvas.draw()
-            plot_img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-            plot_img = plot_img.reshape((plot_height, plot_width, 3))
-            plot_img = cv2.cvtColor(plot_img, cv2.COLOR_RGB2BGR)
+            plot_img = np.asarray(fig.canvas.buffer_rgba())
+            plot_img = cv2.cvtColor(plot_img, cv2.COLOR_RGBA2BGR)
 
             frame = np.hstack([img_fixed, plot_img])
         else:
@@ -1180,6 +1192,46 @@ def composite_video_pip(
     print("Saved composite video with evolving plot and 2x speed for all:", os.path.abspath(output_path))
 
 
+def remove_artifacts_from_videos():
+    '''
+    Makes videos lighter
+    '''
+
+    # Path where all videos exits:
+    base_path = '/home/alejo/Documents/TEMP/LFD_TRIALS'
+
+    # make list of videos:
+    trial_folders = [
+        f for f in os.listdir(base_path)
+        if f.startswith('trial_')
+    ]
+
+    for f in trial_folders:
+        input_path = os.path.join(base_path, f)
+        output_path = os.path.join(
+            base_path,
+            f.replace('.mp4', '_clean.mp4')
+        )
+
+        cmd = [
+            "ffmpeg",
+            "-y",  # overwrite automatically
+            "-i", input_path,
+            "-vf", "hqdn3d=4:3:6:4,deblock",
+            "-c:v", "libx264",
+            "-preset", "slow",
+            "-crf", "18",
+            "-c:a", "copy",
+            output_path
+        ]
+
+        print(f"Processing {f}...")
+        subprocess.run(cmd, check=True)
+
+    print("Done.")
+
+
+
 if __name__ == '__main__':
 
     print("Working directory:", os.getcwd())
@@ -1192,5 +1244,6 @@ if __name__ == '__main__':
     # trajectory_from_twist(240)
 
     # inferred_twist_plots()
+    # videos_and_plot_aside()
 
-    videos_and_plot_aside()
+    remove_artifacts_from_videos()
