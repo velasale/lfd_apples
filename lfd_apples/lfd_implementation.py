@@ -581,7 +581,7 @@ class LFDController(Node):
         self.ema_scC = EMA(self.ema_alpha)
         self.ema_tof = EMA(self.ema_alpha)
         
-        self.ema_img = EMA(alpha = 0.75)
+        self.ema_img = EMA(alpha = 0.675)
 
         self.ema_wrench = EMA(alpha = 0.06)     # Sampling freq is 1Khz, so we want to smooth over approx 0.5 seconds of data, which corresponds to alpha = 0.07
 

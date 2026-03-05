@@ -572,6 +572,14 @@ def implementation_metadata_NEW():
 
     for approach_json_path in approach_json_files:
 
+        # Only until trial 379
+        trial_number = approach_json_path.split('_')[-1]
+        trial_number = int(trial_number.split('.json')[0])
+
+        if trial_number > 379:
+            continue
+
+
         with open(approach_json_path, "r") as f:
             data = json.load(f)
 

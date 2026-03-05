@@ -1001,8 +1001,8 @@ def batch_process_trials(base_folder):
 
 if __name__ == "__main__":
     
-    bag_folder = '/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/approach/trial_47'
-    trial_folder = "trial_47"
+    bag_folder = '/home/alejo/Documents/DATA/07_IL_implementation/bagfiles/experiment_1_(pull)/approach/trial_337'
+    trial_folder = "trial_337"
     extract_data_and_plot(bag_folder, trial_folder)
     
     # batch_process_trials('/media/alejo/IL_data/01_IL_bagfiles/only_human_demos/with_palm_cam')    
