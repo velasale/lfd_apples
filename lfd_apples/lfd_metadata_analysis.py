@@ -576,7 +576,7 @@ def implementation_metadata_NEW():
         trial_number = approach_json_path.split('_')[-1]
         trial_number = int(trial_number.split('.json')[0])
 
-        if trial_number > 379:
+        if trial_number > 362:
             continue
 
 

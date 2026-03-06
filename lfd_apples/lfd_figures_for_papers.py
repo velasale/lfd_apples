@@ -170,8 +170,8 @@ def plot_trial(trial_path, plot_channels = False):
     plot_channels = True
 
     if plot_channels: 
-        # fig, ax_tof = plt.subplots(figsize=(9, 5))      # Size for Demontrations Figure
-        fig, ax_tof = plt.subplots(figsize=(7.25, 5))  # Size for Demontrations Figure
+        fig, ax_tof = plt.subplots(figsize=(9, 5))      # Size for Demontrations Figure
+        # fig, ax_tof = plt.subplots(figsize=(7.25, 5))  # Size for Demontrations Figure
 
         # === Shade background for phases ===
         ax_tof.axvspan(approach_start, approach_end, color='tab:blue', alpha=0.1, label='Approach')
@@ -187,10 +187,10 @@ def plot_trial(trial_path, plot_channels = False):
         ax_tof.set_ylim(0, 32)
 
         # --- ToF threshold ---
-        ax_tof.axhline(5, color=color_tof, linestyle=':', linewidth=1)
+        ax_tof.axhline(5, color=color_tof, linestyle=':', linewidth=1, label='_nolegend_')
         ax_tof.text(
-            time[10]+6, 5,
-            'TOF threshold',
+            time[10], 5,
+            'Time of flight threshold',
             color=color_tof,
             va='bottom', ha='left',
             fontsize=14
@@ -199,18 +199,18 @@ def plot_trial(trial_path, plot_channels = False):
         # === Suction cups axis (right 1) ===
         ax_sc = ax_tof.twinx()
         color_sc = 'tab:orange'
-        ax_sc.plot(time, scA, '--', color=color_sc, label='scA', linewidth=2.0)
-        ax_sc.plot(time, scB, '--', color=color_sc, alpha=0.7, label='scB', linewidth=2.0)
-        ax_sc.plot(time, scC, '--', color=color_sc, alpha=0.4, label='scC', linewidth=2.0)
-        ax_sc.set_ylabel('Air pressure [kPa]', color=color_sc, labelpad=-3)
+        ax_sc.plot(time, scA, '--', color=color_sc, label=r'$\rho_A$', linewidth=2.0)
+        ax_sc.plot(time, scB, '--', color=color_sc, alpha=0.7, label=r'$\rho_B$', linewidth=2.0)
+        ax_sc.plot(time, scC, '--', color=color_sc, alpha=0.4, label=r'$\rho_C$', linewidth=2.0)
+        ax_sc.set_ylabel('Air pressure [kPa]', color=color_sc, labelpad=0)
         ax_sc.tick_params(axis='y', colors=color_sc)
-        ax_sc.set_ylim(0, 120)
+        ax_sc.set_ylim(0, 150)
 
         # --- Pressure threshold ---
         ax_sc.axhline(60, color=color_sc, linestyle=':', linewidth=1)
         ax_sc.text(
-            time[10]+6, 60,
-            'APS threshold',
+            time[10], 60,
+            'Air pressure threshold',
             color=color_sc,
             va='bottom', ha='left',
             fontsize=14
@@ -226,23 +226,24 @@ def plot_trial(trial_path, plot_channels = False):
         ax_force.set_ylim(0, 20)
 
         # === Legend (data only) ===
-        lines = (
-                ax_tof.get_lines()
-                + ax_sc.get_lines()
-                + ax_force.get_lines()
-        )
+        lines = ax_tof.get_lines() + ax_sc.get_lines() + ax_force.get_lines()
+
+        lines = [l for l in lines if not l.get_label().startswith('_')]
         labels = [l.get_label() for l in lines]
-        ax_force.legend(lines, labels, loc='upper left',  bbox_to_anchor=(0.0, 0.92), fontsize=12)
-        ax_tof.set_xlim(left=6)
-        ax_tof.set_xlim(right=29)#max(time))
+
+        ax_force.legend(lines, labels, loc='upper left', bbox_to_anchor=(0.0, 0.92), fontsize=12)
+        # ax_tof.set_xlim(left=6)
+        # ax_tof.set_xlim(right=29)#max(time))
+        ax_tof.set_xlim(left=0)
+        ax_tof.set_xlim(right=30)
 
         # === Add labels for shaded regions ===
         y_text = ax_tof.get_ylim()[1] * 0.99  # slightly below top of ToF axis
-        ax_tof.text((approach_start + approach_end) / 2, y_text, 'approach',
+        ax_tof.text((approach_start + approach_end) / 2, y_text, 'Approach',
                     color='tab:blue', ha='center', va='top', fontsize=14, fontweight='bold')
-        ax_tof.text((contact_start + contact_end) / 2, y_text, 'contact',
+        ax_tof.text((contact_start + contact_end) / 2, y_text, 'Contact',
                     color='tab:orange', ha='center', va='top', fontsize=14, fontweight='bold')
-        ax_tof.text((pick_start + pick_end) / 2, y_text, 'pick',
+        ax_tof.text((pick_start + pick_end) / 2, y_text, 'Pick',
                     color='tab:red', ha='center', va='top', fontsize=14, fontweight='bold')
 
         plt.tight_layout()
@@ -338,7 +339,7 @@ def plot_batch_trials():
     })
 
     # === Build Path ===
-    base_folder = os.path.join(r'D:',
+    base_folder = os.path.join('/media/alejo/IL_data',
                                'IL_DATA_BACKUP',
                                '03_IL_preprocessed_(transformed_to_eef)',
                                'experiment_1_(pull)')
@@ -982,7 +983,7 @@ def videos_and_plot_aside():
 
     print(trial_folders)
 
-    trial_folders = ['trial_291', 'trial_307', 'trial_316', 'trial_327', 'trial_330', 'trial_349', 'trial_362']
+    trial_folders = ['trial_409', 'trial_411', 'trial_412', 'trial_416']
 
     for trial in tqdm(trial_folders):
         try:
@@ -1198,7 +1199,7 @@ def remove_artifacts_from_videos():
     '''
 
     # Path where all videos exits:
-    base_path = '/home/alejo/Documents/TEMP/LFD_TRIALS'
+    base_path = '/home/alejo/Documents/LFD_TRIALS/march_5/'
 
     # make list of videos:
     trial_folders = [
@@ -1236,7 +1237,7 @@ if __name__ == '__main__':
 
     print("Working directory:", os.getcwd())
 
-    # plot_batch_trials()
+    plot_batch_trials()
     # phases_stats_from_reading_entire_trial()
     # phases_stats_from_last_row()
     # compare_losses_plots()
@@ -1246,4 +1247,4 @@ if __name__ == '__main__':
     # inferred_twist_plots()
     # videos_and_plot_aside()
 
-    remove_artifacts_from_videos()
+    # remove_artifacts_from_videos()
